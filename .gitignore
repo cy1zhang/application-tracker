@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+token*.json
+.aws/
+.DS_Store
+__pycache__/
+.venv/
+node_modules/
+dist/
+.aws-sam/
