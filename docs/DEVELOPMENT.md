@@ -1,8 +1,8 @@
 # Local development
 
-The project currently contains the FastAPI and React/TypeScript foundations.
-Application persistence, authentication, Gmail access, and AI providers are not
-implemented yet.
+The project currently contains the FastAPI and React/TypeScript foundations and
+the DynamoDB-backed application domain. Hosted authentication, Gmail access,
+and AI providers are not implemented yet.
 
 ## Prerequisites
 
@@ -67,3 +67,13 @@ npm run build
 ```
 
 GitHub Actions runs these same commands for pushes and pull requests.
+
+## Application domain
+
+Application CRUD uses the `APPLICATIONS_TABLE` and `EVENTS_TABLE` DynamoDB
+tables and the optional `AWS_REGION` setting. Automated tests create these
+tables with `moto`; they do not use an AWS account.
+
+The authentication dependency intentionally returns `401` until Cognito is
+implemented. API tests inject synthetic user subjects through FastAPI dependency
+overrides. Do not add a request header that lets callers choose an owner.

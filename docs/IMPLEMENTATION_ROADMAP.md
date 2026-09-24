@@ -52,6 +52,8 @@ command passes locally.
 
 ### 2. Build the application domain
 
+**Status: complete**
+
 - Define application and history-event schemas.
 - Add owner-scoped create, list, read, update, and delete operations.
 - Add optimistic version checks.
