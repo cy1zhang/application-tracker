@@ -1,6 +1,7 @@
 import builtins
 import json
-from base64 import urlsafe_b64decode, urlsafe_b64encode
+import re
+from base64 import b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
 from datetime import date, datetime
 from enum import Enum
@@ -116,6 +117,7 @@ class DynamoApplicationRepository:
             },
             "FilterExpression": "attribute_not_exists(deleted_at)",
             "Limit": limit,
+            "ConsistentRead": True,
         }
         if cursor is not None:
             application_id = _decode_cursor(cursor)
@@ -153,20 +155,29 @@ class DynamoApplicationRepository:
         owner_id: str,
         application_id: str,
     ) -> builtins.list[ApplicationEvent]:
-        response = self._client.query(
-            TableName=self._events_table,
-            IndexName="application-events-index",
-            KeyConditionExpression="owner_application_id = :owner_application_id",
-            ExpressionAttributeValues={
+        query: dict[str, Any] = {
+            "TableName": self._events_table,
+            "IndexName": "application-events-index",
+            "KeyConditionExpression": "owner_application_id = :owner_application_id",
+            "ExpressionAttributeValues": {
                 ":owner_application_id": self._serializer.serialize(
                     f"{owner_id}#{application_id}"
                 )
             },
-            ScanIndexForward=True,
-        )
+            "ScanIndexForward": True,
+        }
+        items = []
+        while True:
+            response = self._client.query(**query)
+            items.extend(response.get("Items", []))
+            last_key = response.get("LastEvaluatedKey")
+            if last_key is None:
+                break
+            query["ExclusiveStartKey"] = last_key
+
         return [
             ApplicationEvent.model_validate(self._deserialize_item(item))
-            for item in response.get("Items", [])
+            for item in items
         ]
 
     def update(
@@ -386,10 +397,14 @@ def _encode_cursor(application_id: str) -> str:
 
 
 def _decode_cursor(cursor: str) -> str:
+    if re.fullmatch(r"[A-Za-z0-9_-]+", cursor) is None:
+        raise InvalidCursor
+
     try:
         padding = "=" * (-len(cursor) % 4)
-        payload = json.loads(urlsafe_b64decode(cursor + padding))
-    except (Base64Error, UnicodeDecodeError, json.JSONDecodeError) as error:
+        decoded = b64decode(cursor + padding, altchars=b"-_", validate=True)
+        payload = json.loads(decoded)
+    except (Base64Error, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
         raise InvalidCursor from error
 
     if (

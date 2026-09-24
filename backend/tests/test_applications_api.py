@@ -1,3 +1,6 @@
+import json
+from base64 import urlsafe_b64encode
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -89,6 +92,24 @@ def test_cross_owner_get_returns_not_found(api_client, authenticate_as) -> None:
 
 def test_malformed_cursor_returns_unprocessable_entity(client_as_user_a) -> None:
     response = client_as_user_a.get("/applications?cursor=not-a-cursor")
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("cursor", ["☃", "invalid-suffix"])
+def test_additional_invalid_cursors_return_unprocessable_entity(
+    client_as_user_a,
+    cursor,
+) -> None:
+    if cursor == "invalid-suffix":
+        valid_cursor = (
+            urlsafe_b64encode(json.dumps({"application_id": "app-1"}).encode())
+            .decode()
+            .rstrip("=")
+        )
+        cursor = f"{valid_cursor}!!!!"
+
+    response = client_as_user_a.get("/applications", params={"cursor": cursor})
 
     assert response.status_code == 422
 
