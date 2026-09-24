@@ -91,3 +91,67 @@ def test_malformed_cursor_returns_unprocessable_entity(client_as_user_a) -> None
     response = client_as_user_a.get("/applications?cursor=not-a-cursor")
 
     assert response.status_code == 422
+
+
+def test_patch_updates_application(client_as_user_a) -> None:
+    created = create_application(client_as_user_a)
+
+    response = client_as_user_a.patch(
+        f"/applications/{created['application_id']}",
+        json={"expected_version": 1, "role": "Senior Engineer"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["role"] == "Senior Engineer"
+    assert response.json()["version"] == 2
+
+
+def test_patch_requires_current_version(client_as_user_a) -> None:
+    created = create_application(client_as_user_a)
+
+    response = client_as_user_a.patch(
+        f"/applications/{created['application_id']}",
+        json={"expected_version": 9, "role": "Changed"},
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Application version is stale"}
+
+
+def test_cross_owner_patch_returns_not_found(api_client, authenticate_as) -> None:
+    authenticate_as("user-a")
+    created = create_application(api_client)
+    authenticate_as("user-b")
+
+    response = api_client.patch(
+        f"/applications/{created['application_id']}",
+        json={"expected_version": 1, "role": "Changed"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_cross_owner_delete_returns_not_found(api_client, authenticate_as) -> None:
+    authenticate_as("user-a")
+    created = create_application(api_client)
+    authenticate_as("user-b")
+
+    response = api_client.delete(
+        f"/applications/{created['application_id']}?expected_version=1"
+    )
+
+    assert response.status_code == 404
+
+
+def test_delete_hides_application(client_as_user_a) -> None:
+    created = create_application(client_as_user_a)
+
+    response = client_as_user_a.delete(
+        f"/applications/{created['application_id']}?expected_version=1"
+    )
+
+    assert response.status_code == 204
+    assert (
+        client_as_user_a.get(f"/applications/{created['application_id']}").status_code
+        == 404
+    )

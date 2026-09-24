@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.api.dependencies import get_application_repository, get_current_subject
 from app.domain.applications import (
@@ -10,8 +10,14 @@ from app.domain.applications import (
     ApplicationCreate,
     ApplicationEvent,
     ApplicationPage,
+    ApplicationPatch,
 )
-from app.repositories.applications import ApplicationRepository, InvalidCursor
+from app.repositories.applications import (
+    ApplicationNotFound,
+    ApplicationRepository,
+    InvalidCursor,
+    VersionConflict,
+)
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -81,3 +87,52 @@ def list_application_events(
         owner_id=owner_id,
         application_id=application_id,
     )
+
+
+@router.patch("/{application_id}", response_model=Application)
+def update_application(
+    application_id: str,
+    payload: ApplicationPatch,
+    owner_id: Owner,
+    repository: Repository,
+) -> Application:
+    try:
+        return repository.update(
+            owner_id=owner_id,
+            application_id=application_id,
+            patch=payload,
+            event_id=uuid4().hex,
+            occurred_at=datetime.now(UTC),
+        )
+    except ApplicationNotFound as error:
+        raise HTTPException(status_code=404, detail="Application not found") from error
+    except VersionConflict as error:
+        raise HTTPException(
+            status_code=409,
+            detail="Application version is stale",
+        ) from error
+
+
+@router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_application(
+    application_id: str,
+    owner_id: Owner,
+    repository: Repository,
+    expected_version: Annotated[int, Query(ge=1)],
+) -> Response:
+    try:
+        repository.delete(
+            owner_id=owner_id,
+            application_id=application_id,
+            expected_version=expected_version,
+            event_id=uuid4().hex,
+            occurred_at=datetime.now(UTC),
+        )
+    except ApplicationNotFound as error:
+        raise HTTPException(status_code=404, detail="Application not found") from error
+    except VersionConflict as error:
+        raise HTTPException(
+            status_code=409,
+            detail="Application version is stale",
+        ) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

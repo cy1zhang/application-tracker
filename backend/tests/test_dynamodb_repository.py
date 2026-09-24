@@ -6,10 +6,17 @@ import pytest
 
 from app.domain.applications import (
     ApplicationCreate,
+    ApplicationPatch,
     ApplicationStatus,
     EventType,
+    FieldChange,
+    Season,
 )
-from app.repositories.applications import InvalidCursor
+from app.repositories.applications import (
+    ApplicationNotFound,
+    InvalidCursor,
+    VersionConflict,
+)
 from app.repositories.dynamodb import DynamoApplicationRepository
 
 
@@ -82,3 +89,139 @@ def test_tampered_cursor_cannot_select_another_owner(repository) -> None:
 def test_malformed_cursor_is_rejected(repository) -> None:
     with pytest.raises(InvalidCursor):
         repository.list(owner_id="user-a", limit=10, cursor="not-a-cursor")
+
+
+def test_update_clears_explicit_null_and_records_only_changed_fields(
+    repository,
+    application_factory,
+) -> None:
+    application_factory(
+        repository,
+        owner_id="user-a",
+        application_id="app-1",
+        season=Season.SUMMER,
+    )
+
+    updated = repository.update(
+        owner_id="user-a",
+        application_id="app-1",
+        patch=ApplicationPatch(expected_version=1, season=None),
+        event_id="event-update",
+        occurred_at=datetime(2026, 9, 25, tzinfo=UTC),
+    )
+
+    assert updated.season is None
+    assert updated.role == "Software Engineer Intern"
+    assert updated.version == 2
+    event = repository.list_events(owner_id="user-a", application_id="app-1")[-1]
+    assert event.changes == {"season": FieldChange(before="summer", after=None)}
+
+
+def test_same_value_update_does_not_increment_or_write_event(
+    repository,
+    application_factory,
+) -> None:
+    original = application_factory(
+        repository,
+        owner_id="user-a",
+        application_id="app-1",
+    )
+
+    unchanged = repository.update(
+        owner_id="user-a",
+        application_id="app-1",
+        patch=ApplicationPatch(expected_version=1, role=original.role),
+        event_id="event-no-op",
+        occurred_at=datetime(2026, 9, 25, tzinfo=UTC),
+    )
+
+    assert unchanged == original
+    assert [
+        event.event_id
+        for event in repository.list_events(
+            owner_id="user-a",
+            application_id="app-1",
+        )
+    ] == ["event-create-1"]
+
+
+def test_stale_update_writes_neither_application_nor_event(
+    repository,
+    application_factory,
+) -> None:
+    application_factory(repository, owner_id="user-a", application_id="app-1")
+
+    with pytest.raises(VersionConflict):
+        repository.update(
+            owner_id="user-a",
+            application_id="app-1",
+            patch=ApplicationPatch(expected_version=7, role="Changed"),
+            event_id="event-stale",
+            occurred_at=datetime(2026, 9, 25, tzinfo=UTC),
+        )
+
+    assert repository.get(owner_id="user-a", application_id="app-1").version == 1
+    assert all(
+        event.event_id != "event-stale"
+        for event in repository.list_events(
+            owner_id="user-a",
+            application_id="app-1",
+        )
+    )
+
+
+def test_stale_delete_writes_neither_tombstone_nor_event(
+    repository,
+    application_factory,
+) -> None:
+    application_factory(repository, owner_id="user-a", application_id="app-1")
+
+    with pytest.raises(VersionConflict):
+        repository.delete(
+            owner_id="user-a",
+            application_id="app-1",
+            expected_version=7,
+            event_id="event-stale-delete",
+            occurred_at=datetime(2026, 9, 25, tzinfo=UTC),
+        )
+
+    assert repository.get(owner_id="user-a", application_id="app-1").version == 1
+    assert all(
+        event.event_id != "event-stale-delete"
+        for event in repository.list_events(
+            owner_id="user-a",
+            application_id="app-1",
+        )
+    )
+
+
+def test_deleted_application_is_hidden_and_cannot_be_updated(
+    repository,
+    application_factory,
+) -> None:
+    application_factory(repository, owner_id="user-a", application_id="app-1")
+    repository.delete(
+        owner_id="user-a",
+        application_id="app-1",
+        expected_version=1,
+        event_id="event-delete",
+        occurred_at=datetime(2026, 9, 25, tzinfo=UTC),
+    )
+
+    assert repository.get(owner_id="user-a", application_id="app-1") is None
+    assert repository.list(owner_id="user-a", limit=20, cursor=None).items == []
+    assert [
+        event.event_type
+        for event in repository.list_events(
+            owner_id="user-a",
+            application_id="app-1",
+        )
+    ] == [EventType.CREATED, EventType.DELETED]
+    with pytest.raises(ApplicationNotFound):
+        repository.update(
+            owner_id="user-a",
+            application_id="app-1",
+            patch=ApplicationPatch(expected_version=2, role="Changed"),
+            event_id="event-after-delete",
+            occurred_at=datetime(2026, 9, 26, tzinfo=UTC),
+        )

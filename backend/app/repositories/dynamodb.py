@@ -2,20 +2,27 @@ import builtins
 import json
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
-from datetime import datetime
+from datetime import date, datetime
+from enum import Enum
 from typing import Any
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
+from botocore.exceptions import ClientError
 
 from app.domain.applications import (
     Application,
     ApplicationCreate,
     ApplicationEvent,
     ApplicationPage,
+    ApplicationPatch,
     EventOrigin,
     EventType,
 )
-from app.repositories.applications import InvalidCursor
+from app.repositories.applications import (
+    ApplicationNotFound,
+    InvalidCursor,
+    VersionConflict,
+)
 
 APPLICATION_FIELDS = (
     "company",
@@ -130,20 +137,15 @@ class DynamoApplicationRepository:
         return ApplicationPage(items=items, next_cursor=next_cursor)
 
     def get(self, *, owner_id: str, application_id: str) -> Application | None:
-        response = self._client.get_item(
-            TableName=self._applications_table,
-            Key=self._serialize_item(
-                {"owner_id": owner_id, "application_id": application_id}
-            ),
-            ConsistentRead=True,
+        item = self._get_stored_item(
+            owner_id=owner_id,
+            application_id=application_id,
         )
-        item = response.get("Item")
         if item is None:
             return None
-        decoded = self._deserialize_item(item)
-        if "deleted_at" in decoded:
+        if "deleted_at" in item:
             return None
-        return self._application_from_item(decoded)
+        return self._application_from_item(item)
 
     def list_events(
         self,
@@ -166,6 +168,201 @@ class DynamoApplicationRepository:
             ApplicationEvent.model_validate(self._deserialize_item(item))
             for item in response.get("Items", [])
         ]
+
+    def update(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        patch: ApplicationPatch,
+        event_id: str,
+        occurred_at: datetime,
+    ) -> Application:
+        current = self._get_active_item(
+            owner_id=owner_id,
+            application_id=application_id,
+        )
+        if current["version"] != patch.expected_version:
+            raise VersionConflict
+
+        updates = {
+            field: _stored_value(value) for field, value in patch.updates().items()
+        }
+        changes = {
+            field: {"before": current[field], "after": value}
+            for field, value in updates.items()
+            if current[field] != value
+        }
+        if not changes:
+            return self._application_from_item(current)
+
+        updated_item = {
+            **current,
+            **updates,
+            "updated_at": occurred_at.isoformat(),
+            "version": patch.expected_version + 1,
+        }
+        event_item = self._mutation_event_item(
+            owner_id=owner_id,
+            application_id=application_id,
+            event_id=event_id,
+            event_type=EventType.UPDATED,
+            occurred_at=occurred_at,
+            changes=changes,
+        )
+        self._write_mutation(
+            owner_id=owner_id,
+            application_id=application_id,
+            expected_version=patch.expected_version,
+            application_item=updated_item,
+            event_item=event_item,
+        )
+        return self._application_from_item(updated_item)
+
+    def delete(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        expected_version: int,
+        event_id: str,
+        occurred_at: datetime,
+    ) -> None:
+        current = self._get_active_item(
+            owner_id=owner_id,
+            application_id=application_id,
+        )
+        if current["version"] != expected_version:
+            raise VersionConflict
+
+        tombstone = {
+            "owner_id": owner_id,
+            "application_id": application_id,
+            "version": expected_version + 1,
+            "deleted_at": occurred_at.isoformat(),
+        }
+        event_item = self._mutation_event_item(
+            owner_id=owner_id,
+            application_id=application_id,
+            event_id=event_id,
+            event_type=EventType.DELETED,
+            occurred_at=occurred_at,
+            changes={
+                field: {"before": current[field], "after": None}
+                for field in APPLICATION_FIELDS
+            },
+        )
+        self._write_mutation(
+            owner_id=owner_id,
+            application_id=application_id,
+            expected_version=expected_version,
+            application_item=tombstone,
+            event_item=event_item,
+        )
+
+    def _write_mutation(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+        expected_version: int,
+        application_item: dict[str, Any],
+        event_item: dict[str, Any],
+    ) -> None:
+        try:
+            self._client.transact_write_items(
+                TransactItems=[
+                    {
+                        "Put": {
+                            "TableName": self._applications_table,
+                            "Item": self._serialize_item(application_item),
+                            "ConditionExpression": (
+                                "attribute_exists(application_id) AND "
+                                "attribute_not_exists(deleted_at) AND "
+                                "version = :expected_version"
+                            ),
+                            "ExpressionAttributeValues": {
+                                ":expected_version": self._serializer.serialize(
+                                    expected_version
+                                )
+                            },
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self._events_table,
+                            "Item": self._serialize_item(event_item),
+                            "ConditionExpression": "attribute_not_exists(event_id)",
+                        }
+                    },
+                ]
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            latest = self._get_stored_item(
+                owner_id=owner_id,
+                application_id=application_id,
+            )
+            if latest is None or "deleted_at" in latest:
+                raise ApplicationNotFound from error
+            if latest["version"] != expected_version:
+                raise VersionConflict from error
+            raise
+
+    def _get_active_item(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> dict[str, Any]:
+        item = self._get_stored_item(
+            owner_id=owner_id,
+            application_id=application_id,
+        )
+        if item is None or "deleted_at" in item:
+            raise ApplicationNotFound
+        return item
+
+    def _get_stored_item(
+        self,
+        *,
+        owner_id: str,
+        application_id: str,
+    ) -> dict[str, Any] | None:
+        response = self._client.get_item(
+            TableName=self._applications_table,
+            Key=self._serialize_item(
+                {"owner_id": owner_id, "application_id": application_id}
+            ),
+            ConsistentRead=True,
+        )
+        item = response.get("Item")
+        if item is None:
+            return None
+        return self._deserialize_item(item)
+
+    @staticmethod
+    def _mutation_event_item(
+        *,
+        owner_id: str,
+        application_id: str,
+        event_id: str,
+        event_type: EventType,
+        occurred_at: datetime,
+        changes: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        return {
+            "owner_id": owner_id,
+            "event_id": event_id,
+            "application_id": application_id,
+            "owner_application_id": f"{owner_id}#{application_id}",
+            "occurred_at_event_id": f"{occurred_at.isoformat()}#{event_id}",
+            "event_type": event_type.value,
+            "origin": EventOrigin.USER.value,
+            "occurred_at": occurred_at.isoformat(),
+            "changes": changes,
+        }
 
     def _serialize_item(self, item: dict[str, Any]) -> dict[str, Any]:
         return {key: self._serializer.serialize(value) for key, value in item.items()}
@@ -203,3 +400,11 @@ def _decode_cursor(cursor: str) -> str:
     ):
         raise InvalidCursor
     return payload["application_id"]
+
+
+def _stored_value(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
