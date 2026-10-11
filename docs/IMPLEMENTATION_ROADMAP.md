@@ -64,6 +64,8 @@ cross-user access.
 
 ### 3. Deliver the manual-tracker vertical slice
 
+**Status: complete**
+
 - Add the application table and filters.
 - Add manual application creation and editing.
 - Add application details and chronological history.

@@ -52,7 +52,7 @@
 
 - Produces: `get_current_subject(request: Request) -> str` returns the stripped `LOCAL_DEV_SUBJECT` when it is set and non-blank and `request.client.host` is `127.0.0.1` or `::1`; raises `RuntimeError` when it is set while `AWS_LAMBDA_FUNCTION_NAME` is set; and otherwise raises `HTTPException(401, "Authentication required")`. Existing test overrides of this dependency keep working.
 
-- [ ] **Step 1: Write failing dependency tests**
+- [x] **Step 1: Write failing dependency tests**
 
 Create `backend/tests/test_dependencies.py`:
 
@@ -114,7 +114,7 @@ def test_local_dev_subject_is_refused_inside_lambda(monkeypatch) -> None:
         get_current_subject(request_from("127.0.0.1"))
 ```
 
-- [ ] **Step 2: Add a failing API-level test and harden the existing 401 test**
+- [x] **Step 2: Add a failing API-level test and harden the existing 401 test**
 
 In `backend/tests/test_applications_api.py`, change the existing test so a developer's shell variable cannot break it:
 
@@ -160,12 +160,12 @@ def test_local_dev_subject_is_ignored_for_non_loopback_clients(
     assert client_without_subject.get("/applications").status_code == 401
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `cd backend && uv run pytest tests/test_dependencies.py tests/test_applications_api.py -q`
 Expected: FAIL. The dependency tests fail with `TypeError` (the function takes no `request` yet), and `test_local_dev_subject_scopes_requests_to_that_owner` gets `401`.
 
-- [ ] **Step 4: Implement the local subject**
+- [x] **Step 4: Implement the local subject**
 
 In `backend/app/api/dependencies.py`, change the FastAPI import to `from fastapi import HTTPException, Request`, add the constant below the imports, and replace `get_current_subject`:
 
@@ -182,12 +182,12 @@ def get_current_subject(request: Request) -> str:
     raise HTTPException(status_code=401, detail="Authentication required")
 ```
 
-- [ ] **Step 5: Run the backend checks**
+- [x] **Step 5: Run the backend checks**
 
 Run: `cd backend && uv run ruff check . && uv run pytest -q`
 Expected: Ruff reports no issues; all tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/app/api/dependencies.py backend/tests/test_dependencies.py backend/tests/test_applications_api.py
@@ -211,7 +211,7 @@ git commit -m "feat: authenticate local development requests as a fixed subject"
 
 - Produces: `create_tables(client, *, applications_table: str, events_table: str) -> None`, idempotent, creating the Applications table (`owner_id` + `application_id`) and Events table (`owner_id` + `event_id`, GSI `application-events-index` on `owner_application_id` + `occurred_at_event_id`). Tests and the local script share it so the schemas cannot drift.
 
-- [ ] **Step 1: Write the failing table test**
+- [x] **Step 1: Write the failing table test**
 
 Create `backend/tests/test_dynamodb_tables.py`:
 
@@ -241,12 +241,12 @@ def test_create_tables_is_idempotent() -> None:
         ]
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cd backend && uv run pytest tests/test_dynamodb_tables.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'app.repositories.dynamodb_tables'`.
 
-- [ ] **Step 3: Implement the shared table definitions**
+- [x] **Step 3: Implement the shared table definitions**
 
 Create `backend/app/repositories/dynamodb_tables.py`:
 
@@ -303,12 +303,12 @@ def _create_if_missing(client, **definition) -> None:
             raise
 ```
 
-- [ ] **Step 4: Run the table test**
+- [x] **Step 4: Run the table test**
 
 Run: `cd backend && uv run pytest tests/test_dynamodb_tables.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Make the test fixtures use the shared definitions**
+- [x] **Step 5: Make the test fixtures use the shared definitions**
 
 In `backend/tests/conftest.py`, delete `create_application_table` and `create_event_table`, add `from app.repositories.dynamodb_tables import create_tables` to the imports, and replace the two creation calls in the `repository` fixture:
 
@@ -319,7 +319,7 @@ In `backend/tests/conftest.py`, delete `create_application_table` and `create_ev
 Run: `cd backend && uv run ruff check . && uv run pytest -q`
 Expected: all tests pass, showing the shared schema matches what the repository tests used before.
 
-- [ ] **Step 6: Add the local table script**
+- [x] **Step 6: Add the local table script**
 
 Create `backend/scripts/create_local_tables.py`:
 
@@ -358,7 +358,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 7: Add Docker Compose and local environment values**
+- [x] **Step 7: Add Docker Compose and local environment values**
 
 Create `docker-compose.yml` at the repository root:
 
@@ -394,7 +394,7 @@ AWS_ACCESS_KEY_ID=local
 AWS_SECRET_ACCESS_KEY=local
 ```
 
-- [ ] **Step 8: Verify against DynamoDB Local**
+- [x] **Step 8: Verify against DynamoDB Local**
 
 Docker Desktop must be running. If the `2.5.2` tag cannot be pulled, pin the newest `2.x` tag listed on Docker Hub instead and note it in the commit message.
 
@@ -422,7 +422,7 @@ AWS_ENDPOINT_URL_DYNAMODB=https://dynamodb.us-east-1.amazonaws.com \
 
 Expected: this exits with the "must point at DynamoDB Local on localhost" message. Both earlier script runs print `Local DynamoDB tables are ready.`; the `POST` returns the created application with `"version":1`; the `GET` lists it. Restart the container with `docker compose restart dynamodb` and repeat the `GET` (with the API running) to confirm the data persisted. Then delete the synthetic record's data with `docker compose down -v` and run `docker compose up -d dynamodb` plus the table script again.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/app/repositories/dynamodb_tables.py backend/tests/test_dynamodb_tables.py backend/tests/conftest.py backend/scripts/create_local_tables.py docker-compose.yml .env.example
@@ -448,7 +448,7 @@ git commit -m "feat: run the API locally against DynamoDB Local"
 - Produces `class ApiError extends Error { status: number }`. `status` is `0` when the server cannot be reached; `message` is the API's string `detail` or a generic fallback.
 - Produces test helper `makeApplication(overrides?: Partial<Application>): Application`.
 
-- [ ] **Step 1: Add the shared types**
+- [x] **Step 1: Add the shared types**
 
 Create `frontend/src/api/types.ts`:
 
@@ -550,7 +550,7 @@ export function makeApplication(
 }
 ```
 
-- [ ] **Step 2: Write failing client tests**
+- [x] **Step 2: Write failing client tests**
 
 Create `frontend/src/api/client.test.ts`:
 
@@ -666,12 +666,12 @@ test("explains when the server cannot be reached", async () => {
 });
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `cd frontend && npx vitest run src/api/client.test.ts`
 Expected: FAIL because `./client` does not exist.
 
-- [ ] **Step 4: Implement the client**
+- [x] **Step 4: Implement the client**
 
 Create `frontend/src/api/client.ts`:
 
@@ -769,7 +769,7 @@ export function updateApplication(
 }
 ```
 
-- [ ] **Step 5: Add the dev proxy**
+- [x] **Step 5: Add the dev proxy**
 
 Replace `frontend/vite.config.ts`:
 
@@ -808,12 +808,12 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 6: Run the frontend checks**
+- [x] **Step 6: Run the frontend checks**
 
 Run: `cd frontend && npm run lint && npm test && npm run typecheck`
 Expected: all pass.
 
-- [ ] **Step 7: Verify the proxy's backend-down response**
+- [x] **Step 7: Verify the proxy's backend-down response**
 
 With the API **not** running:
 
@@ -827,7 +827,7 @@ kill %1
 
 Expected: `HTTP/1.1 502` with body `{"detail":"Could not reach the server. Is the backend running?"}`. If Vite still returns an empty `500`, its own error handler ran first: move the handler's logic into a small Vite plugin or adjust until the 502 appears, and record what changed in the commit message.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add frontend/src/api frontend/src/test/fixtures.ts frontend/vite.config.ts
@@ -851,7 +851,7 @@ git commit -m "feat: add typed frontend API client"
 - Produces from `labels.ts`: `ROLE_TYPE_LABELS: Record<RoleType, string>`, `SEASON_LABELS: Record<Season, string>`, `STATUS_LABELS: Record<ApplicationStatus, string>`, `FIELD_LABELS: Record<string, string>`, `UNKNOWN = "Unknown"`, `formatCycle(season, year): string`, `formatFieldValue(field: string, value: FieldValue): string`, `formatTimestamp(iso: string): string`.
 - Produces from `filtering.ts`: `ALL = "all"`, `UNKNOWN_VALUE = "unknown"`, `interface Filters { roleType; season; year: string; status; search: string }`, `DEFAULT_FILTERS` (internships), `type SortKey = "updated" | "application_date" | "company"`, `filterApplications(applications, filters)`, `sortApplications(applications, key)`, `countByStatus(applications): Record<ApplicationStatus, number>`, `yearOptions(applications): number[]`.
 
-- [ ] **Step 1: Write failing label tests**
+- [x] **Step 1: Write failing label tests**
 
 Create `frontend/src/applications/labels.test.ts`:
 
@@ -876,7 +876,7 @@ test("formats history values with display labels", () => {
 });
 ```
 
-- [ ] **Step 2: Write failing filtering tests**
+- [x] **Step 2: Write failing filtering tests**
 
 Create `frontend/src/applications/filtering.test.ts`:
 
@@ -1046,12 +1046,12 @@ test("lists distinct known years, newest first", () => {
 });
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `cd frontend && npx vitest run src/applications`
 Expected: FAIL because `./labels` and `./filtering` do not exist.
 
-- [ ] **Step 4: Implement the labels**
+- [x] **Step 4: Implement the labels**
 
 Create `frontend/src/applications/labels.ts`:
 
@@ -1134,7 +1134,7 @@ export function formatTimestamp(iso: string): string {
 }
 ```
 
-- [ ] **Step 5: Implement filtering and sorting**
+- [x] **Step 5: Implement filtering and sorting**
 
 Create `frontend/src/applications/filtering.ts`:
 
@@ -1250,12 +1250,12 @@ export function yearOptions(applications: Application[]): number[] {
 }
 ```
 
-- [ ] **Step 6: Run the frontend checks**
+- [x] **Step 6: Run the frontend checks**
 
 Run: `cd frontend && npm run lint && npm test && npm run typecheck`
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src/applications
@@ -1279,7 +1279,7 @@ git commit -m "feat: add application labels, filtering, and sorting"
 - Produces: `buildPatch(original: Application, values: ApplicationValues): ApplicationPatch | null`, returning only changed fields plus `expected_version`, or `null` when nothing changed. A stored `role_type` of `null` counts as equal to `"unknown"`.
 - Form controls are labelled exactly: "Company", "Role", "Role type", "Season", "Year", "Status", "Application date".
 
-- [ ] **Step 1: Clean up the DOM between component tests**
+- [x] **Step 1: Clean up the DOM between component tests**
 
 Vitest globals are off, so Testing Library cannot register its automatic cleanup. Replace `frontend/src/test/setup.ts`:
 
@@ -1293,7 +1293,7 @@ afterEach(() => {
 });
 ```
 
-- [ ] **Step 2: Write failing form tests**
+- [x] **Step 2: Write failing form tests**
 
 Create `frontend/src/applications/ApplicationForm.test.tsx`:
 
@@ -1505,12 +1505,12 @@ test("buildPatch returns null when nothing changed", () => {
 });
 ```
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `cd frontend && npx vitest run src/applications/ApplicationForm.test.tsx`
 Expected: FAIL because `./ApplicationForm` does not exist.
 
-- [ ] **Step 4: Implement the form**
+- [x] **Step 4: Implement the form**
 
 Create `frontend/src/applications/ApplicationForm.tsx`:
 
@@ -1772,12 +1772,12 @@ export function ApplicationForm({
 }
 ```
 
-- [ ] **Step 5: Run the frontend checks**
+- [x] **Step 5: Run the frontend checks**
 
 Run: `cd frontend && npm run lint && npm test && npm run typecheck`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/applications/ApplicationForm.tsx frontend/src/applications/ApplicationForm.test.tsx frontend/src/test/setup.ts
@@ -1798,7 +1798,7 @@ git commit -m "feat: add application create and edit form"
 - Consumes: `getApplication`, `listApplicationEvents`, `updateApplication`, `ApiError`; `ApplicationForm` and `buildPatch`; labels.
 - Produces: `ApplicationDetail({ applicationId: string; onBack: () => void })`. Heading is `"{company} · {role}"`. Buttons: "← Back to applications", "Edit", "Reload latest" (after a `409`), "Retry" (after a load error). History is an `<ol>` labelled "History"; created events render `"{Field}: {value}"`, other events `"{Field}: {before} → {after}"`, skipping unchanged fields.
 
-- [ ] **Step 1: Write failing detail tests**
+- [x] **Step 1: Write failing detail tests**
 
 Create `frontend/src/applications/ApplicationDetail.test.tsx`:
 
@@ -1950,12 +1950,12 @@ test("shows a missing application as an error", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd frontend && npx vitest run src/applications/ApplicationDetail.test.tsx`
 Expected: FAIL because `./ApplicationDetail` does not exist.
 
-- [ ] **Step 3: Implement the detail view**
+- [x] **Step 3: Implement the detail view**
 
 Create `frontend/src/applications/ApplicationDetail.tsx`:
 
@@ -2173,12 +2173,12 @@ function HistoryEntry({ event }: { event: ApplicationEvent }) {
 }
 ```
 
-- [ ] **Step 4: Run the frontend checks**
+- [x] **Step 4: Run the frontend checks**
 
 Run: `cd frontend && npm run lint && npm test && npm run typecheck`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/applications/ApplicationDetail.tsx frontend/src/applications/ApplicationDetail.test.tsx
@@ -2202,7 +2202,7 @@ git commit -m "feat: add application detail with history and editing"
 - Produces: `ApplicationList({ applications, filters, onFiltersChange, sortKey, onSortChange, onSelect, onCreate })`. Filter controls are labelled "Role type", "Season", "Year", "Status", "Search", "Sort by"; the summary is a `<dl aria-label="Status summary">`; each company cell is a button that opens the detail view.
 - `App` owns the view (`list` / `create` / `detail`), the loaded applications, and the filter and sort state, so filters survive opening a detail and going back. Returning to the list reloads it.
 
-- [ ] **Step 1: Write failing app tests**
+- [x] **Step 1: Write failing app tests**
 
 Replace `frontend/src/App.test.tsx`:
 
@@ -2352,12 +2352,12 @@ test("keeps filters after opening a detail and going back", async () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd frontend && npx vitest run src/App.test.tsx`
 Expected: FAIL because `App` still renders the placeholder page.
 
-- [ ] **Step 3: Implement the list**
+- [x] **Step 3: Implement the list**
 
 Create `frontend/src/applications/ApplicationList.tsx`:
 
@@ -2592,7 +2592,7 @@ export function ApplicationList({
 }
 ```
 
-- [ ] **Step 4: Replace the app shell**
+- [x] **Step 4: Replace the app shell**
 
 Replace `frontend/src/App.tsx`:
 
@@ -2707,7 +2707,7 @@ function App() {
 export default App;
 ```
 
-- [ ] **Step 5: Replace the placeholder styles**
+- [x] **Step 5: Replace the placeholder styles**
 
 Replace `frontend/src/styles.css`. The shell, header, and wordmark rules are unchanged; the placeholder-page rules (`.foundation-layout`, `.milestone*`, `.status-*`, `.scope-note`) are removed because nothing uses them any more:
 
@@ -3014,12 +3014,12 @@ tbody tr:last-child td {
 }
 ```
 
-- [ ] **Step 6: Run the frontend checks**
+- [x] **Step 6: Run the frontend checks**
 
 Run: `cd frontend && npm run lint && npm test && npm run typecheck && npm run build`
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add frontend/src/App.tsx frontend/src/App.test.tsx frontend/src/applications/ApplicationList.tsx frontend/src/styles.css
@@ -3037,7 +3037,7 @@ git commit -m "feat: add application dashboard and wire the manual tracker"
 - Modify: `AGENTS.md`
 - Modify: this plan (check off steps)
 
-- [ ] **Step 1: Update the development guide**
+- [x] **Step 1: Update the development guide**
 
 In `docs/DEVELOPMENT.md`:
 
@@ -3074,12 +3074,12 @@ requests to the API on `http://127.0.0.1:8000`. Data persists in the
 
 - In "Application domain", explain that `get_current_subject` returns `401` unless the server-side `LOCAL_DEV_SUBJECT` variable is set, that it refuses to run inside AWS Lambda, and that milestone 4 replaces it with Cognito. Keep the existing sentence forbidding owner-selecting request headers.
 
-- [ ] **Step 2: Update the roadmap and agent instructions**
+- [x] **Step 2: Update the roadmap and agent instructions**
 
 - In `docs/IMPLEMENTATION_ROADMAP.md`, add `**Status: complete**` under the milestone 3 heading, matching milestone 2.
 - In `AGENTS.md`, update "Project status" (milestones 0–3 done; the frontend is the manual-tracker dashboard), add the local-run commands from Step 1 to "Commands", and in the `api/dependencies.py` bullet describe the `LOCAL_DEV_SUBJECT` behavior.
 
-- [ ] **Step 3: Run every CI check**
+- [x] **Step 3: Run every CI check**
 
 ```bash
 cd backend && uv sync --locked --dev && uv run ruff check . && uv run pytest -q
@@ -3088,7 +3088,7 @@ cd ../frontend && npm ci && npm audit && npm run lint && npm test && npm run typ
 
 Expected: everything passes, and `npm audit` reports no vulnerabilities.
 
-- [ ] **Step 4: Verify the milestone end to end in a browser**
+- [x] **Step 4: Verify the milestone end to end in a browser**
 
 With DynamoDB Local, the API, and Vite running as in Step 1, use the browser (Playwright) to check the roadmap's verification statement with synthetic data:
 
@@ -3101,14 +3101,14 @@ With DynamoDB Local, the API, and Vite running as in Step 1, use the browser (Pl
 
 Then remove the synthetic data with `docker compose down -v`.
 
-- [ ] **Step 5: Commit the documentation**
+- [x] **Step 5: Commit the documentation**
 
 ```bash
 git add docs/DEVELOPMENT.md docs/IMPLEMENTATION_ROADMAP.md AGENTS.md docs/superpowers/plans/2026-10-10-manual-tracker.md
 git commit -m "docs: record manual tracker milestone"
 ```
 
-- [ ] **Step 6: Codex review of the branch**
+- [x] **Step 6: Codex review of the branch**
 
 ```bash
 codex exec review -c sandbox_mode='"read-only"' --base main --ephemeral -o <scratchpad>/milestone-3-review.txt
