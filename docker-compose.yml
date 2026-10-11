@@ -1,0 +1,14 @@
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    command: -jar DynamoDBLocal.jar -sharedDb -dbPath ./data
+    working_dir: /home/dynamodblocal
+    # Root lets DynamoDB Local write to the named volume it does not own.
+    user: root
+    ports:
+      - "127.0.0.1:8001:8000"
+    volumes:
+      - dynamodb-data:/home/dynamodblocal/data
+
+volumes:
+  dynamodb-data:

@@ -44,7 +44,10 @@ def create_application(client) -> dict:
     return response.json()
 
 
-def test_applications_require_authentication(client_without_subject) -> None:
+def test_applications_require_authentication(
+    client_without_subject, monkeypatch
+) -> None:
+    monkeypatch.delenv("LOCAL_DEV_SUBJECT", raising=False)
     response = client_without_subject.get("/applications")
 
     assert response.status_code == 401
@@ -176,3 +179,31 @@ def test_delete_hides_application(client_as_user_a) -> None:
         client_as_user_a.get(f"/applications/{created['application_id']}").status_code
         == 404
     )
+
+
+def test_local_dev_subject_scopes_requests_to_that_owner(
+    repository, monkeypatch
+) -> None:
+    monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
+    fastapi_app.dependency_overrides[get_application_repository] = lambda: repository
+    try:
+        with TestClient(fastapi_app, client=("127.0.0.1", 50000)) as client:
+            monkeypatch.setenv("LOCAL_DEV_SUBJECT", "user-a")
+            created = create_application(client)
+            path = f"/applications/{created['application_id']}"
+
+            assert client.get(path).status_code == 200
+
+            monkeypatch.setenv("LOCAL_DEV_SUBJECT", "user-b")
+            assert client.get(path).status_code == 404
+    finally:
+        fastapi_app.dependency_overrides.clear()
+
+
+def test_local_dev_subject_is_ignored_for_non_loopback_clients(
+    client_without_subject, monkeypatch
+) -> None:
+    monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
+    monkeypatch.setenv("LOCAL_DEV_SUBJECT", "user-a")
+
+    assert client_without_subject.get("/applications").status_code == 401

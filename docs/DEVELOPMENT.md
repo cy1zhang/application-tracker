@@ -1,8 +1,9 @@
 # Local development
 
-The project currently contains the FastAPI and React/TypeScript foundations and
-the DynamoDB-backed application domain. Hosted authentication, Gmail access,
-and AI providers are not implemented yet.
+The project currently contains the manual tracker: a FastAPI backend persisting
+to DynamoDB and a React/TypeScript dashboard for creating, editing, filtering,
+and inspecting applications. Hosted authentication, Gmail access, and AI
+providers are not implemented yet.
 
 ## Prerequisites
 
@@ -10,28 +11,23 @@ and AI providers are not implemented yet.
 - [`uv`](https://docs.astral.sh/uv/) for Python dependencies
 - Node.js 22.23.3, pinned in [`.nvmrc`](../.nvmrc)
 - npm 10.9.9, included with the pinned Node.js release
+- Docker Desktop, for DynamoDB Local
 
-Milestones 0 and 1 need no credentials or environment variables. Future local
-values belong in `.env`, which Git ignores. Commit only placeholder values to
-`.env.example`.
+Local development uses the fake values in `.env.example`, copied to `.env`,
+which Git ignores. Real credentials belong only in `.env`; commit only
+placeholder values to `.env.example`.
 
-## Run the backend
+## Run the app locally
 
 ```bash
+cp .env.example .env             # fake local values only
+docker compose up -d dynamodb    # DynamoDB Local on 127.0.0.1:8001
+
 cd backend
 uv sync --locked --dev
-uv run uvicorn app.main:app --reload
+uv run --env-file ../.env python -m scripts.create_local_tables
+uv run --env-file ../.env uvicorn app.main:app --reload
 ```
-
-The API is available at `http://127.0.0.1:8000`. Verify it with:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-The expected response is `{"status":"ok"}`.
-
-## Run the frontend
 
 In another terminal:
 
@@ -41,7 +37,12 @@ npm ci
 npm run dev
 ```
 
-Vite prints the local URL when it starts, normally `http://127.0.0.1:5173`.
+Open the URL Vite prints, normally `http://localhost:5173`. Vite proxies `/api`
+requests to the API on `http://127.0.0.1:8000`. Data persists in the
+`dynamodb-data` Docker volume; `docker compose down -v` deletes it.
+
+Check the API directly with `curl http://127.0.0.1:8000/health`; the expected
+response is `{"status":"ok"}`.
 
 ## Run all checks
 
@@ -74,6 +75,9 @@ Application CRUD uses the `APPLICATIONS_TABLE` and `EVENTS_TABLE` DynamoDB
 tables and the optional `AWS_REGION` setting. Automated tests create these
 tables with `moto`; they do not use an AWS account.
 
-The authentication dependency intentionally returns `401` until Cognito is
-implemented. API tests inject synthetic user subjects through FastAPI dependency
-overrides. Do not add a request header that lets callers choose an owner.
+The authentication dependency returns `401` until Cognito is implemented in
+milestone 4. For local development, setting the server-side `LOCAL_DEV_SUBJECT`
+variable authenticates requests from loopback addresses (`127.0.0.1`, `::1`) as
+that subject; it is ignored for other clients and refused inside AWS Lambda.
+API tests inject synthetic user subjects through FastAPI dependency overrides.
+Do not add a request header that lets callers choose an owner.

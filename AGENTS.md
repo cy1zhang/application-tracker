@@ -7,9 +7,11 @@ Guidance for coding agents (Claude Code, Codex, etc.) working in this repository
 Application Tracker is a job-application tracker that will eventually sync Gmail
 and classify recruiting email. It is built in milestones defined in
 `docs/IMPLEMENTATION_ROADMAP.md`; **build only the active milestone and do not
-scaffold later subsystems early.** Milestones 0–2 (foundation + DynamoDB-backed
-application domain) are done. Cognito auth, Gmail, SQS sync, and AI providers do
-not exist yet. The frontend is still a static placeholder page.
+scaffold later subsystems early.** Milestones 0–3 (foundation, DynamoDB-backed
+application domain, manual tracker) are done. Cognito auth, Gmail, SQS sync, and
+AI providers do not exist yet. The frontend is the manual-tracker dashboard: it
+loads all of the owner's applications and filters, searches, and sorts them in
+the browser.
 
 Key docs: `docs/PRD.md` (product behavior), `docs/TECHNICAL_DESIGN.md` (target AWS
 architecture, tables, API surface, sync/classification rules),
@@ -21,11 +23,19 @@ architecture, tables, API surface, sync/classification rules),
 Pinned toolchain: Python 3.12.13 (`.python-version`) with `uv`; Node 22.23.3
 (`.nvmrc`) with npm 10.9.9.
 
+Local stack (from the repo root; Docker must be running):
+
+```bash
+cp .env.example .env                       # fake local values only
+docker compose up -d dynamodb              # DynamoDB Local on 127.0.0.1:8001
+```
+
 Backend (run from `backend/`):
 
 ```bash
 uv sync --locked --dev
-uv run uvicorn app.main:app --reload       # http://127.0.0.1:8000, GET /health
+uv run --env-file ../.env python -m scripts.create_local_tables
+uv run --env-file ../.env uvicorn app.main:app --reload   # http://127.0.0.1:8000
 uv run ruff check .
 uv run pytest -q
 uv run pytest tests/test_applications_api.py::test_name -q   # single test
@@ -35,7 +45,7 @@ Frontend (run from `frontend/`):
 
 ```bash
 npm ci
-npm run dev
+npm run dev                                # proxies /api to the backend
 npm run lint
 npm test                                   # vitest run
 npx vitest run src/App.test.tsx -t "name"  # single test
@@ -68,15 +78,17 @@ Layers:
   version / 422 bad cursor). IDs and timestamps (`uuid4().hex`,
   `datetime.now(UTC)`) are generated in the router and passed into the
   repository, which keeps the repository deterministic in tests.
-- `api/dependencies.py` — `get_current_subject` deliberately always returns 401
-  until Cognito lands; `get_application_repository` builds the DynamoDB repo from
+- `api/dependencies.py` — `get_current_subject` returns 401 until Cognito lands,
+  except that the server-side `LOCAL_DEV_SUBJECT` variable authenticates
+  loopback clients for local development (refused inside AWS Lambda);
+  `get_application_repository` builds the DynamoDB repo from
   `APPLICATIONS_TABLE`, `EVENTS_TABLE`, and optional `AWS_REGION`.
 
 DynamoDB layout: Applications table keyed `owner_id` + `application_id`; Events
 table keyed `owner_id` + `event_id` with GSI `application-events-index`
 (`owner_application_id` = `"{owner}#{app}"`, `occurred_at_event_id`) for
-chronological history. `tests/conftest.py` defines these tables — keep it in sync
-with any schema change.
+chronological history. `app/repositories/dynamodb_tables.py` defines these
+tables for both the tests and `scripts/create_local_tables.py`.
 
 ## Testing conventions
 
