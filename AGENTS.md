@@ -104,10 +104,12 @@ approves work; the repo, not chat history, carries shared context.
 - **Commit often.** Commit after each completed, verified step (small, focused
   commits with conventional prefixes like `feat:`/`fix:`/`docs:`) so every step
   can be inspected or reverted. Don't batch a whole milestone into one commit.
+  Commit directly on `main`; don't create branches unless the user asks.
 - **Handoff = commit.** Leave a clean working tree with a commit before handing
   off. Never hand off uncommitted changes.
-- **No shared checkout at the same time.** If both agents work at once, each uses
-  its own branch in a separate git worktree.
+- **One agent edits at a time.** Agents take turns in the same checkout; the
+  reviewer only reads. Parallel work in separate branches/worktrees happens only
+  when the user asks for it.
 - **Calling Codex from Claude Code.** Use read-only mode for reviews so Codex
   can't edit files:
   - `codex exec review -c sandbox_mode='"read-only"' --base main` reviews the
