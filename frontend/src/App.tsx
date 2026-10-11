@@ -1,6 +1,59 @@
+import { useEffect, useState } from "react";
+
+import { ApiError, createApplication, listAllApplications } from "./api/client";
+import type {
+  Application,
+  ApplicationCreate,
+  ApplicationValues,
+} from "./api/types";
+import { ApplicationDetail } from "./applications/ApplicationDetail";
+import { ApplicationForm } from "./applications/ApplicationForm";
+import { ApplicationList } from "./applications/ApplicationList";
+import {
+  DEFAULT_FILTERS,
+  type Filters,
+  type SortKey,
+} from "./applications/filtering";
 import "./styles.css";
 
+type View =
+  | { kind: "list" }
+  | { kind: "create" }
+  | { kind: "detail"; applicationId: string };
+
 function App() {
+  const [view, setView] = useState<View>({ kind: "list" });
+  const [applications, setApplications] = useState<Application[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [sortKey, setSortKey] = useState<SortKey>("updated");
+
+  async function loadApplications() {
+    setLoadError(null);
+    try {
+      setApplications(await listAllApplications());
+    } catch (error) {
+      setLoadError(
+        error instanceof ApiError ? error.message : "Could not load applications.",
+      );
+    }
+  }
+
+  useEffect(() => {
+    void loadApplications();
+  }, []);
+
+  function showList() {
+    setView({ kind: "list" });
+    void loadApplications();
+  }
+
+  async function handleCreate(values: ApplicationValues) {
+    // In create mode the form requires company, role, and status.
+    const created = await createApplication(values as ApplicationCreate);
+    setView({ kind: "detail", applicationId: created.application_id });
+  }
+
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -10,35 +63,43 @@ function App() {
         <span className="wordmark-name">Application Tracker</span>
       </header>
 
-      <main className="foundation-layout">
-        <section className="milestone" aria-labelledby="page-title">
-          <p className="status-line">
-            <span className="status-dot" aria-hidden="true" />
-            Project foundation
-          </p>
-          <h1 id="page-title">Application Tracker</h1>
-          <p className="milestone-lead">
-            Manual tracking is the first milestone.
-          </p>
-          <p className="milestone-detail">
-            Gmail synchronization and AI classification come after the core
-            application record and its history are reliable.
-          </p>
-        </section>
-
-        <aside className="scope-note" aria-labelledby="scope-title">
-          <h2 id="scope-title">Current scope</h2>
-          <dl>
-            <div>
-              <dt>Now</dt>
-              <dd>Development foundation</dd>
+      <main className="content">
+        {view.kind === "create" && (
+          <section className="page" aria-labelledby="create-title">
+            <h1 id="create-title">New application</h1>
+            <ApplicationForm
+              submitLabel="Create application"
+              onSubmit={handleCreate}
+              onCancel={showList}
+            />
+          </section>
+        )}
+        {view.kind === "detail" && (
+          <ApplicationDetail applicationId={view.applicationId} onBack={showList} />
+        )}
+        {view.kind === "list" &&
+          (loadError !== null ? (
+            <div role="alert" className="error">
+              <p>Could not load applications: {loadError}</p>
+              <button type="button" onClick={() => void loadApplications()}>
+                Retry
+              </button>
             </div>
-            <div>
-              <dt>Next</dt>
-              <dd>Owner-scoped manual records</dd>
-            </div>
-          </dl>
-        </aside>
+          ) : applications === null ? (
+            <p className="muted">Loading applications…</p>
+          ) : (
+            <ApplicationList
+              applications={applications}
+              filters={filters}
+              onFiltersChange={setFilters}
+              sortKey={sortKey}
+              onSortChange={setSortKey}
+              onSelect={(applicationId) =>
+                setView({ kind: "detail", applicationId })
+              }
+              onCreate={() => setView({ kind: "create" })}
+            />
+          ))}
       </main>
     </div>
   );
