@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import App from "./App";
@@ -9,6 +9,7 @@ import {
   listAllApplications,
   listApplicationEvents,
 } from "./api/client";
+import type { Application } from "./api/types";
 import { makeApplication } from "./test/fixtures";
 
 vi.mock("./api/client", async (importOriginal) => {
@@ -140,4 +141,37 @@ test("keeps filters after opening a detail and going back", async () => {
 
   expect(await screen.findByLabelText("Search")).toHaveValue("acme");
   expect(listAllApplications).toHaveBeenCalledTimes(2);
+});
+
+test("an older list response does not overwrite a newer one", async () => {
+  let resolveSlowLoad: (applications: Application[]) => void = () => {};
+  const offer = makeApplication({ application_id: "app-1", status: "offer" });
+  vi.mocked(listAllApplications)
+    .mockResolvedValueOnce([internship])
+    .mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveSlowLoad = resolve;
+      }),
+    )
+    .mockResolvedValueOnce([offer]);
+  vi.mocked(getApplication).mockResolvedValue(internship);
+  vi.mocked(listApplicationEvents).mockResolvedValue([]);
+  render(<App />);
+
+  async function openAndGoBack() {
+    fireEvent.click(await screen.findByRole("button", { name: "Acme" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "← Back to applications" }),
+    );
+  }
+  await openAndGoBack();
+  await openAndGoBack();
+  expect(await screen.findByRole("cell", { name: "Offer" })).toBeInTheDocument();
+
+  await act(async () => {
+    resolveSlowLoad([internship]);
+  });
+
+  expect(screen.getByRole("cell", { name: "Offer" })).toBeInTheDocument();
+  expect(screen.queryByRole("cell", { name: "Applied" })).not.toBeInTheDocument();
 });

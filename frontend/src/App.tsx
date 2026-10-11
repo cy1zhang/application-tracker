@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError, createApplication, listAllApplications } from "./api/client";
 import type {
@@ -27,15 +27,23 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("updated");
+  // Loads can overlap; only the most recently started one may update state.
+  const latestLoad = useRef(0);
 
   async function loadApplications() {
+    const load = ++latestLoad.current;
     setLoadError(null);
     try {
-      setApplications(await listAllApplications());
+      const loaded = await listAllApplications();
+      if (load === latestLoad.current) {
+        setApplications(loaded);
+      }
     } catch (error) {
-      setLoadError(
-        error instanceof ApiError ? error.message : "Could not load applications.",
-      );
+      if (load === latestLoad.current) {
+        setLoadError(
+          error instanceof ApiError ? error.message : "Could not load applications.",
+        );
+      }
     }
   }
 
