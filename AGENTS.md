@@ -104,7 +104,9 @@ approves work; the repo, not chat history, carries shared context.
 - **Commit often.** Commit after each completed, verified step (small, focused
   commits with conventional prefixes like `feat:`/`fix:`/`docs:`) so every step
   can be inspected or reverted. Don't batch a whole milestone into one commit.
-  Commit directly on `main`; don't create branches unless the user asks.
+- **One branch per milestone.** Milestone work happens on a branch such as
+  `milestone-3-manual-tracker`; the reviewer reviews the branch against `main`
+  before it merges. Ask the user before merging. Never push; the user pushes.
 - **Handoff = commit.** Leave a clean working tree with a commit before handing
   off. Never hand off uncommitted changes.
 - **One agent edits at a time.** Agents take turns in the same checkout; the
