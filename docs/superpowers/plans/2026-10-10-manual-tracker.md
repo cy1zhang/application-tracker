@@ -13,7 +13,7 @@
 ## Decisions (agreed 2026-10-10)
 
 - **Driver/reviewer:** Claude Code drives; Codex reviews the plan and the finished branch (`codex exec review -c sandbox_mode='"read-only"' --base main`).
-- **Local identity:** `get_current_subject` returns `LOCAL_DEV_SUBJECT` when that server-side environment variable is set; otherwise `401` as before. It raises if set inside AWS Lambda (`AWS_LAMBDA_FUNCTION_NAME` present) so it can never authenticate deployed traffic. Callers still cannot choose an owner.
+- **Local identity:** `get_current_subject` returns `LOCAL_DEV_SUBJECT` when that server-side environment variable is set and the request comes from a loopback address (`127.0.0.1` or `::1`); otherwise `401` as before. It raises if set inside AWS Lambda (`AWS_LAMBDA_FUNCTION_NAME` present). Together these keep it from authenticating deployed or network-exposed traffic. Callers still cannot choose an owner. Milestone 4 replaces it with Cognito.
 - **Filtering:** client-side. The loader follows `next_cursor` until it is `null`, because `Limit` is applied before the deleted-item filter and pages can be short or empty while more data remains. DynamoDB returns rows in random UUID order, so sorting is also client-side.
 - **Local persistence:** DynamoDB Local in Docker Compose on `127.0.0.1:8001` with a named volume. boto3 reads `AWS_ENDPOINT_URL_DYNAMODB` natively, so application code does not change.
 - **No CORS yet:** the Vite dev server proxies `/api/*` to `http://127.0.0.1:8000/*`, so browser and API share an origin. Milestone 4 adds CORS restricted to deployed origins.
@@ -21,7 +21,7 @@
 
 ## Global Constraints
 
-- Ownership comes only from the authenticated subject. Never read an owner from a header, query parameter, path, or body. `LOCAL_DEV_SUBJECT` is a server environment variable and is refused inside Lambda.
+- Ownership comes only from the authenticated subject. Never read an owner from a header, query parameter, path, or body. `LOCAL_DEV_SUBJECT` is a server environment variable, honored only for loopback clients, and refused inside Lambda.
 - Never invent values: creating requires company, role, and status, and status has no default. Blank optional fields are sent as `null` and displayed as "Unknown".
 - The dashboard defaults to internships (PRD §2) and offers filters for type, season/year, status, and company/role search (PRD §3).
 - Table rows show company, role, role type, cycle, status, application date when known, and last update (PRD §3).
@@ -33,7 +33,7 @@
 ## Review Focus
 
 - A list page that is short or empty but still has a `next_cursor` must not end loading early; Task 3 tests an empty middle page.
-- Records with `null` company, role type, season, year, or status (created by clearing fields) must render as "Unknown", match the "Unknown" filter options, and not break search; Tasks 4 and 6 test these.
+- Records with `null` company, role type, season, year, or status (created by clearing fields) must render as "Unknown", match the "Unknown" filter options, not break search, and stay editable without forcing a value; Tasks 4, 5, and 6 test these.
 - A stale edit (the record changed in another tab) must not overwrite silently or lose the user's input before they choose to reload; Task 6 tests the `409` path.
 - An unreachable backend must show a readable message with a retry, not a blank page; Task 3 tests the network error and Task 7 tests retry.
 - A saved form with no changes must not send an empty `PATCH`, which the API rejects with `422`; Tasks 5 and 6 test the no-op path.
@@ -50,7 +50,7 @@
 
 **Interfaces:**
 
-- Produces: `get_current_subject() -> str` returns the stripped `LOCAL_DEV_SUBJECT` when set and non-blank, raises `RuntimeError` when it is set while `AWS_LAMBDA_FUNCTION_NAME` is set, and otherwise raises `HTTPException(401, "Authentication required")`.
+- Produces: `get_current_subject(request: Request) -> str` returns the stripped `LOCAL_DEV_SUBJECT` when it is set and non-blank and `request.client.host` is `127.0.0.1` or `::1`; raises `RuntimeError` when it is set while `AWS_LAMBDA_FUNCTION_NAME` is set; and otherwise raises `HTTPException(401, "Authentication required")`. Existing test overrides of this dependency keep working.
 
 - [ ] **Step 1: Write failing dependency tests**
 
@@ -59,8 +59,13 @@ Create `backend/tests/test_dependencies.py`:
 ```python
 import pytest
 from fastapi import HTTPException
+from starlette.requests import Request
 
 from app.api.dependencies import get_current_subject
+
+
+def request_from(host: str) -> Request:
+    return Request({"type": "http", "client": (host, 50000)})
 
 
 @pytest.fixture(autouse=True)
@@ -71,22 +76,32 @@ def clear_auth_environment(monkeypatch) -> None:
 
 def test_subject_requires_authentication_by_default() -> None:
     with pytest.raises(HTTPException) as error:
-        get_current_subject()
+        get_current_subject(request_from("127.0.0.1"))
 
     assert error.value.status_code == 401
 
 
-def test_local_dev_subject_is_used_when_configured(monkeypatch) -> None:
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
+def test_local_dev_subject_is_used_for_loopback_clients(monkeypatch, host) -> None:
     monkeypatch.setenv("LOCAL_DEV_SUBJECT", " local-dev-user ")
 
-    assert get_current_subject() == "local-dev-user"
+    assert get_current_subject(request_from(host)) == "local-dev-user"
+
+
+def test_local_dev_subject_is_refused_for_remote_clients(monkeypatch) -> None:
+    monkeypatch.setenv("LOCAL_DEV_SUBJECT", "local-dev-user")
+
+    with pytest.raises(HTTPException) as error:
+        get_current_subject(request_from("203.0.113.7"))
+
+    assert error.value.status_code == 401
 
 
 def test_blank_local_dev_subject_still_requires_authentication(monkeypatch) -> None:
     monkeypatch.setenv("LOCAL_DEV_SUBJECT", "   ")
 
     with pytest.raises(HTTPException) as error:
-        get_current_subject()
+        get_current_subject(request_from("127.0.0.1"))
 
     assert error.value.status_code == 401
 
@@ -96,7 +111,7 @@ def test_local_dev_subject_is_refused_inside_lambda(monkeypatch) -> None:
     monkeypatch.setenv("AWS_LAMBDA_FUNCTION_NAME", "application-tracker-api")
 
     with pytest.raises(RuntimeError, match="LOCAL_DEV_SUBJECT"):
-        get_current_subject()
+        get_current_subject(request_from("127.0.0.1"))
 ```
 
 - [ ] **Step 2: Add a failing API-level test and harden the existing 401 test**
@@ -114,38 +129,56 @@ def test_applications_require_authentication(
     assert response.json() == {"detail": "Authentication required"}
 ```
 
-Append:
+Append (the default `TestClient` reports its client host as `testclient`, so the loopback case needs its own client):
 
 ```python
 def test_local_dev_subject_scopes_requests_to_that_owner(
+    repository, monkeypatch
+) -> None:
+    monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
+    fastapi_app.dependency_overrides[get_application_repository] = lambda: repository
+    try:
+        with TestClient(fastapi_app, client=("127.0.0.1", 50000)) as client:
+            monkeypatch.setenv("LOCAL_DEV_SUBJECT", "user-a")
+            created = create_application(client)
+            path = f"/applications/{created['application_id']}"
+
+            assert client.get(path).status_code == 200
+
+            monkeypatch.setenv("LOCAL_DEV_SUBJECT", "user-b")
+            assert client.get(path).status_code == 404
+    finally:
+        fastapi_app.dependency_overrides.clear()
+
+
+def test_local_dev_subject_is_ignored_for_non_loopback_clients(
     client_without_subject, monkeypatch
 ) -> None:
     monkeypatch.delenv("AWS_LAMBDA_FUNCTION_NAME", raising=False)
     monkeypatch.setenv("LOCAL_DEV_SUBJECT", "user-a")
-    created = create_application(client_without_subject)
-    path = f"/applications/{created['application_id']}"
 
-    assert client_without_subject.get(path).status_code == 200
-
-    monkeypatch.setenv("LOCAL_DEV_SUBJECT", "user-b")
-    assert client_without_subject.get(path).status_code == 404
+    assert client_without_subject.get("/applications").status_code == 401
 ```
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
 Run: `cd backend && uv run pytest tests/test_dependencies.py tests/test_applications_api.py -q`
-Expected: FAIL in `test_local_dev_subject_is_used_when_configured`, `test_local_dev_subject_is_refused_inside_lambda`, and `test_local_dev_subject_scopes_requests_to_that_owner` (all still get `401`).
+Expected: FAIL. The dependency tests fail with `TypeError` (the function takes no `request` yet), and `test_local_dev_subject_scopes_requests_to_that_owner` gets `401`.
 
 - [ ] **Step 4: Implement the local subject**
 
-Replace `get_current_subject` in `backend/app/api/dependencies.py`:
+In `backend/app/api/dependencies.py`, change the FastAPI import to `from fastapi import HTTPException, Request`, add the constant below the imports, and replace `get_current_subject`:
 
 ```python
-def get_current_subject() -> str:
+LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
+
+
+def get_current_subject(request: Request) -> str:
     if subject := os.getenv("LOCAL_DEV_SUBJECT", "").strip():
         if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
             raise RuntimeError("LOCAL_DEV_SUBJECT must not be set in AWS Lambda")
-        return subject
+        if request.client is not None and request.client.host in LOOPBACK_HOSTS:
+            return subject
     raise HTTPException(status_code=401, detail="Authentication required")
 ```
 
@@ -294,18 +327,25 @@ Create `backend/scripts/create_local_tables.py`:
 """Create the DynamoDB Local tables for development. Safe to run repeatedly."""
 
 import os
+from urllib.parse import urlparse
 
 import boto3
 
 from app.repositories.dynamodb_tables import create_tables
 
+LOCAL_HOSTS = {"localhost", "127.0.0.1"}
+
 
 def main() -> None:
-    if not os.getenv("AWS_ENDPOINT_URL_DYNAMODB"):
+    endpoint = os.getenv("AWS_ENDPOINT_URL_DYNAMODB", "")
+    if urlparse(endpoint).hostname not in LOCAL_HOSTS:
         raise SystemExit(
-            "AWS_ENDPOINT_URL_DYNAMODB is not set; refusing to create tables in AWS."
+            "AWS_ENDPOINT_URL_DYNAMODB must point at DynamoDB Local on localhost "
+            f"(got {endpoint!r}); refusing to create tables."
         )
-    client = boto3.client("dynamodb", region_name=os.environ["AWS_REGION"])
+    client = boto3.client(
+        "dynamodb", region_name=os.environ["AWS_REGION"], endpoint_url=endpoint
+    )
     create_tables(
         client,
         applications_table=os.environ["APPLICATIONS_TABLE"],
@@ -373,7 +413,14 @@ curl -s http://127.0.0.1:8000/applications
 kill %1
 ```
 
-Expected: both script runs print `Local DynamoDB tables are ready.`; the `POST` returns the created application with `"version":1`; the `GET` lists it. Restart the container with `docker compose restart dynamodb` and repeat the `GET` (with the API running) to confirm the data persisted. Then delete the synthetic record's data with `docker compose down -v` and run `docker compose up -d dynamodb` plus the table script again.
+Also confirm the script refuses a non-local endpoint, including when a shell variable overrides `.env`:
+
+```bash
+AWS_ENDPOINT_URL_DYNAMODB=https://dynamodb.us-east-1.amazonaws.com \
+  uv run --env-file ../.env python -m scripts.create_local_tables
+```
+
+Expected: this exits with the "must point at DynamoDB Local on localhost" message. Both earlier script runs print `Local DynamoDB tables are ready.`; the `POST` returns the created application with `"version":1`; the `GET` lists it. Restart the container with `docker compose restart dynamodb` and repeat the `GET` (with the API running) to confirm the data persisted. Then delete the synthetic record's data with `docker compose down -v` and run `docker compose up -d dynamodb` plus the table script again.
 
 - [ ] **Step 9: Commit**
 
@@ -396,7 +443,7 @@ git commit -m "feat: run the API locally against DynamoDB Local"
 
 **Interfaces:**
 
-- Produces types: `RoleType`, `Season`, `ApplicationStatus`, `EventType`, `EventOrigin`, `FieldValue`, `Application`, `ApplicationPage`, `ApplicationEvent`, `ApplicationCreate`, `ApplicationPatch`.
+- Produces types: `RoleType`, `Season`, `ApplicationStatus`, `EventType`, `EventOrigin`, `FieldValue`, `Application`, `ApplicationPage`, `ApplicationEvent`, `ApplicationCreate`, `ApplicationValues`, `ApplicationPatch`.
 - Produces functions: `listAllApplications(): Promise<Application[]>`, `getApplication(id: string): Promise<Application>`, `listApplicationEvents(id: string): Promise<ApplicationEvent[]>`, `createApplication(payload: ApplicationCreate): Promise<Application>`, `updateApplication(id: string, patch: ApplicationPatch): Promise<Application>`.
 - Produces `class ApiError extends Error { status: number }`. `status` is `0` when the server cannot be reached; `message` is the API's string `detail` or a generic fallback.
 - Produces test helper `makeApplication(overrides?: Partial<Application>): Application`.
@@ -461,7 +508,19 @@ export interface ApplicationCreate {
   application_date: string | null;
 }
 
-export type ApplicationPatch = Partial<ApplicationCreate> & {
+// What the form produces. Creating requires company, role, and status; editing
+// may leave them null when they were already unknown.
+export interface ApplicationValues {
+  company: string | null;
+  role: string | null;
+  role_type: RoleType;
+  season: Season | null;
+  year: number | null;
+  status: ApplicationStatus | null;
+  application_date: string | null;
+}
+
+export type ApplicationPatch = Partial<ApplicationValues> & {
   expected_version: number;
 };
 ```
@@ -725,6 +784,20 @@ export default defineConfig({
       "/api": {
         target: "http://127.0.0.1:8000",
         rewrite: (path) => path.replace(/^\/api/, ""),
+        // Vite answers a failed proxy request with an empty 500; answer with a
+        // 502 and an API-style detail so the UI can explain the backend is down.
+        configure: (proxy) => {
+          proxy.on("error", (_error, _request, response) => {
+            if ("writeHead" in response && !response.headersSent) {
+              response.writeHead(502, { "Content-Type": "application/json" });
+              response.end(
+                JSON.stringify({
+                  detail: "Could not reach the server. Is the backend running?",
+                }),
+              );
+            }
+          });
+        },
       },
     },
   },
@@ -740,7 +813,21 @@ export default defineConfig({
 Run: `cd frontend && npm run lint && npm test && npm run typecheck`
 Expected: all pass.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Verify the proxy's backend-down response**
+
+With the API **not** running:
+
+```bash
+cd frontend
+npx vite --port 5173 --strictPort &
+sleep 3
+curl -s -i http://127.0.0.1:5173/api/health
+kill %1
+```
+
+Expected: `HTTP/1.1 502` with body `{"detail":"Could not reach the server. Is the backend running?"}`. If Vite still returns an empty `500`, its own error handler ran first: move the handler's logic into a small Vite plugin or adjust until the 502 appears, and record what changed in the commit message.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add frontend/src/api frontend/src/test/fixtures.ts frontend/vite.config.ts
@@ -855,15 +942,19 @@ test("unknown season and year match missing values", () => {
   ).toEqual(["known", "no-season"]);
 });
 
-test("filters by status", () => {
+test("filters by status, including unknown status", () => {
   const applications = [
     makeApplication({ application_id: "applied" }),
     makeApplication({ application_id: "offer", status: "offer" }),
+    makeApplication({ application_id: "missing", status: null }),
   ];
 
   expect(
     ids(filterApplications(applications, { ...ALL_TYPES, status: "offer" })),
   ).toEqual(["offer"]);
+  expect(
+    ids(filterApplications(applications, { ...ALL_TYPES, status: "unknown" })),
+  ).toEqual(["missing"]);
 });
 
 test("search is trimmed, case-insensitive, and covers company and role", () => {
@@ -1062,7 +1153,7 @@ export interface Filters {
   roleType: RoleType | typeof ALL;
   season: Season | typeof UNKNOWN_VALUE | typeof ALL;
   year: string;
-  status: ApplicationStatus | typeof ALL;
+  status: ApplicationStatus | typeof UNKNOWN_VALUE | typeof ALL;
   search: string;
 }
 
@@ -1085,12 +1176,11 @@ export function filterApplications(
     const roleType = application.role_type ?? "unknown";
     const season = application.season ?? UNKNOWN_VALUE;
     const year = application.year === null ? UNKNOWN_VALUE : String(application.year);
+    const status = application.status ?? UNKNOWN_VALUE;
     if (filters.roleType !== ALL && roleType !== filters.roleType) return false;
     if (filters.season !== ALL && season !== filters.season) return false;
     if (filters.year !== ALL && year !== filters.year) return false;
-    if (filters.status !== ALL && application.status !== filters.status) {
-      return false;
-    }
+    if (filters.status !== ALL && status !== filters.status) return false;
     if (search) {
       return [application.company, application.role].some((value) =>
         value?.toLocaleLowerCase().includes(search),
@@ -1185,8 +1275,8 @@ git commit -m "feat: add application labels, filtering, and sorting"
 **Interfaces:**
 
 - Consumes: `ApiError` from `src/api/client.ts`; labels from `labels.ts`.
-- Produces: `ApplicationForm({ initial?: Application; submitLabel: string; onSubmit: (values: ApplicationCreate) => Promise<void>; onCancel: () => void })`. Edit mode when `initial` is given. Shows validation errors and the `message` of an `ApiError` thrown by `onSubmit`; errors that the caller handles itself must not be rethrown.
-- Produces: `buildPatch(original: Application, values: ApplicationCreate): ApplicationPatch | null`, returning only changed fields plus `expected_version`, or `null` when nothing changed. A stored `role_type` of `null` counts as equal to `"unknown"`.
+- Produces: `ApplicationForm({ initial?: Application; submitLabel: string; onSubmit: (values: ApplicationValues) => Promise<void>; onCancel: () => void })`. Edit mode when `initial` is given. Creating requires company, role, and status, so in create mode the values are always a valid `ApplicationCreate`. Editing allows those fields to stay blank (`null`) only when they were already unknown on `initial`; a known value cannot be blanked. Shows validation errors and the `message` of an `ApiError` thrown by `onSubmit`; errors that the caller handles itself must not be rethrown.
+- Produces: `buildPatch(original: Application, values: ApplicationValues): ApplicationPatch | null`, returning only changed fields plus `expected_version`, or `null` when nothing changed. A stored `role_type` of `null` counts as equal to `"unknown"`.
 - Form controls are labelled exactly: "Company", "Role", "Role type", "Season", "Year", "Status", "Application date".
 
 - [ ] **Step 1: Clean up the DOM between component tests**
@@ -1212,12 +1302,12 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import { ApiError } from "../api/client";
-import type { ApplicationCreate } from "../api/types";
+import type { ApplicationValues } from "../api/types";
 import { makeApplication } from "../test/fixtures";
 import { ApplicationForm, buildPatch } from "./ApplicationForm";
 
 function renderCreateForm(
-  onSubmit = vi.fn<(values: ApplicationCreate) => Promise<void>>(),
+  onSubmit = vi.fn<(values: ApplicationValues) => Promise<void>>(),
 ) {
   onSubmit.mockResolvedValue(undefined);
   render(
@@ -1238,7 +1328,7 @@ function submit() {
   fireEvent.click(screen.getByRole("button", { name: "Create application" }));
 }
 
-const UNCHANGED: ApplicationCreate = {
+const UNCHANGED: ApplicationValues = {
   company: "Acme",
   role: "Software Engineer Intern",
   role_type: "internship",
@@ -1318,7 +1408,7 @@ test("rejects a fractional year", async () => {
 });
 
 test("shows the API error when saving fails", async () => {
-  const onSubmit = vi.fn<(values: ApplicationCreate) => Promise<void>>();
+  const onSubmit = vi.fn<(values: ApplicationValues) => Promise<void>>();
   render(
     <ApplicationForm
       submitLabel="Create application"
@@ -1352,6 +1442,48 @@ test("edit mode starts from the current values", () => {
   expect(screen.getByLabelText("Season")).toHaveValue("");
   expect(screen.getByLabelText("Year")).toHaveValue(2027);
   expect(screen.getByLabelText("Status")).toHaveValue("applied");
+});
+
+test("edit mode keeps fields that were already unknown", async () => {
+  const onSubmit = vi
+    .fn<(values: ApplicationValues) => Promise<void>>()
+    .mockResolvedValue(undefined);
+  render(
+    <ApplicationForm
+      initial={makeApplication({ company: null, status: null })}
+      submitLabel="Save changes"
+      onSubmit={onSubmit}
+      onCancel={vi.fn()}
+    />,
+  );
+  fill("Year", "2028");
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+  await waitFor(() =>
+    expect(onSubmit).toHaveBeenCalledWith({
+      ...UNCHANGED,
+      company: null,
+      status: null,
+      year: 2028,
+    }),
+  );
+});
+
+test("edit mode does not allow blanking a known company", async () => {
+  const onSubmit = vi.fn<(values: ApplicationValues) => Promise<void>>();
+  render(
+    <ApplicationForm
+      initial={makeApplication()}
+      submitLabel="Save changes"
+      onSubmit={onSubmit}
+      onCancel={vi.fn()}
+    />,
+  );
+  fill("Company", "  ");
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Enter a company.");
+  expect(onSubmit).not.toHaveBeenCalled();
 });
 
 test("buildPatch sends only changed fields with the expected version", () => {
@@ -1388,9 +1520,9 @@ import { useState, type FormEvent } from "react";
 import { ApiError } from "../api/client";
 import type {
   Application,
-  ApplicationCreate,
   ApplicationPatch,
   ApplicationStatus,
+  ApplicationValues,
   RoleType,
   Season,
 } from "../api/types";
@@ -1438,12 +1570,24 @@ function valuesFromApplication(application: Application): FormState {
   };
 }
 
-function parseForm(state: FormState): ApplicationCreate | string {
-  const company = state.company.trim();
-  const role = state.role.trim();
-  if (!company) return "Enter a company.";
-  if (!role) return "Enter a role.";
-  if (!state.status) return "Choose a status.";
+// Company, role, and status are required, except that editing may leave one
+// blank when it was already unknown on the stored record.
+function parseForm(
+  state: FormState,
+  initial: Application | undefined,
+): ApplicationValues | string {
+  const company = state.company.trim() || null;
+  const role = state.role.trim() || null;
+  const status = state.status || null;
+  if (company === null && (initial === undefined || initial.company !== null)) {
+    return "Enter a company.";
+  }
+  if (role === null && (initial === undefined || initial.role !== null)) {
+    return "Enter a role.";
+  }
+  if (status === null && (initial === undefined || initial.status !== null)) {
+    return "Choose a status.";
+  }
   const year = state.year.trim() === "" ? null : Number(state.year);
   if (year !== null && !Number.isInteger(year)) {
     return "Year must be a whole number.";
@@ -1454,21 +1598,21 @@ function parseForm(state: FormState): ApplicationCreate | string {
     role_type: state.roleType,
     season: state.season || null,
     year,
-    status: state.status,
+    status,
     application_date: state.applicationDate || null,
   };
 }
 
 export function buildPatch(
   original: Application,
-  values: ApplicationCreate,
+  values: ApplicationValues,
 ): ApplicationPatch | null {
   const comparable = { ...original, role_type: original.role_type ?? "unknown" };
   const changes = Object.fromEntries(
     PATCH_FIELDS.filter((field) => values[field] !== comparable[field]).map(
       (field) => [field, values[field]],
     ),
-  ) as Partial<ApplicationCreate>;
+  ) as Partial<ApplicationValues>;
   if (Object.keys(changes).length === 0) {
     return null;
   }
@@ -1478,7 +1622,7 @@ export function buildPatch(
 interface ApplicationFormProps {
   initial?: Application;
   submitLabel: string;
-  onSubmit: (values: ApplicationCreate) => Promise<void>;
+  onSubmit: (values: ApplicationValues) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -1500,7 +1644,7 @@ export function ApplicationForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const parsed = parseForm(state);
+    const parsed = parseForm(state, initial);
     if (typeof parsed === "string") {
       setError(parsed);
       return;
@@ -1826,8 +1970,8 @@ import {
 } from "../api/client";
 import type {
   Application,
-  ApplicationCreate,
   ApplicationEvent,
+  ApplicationValues,
   EventOrigin,
   EventType,
 } from "../api/types";
@@ -1891,7 +2035,7 @@ export function ApplicationDetail({ applicationId, onBack }: ApplicationDetailPr
     void load();
   }, [load]);
 
-  async function save(values: ApplicationCreate) {
+  async function save(values: ApplicationValues) {
     if (data === null) return;
     const patch = buildPatch(data.application, values);
     if (patch === null) {
@@ -2366,6 +2510,7 @@ export function ApplicationList({
                 {STATUS_LABELS[status]}
               </option>
             ))}
+            <option value={UNKNOWN_VALUE}>{UNKNOWN}</option>
           </select>
         </div>
         <div className="field">
@@ -2455,7 +2600,11 @@ Replace `frontend/src/App.tsx`:
 import { useEffect, useState } from "react";
 
 import { ApiError, createApplication, listAllApplications } from "./api/client";
-import type { Application, ApplicationCreate } from "./api/types";
+import type {
+  Application,
+  ApplicationCreate,
+  ApplicationValues,
+} from "./api/types";
 import { ApplicationDetail } from "./applications/ApplicationDetail";
 import { ApplicationForm } from "./applications/ApplicationForm";
 import { ApplicationList } from "./applications/ApplicationList";
@@ -2498,8 +2647,9 @@ function App() {
     void loadApplications();
   }
 
-  async function handleCreate(values: ApplicationCreate) {
-    const created = await createApplication(values);
+  async function handleCreate(values: ApplicationValues) {
+    // In create mode the form requires company, role, and status.
+    const created = await createApplication(values as ApplicationCreate);
     setView({ kind: "detail", applicationId: created.application_id });
   }
 
