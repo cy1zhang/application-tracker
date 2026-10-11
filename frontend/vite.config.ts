@@ -1,8 +1,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
+import { localOnlyApi } from "./dev/localOnlyApi";
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), localOnlyApi()],
   server: {
     proxy: {
       "/api": {
