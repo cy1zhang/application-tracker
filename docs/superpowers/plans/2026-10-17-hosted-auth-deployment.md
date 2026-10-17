@@ -79,9 +79,9 @@
 
 **Interfaces:** Parameters `BudgetEmail` and `GoogleOAuthSecretName`; outputs `ApiUrl`, `CognitoAuthority`, `CognitoClientId`, `CognitoDomain`, `AmplifyAppId`, `AmplifyUrl`. The secret JSON keys are `client_id` and `client_secret`. The template uses the Task 1 `app.lambda_handler.handler` and `backend/` build directory.
 
-- [ ] **Step 1: Write the template.** Define the two tables with the existing keys/index and `DeletionPolicy: Retain`; Cognito user pool, Google IdP, app client, domain; Amplify app/`main` branch; HTTP API with JWT default authorizer and public `/health`, allowed CORS origin and 10/20 throttling; Python 3.12 arm64 Lambda and scoped IAM; 14-day logs; $5 COST budget with `IncludeCredit: false`, 80% actual and forecast alerts; public outputs. Use a versionless Secrets Manager dynamic reference and do not print secret values.
-- [ ] **Step 2: Verify locally.** Install SAM CLI if needed, generate `backend/requirements.txt` from `uv.lock` without committing it, then run `sam validate --template-file infra/template.yaml --lint` and `sam build --template-file infra/template.yaml`; expect success. Inspect the transformed template to confirm application routes have the JWT authorizer and `/health` has none; inspect table retention and log expiry.
-- [ ] **Step 3: Commit.** `git commit -m "feat: define hosted development stack"` with only Task 3 files.
+- [x] **Step 1: Write the template.** Define the two tables with the existing keys/index and `DeletionPolicy: Retain`; Cognito user pool, Google IdP, app client, domain; Amplify app/`main` branch; HTTP API with JWT default authorizer and public `/health`, allowed CORS origin and 10/20 throttling; Python 3.12 arm64 Lambda and scoped IAM; 14-day logs; $5 COST budget with `IncludeCredit: false`, 80% actual and forecast alerts; public outputs. Use a versionless Secrets Manager dynamic reference and do not print secret values.
+- [x] **Step 2: Verify locally.** Installed SAM CLI 1.169.0, generated `backend/requirements.txt` from `uv.lock` without committing it, and passed `sam validate --template-file infra/template.yaml --lint` plus `sam build --use-container --template-file infra/template.yaml`. The container build produced Linux arm64 native wheels. SAM translation shows `/{proxy+}` with CognitoJwt and `/health` with the `NONE` override; both tables retain on deletion and logs expire after 14 days.
+- [x] **Step 3: Commit.** `git commit -m "feat: define hosted development stack"` with only Task 3 files.
 
 ### Task 4: Repeatable manual deployment and operator guide
 

@@ -1,7 +1,6 @@
 # Milestone 4: Hosted authentication and development deployment
 
-**Status:** Draft for review. This records the design discussed for milestone 4;
-implementation starts after the design is approved.
+**Status:** Approved 2026-10-17; implementation underway.
 
 ## Intent and scope
 
@@ -100,7 +99,8 @@ email live in a Git-ignored local config. The Amplify default URL can be
 computed from the app ID, allowing Cognito redirects and hosting to be
 configured in a single stack deployment.
 
-One-time prerequisites are SAM CLI installation, a Google Cloud project and
+One-time prerequisites are SAM CLI installation, Docker Desktop running for
+Linux-compatible Lambda packaging, a Google Cloud project and
 OAuth web client for Cognito, a Google sign-in test account, and a Secrets
 Manager secret created without exposing its value in the repo or agent logs.
 The developer supplies the secret through their own terminal. The deployment
@@ -123,7 +123,7 @@ A read-only inventory on 2026-10-17 found no application stack, Cognito pool,
 Amplify app, DynamoDB tables, or Secrets Manager secret in `us-east-1` or
 `us-east-2`. There is already a separate $1 monthly budget named
 `application-tracker-zero-spend`. The proposed $5 stack budget would coexist
-with it; the $1 alert may arrive first. SAM CLI is not yet installed.
+with it; the $1 alert may arrive first. SAM CLI was installed for implementation.
 
 The AWS account's Free plan panel showed an end date of 2027-03-26 during the
 design discussion. Recheck this date in the account before deployment and
