@@ -39,6 +39,12 @@
 - `.env.deploy.example`, `.gitignore`: nonsecret deploy configuration template and ignore rule.
 - `.github/workflows/ci.yml`, `docs/DEVELOPMENT.md`, `AGENTS.md`: validation and operator instructions.
 
+Approved-user addition: `backend/app/api/dependencies.py` checks the verified
+group claim; `backend/tests/test_lambda_handler.py` proves denied and approved
+requests; `frontend/src/App.tsx` and `frontend/src/App.test.tsx` show the denied
+state; `infra/template.yaml` creates the Cognito group and exposes the user
+pool ID; `docs/DEVELOPMENT.md` explains grant and revoke.
+
 ## Review Focus
 
 1. A Lambda event with no authorizer claims returns 401; a Lambda configured with `LOCAL_DEV_SUBJECT` raises a configuration error: Task 1 handler and dependency tests.
@@ -95,13 +101,25 @@
 - [x] **Step 4: Verify green.** Five deploy checks pass; `bash -n`, backend lint and 48 tests, frontend audit/lint/57 tests/typecheck/build, and SAM lint pass. `.env.deploy` and `backend/requirements.txt` are ignored. `shellcheck` is not installed.
 - [x] **Step 5: Commit.** `git commit -m "feat: add manual development deployment workflow"` with only Task 4 files.
 
+### Task 4a: Gate application access by Cognito group
+
+**Files:** Modify `backend/app/api/dependencies.py`, `backend/tests/test_lambda_handler.py`, `frontend/src/App.tsx`, `frontend/src/App.test.tsx`, `infra/template.yaml`, and `docs/DEVELOPMENT.md`.
+
+**Interfaces:** The hosted API accepts `sub` only when verified claims include `tracker-users` in `cognito:groups`; otherwise it returns 403. Local loopback authentication and public `/health` remain unchanged. The group is created in the user pool, and `UserPoolId` is a stack output for operator access.
+
+- [ ] **Step 1: Test backend authorization.** Add failing Mangum tests for a valid subject without the group, an approved subject, and a malformed group claim. Existing synthetic approved events carry the group.
+- [ ] **Step 2: Implement and verify backend.** Require exact group membership in the trusted claims, then run backend lint and full tests. Commit this step.
+- [ ] **Step 3: Test frontend denied state.** Add a failing App test for an API 403: show access denied and sign out, without showing tracker controls.
+- [ ] **Step 4: Implement and verify frontend.** Render the denied view, then run frontend lint, full tests, typecheck, and build. Commit this step.
+- [ ] **Step 5: Wire AWS and operator instructions.** Add the Cognito group and user pool output; document granting and revoking membership after first sign-in. Run SAM lint and inspect the transformed template. Commit this step.
+
 ### Task 5: Deploy and verify in AWS
 
 **Files:** Update this plan's checkboxes and `docs/DEVELOPMENT.md` only if actual deployment reveals necessary corrections. No account IDs, test email addresses, or secrets in commits.
 
 **Interfaces:** Requires the user's Google Cloud OAuth web-client ID/secret stored in Secrets Manager and an alert email in ignored local config. Two consenting Google test accounts are required for the owner-isolation check.
 
-**Open decision (2026-10-17):** The user is considering Internal Google OAuth audience. Internal allows all members of the project's Google organization and excludes outside accounts; External Testing does not enforce a test-user list for this app's basic identity scopes. Confirm the desired audience and whether both test accounts are organization members before creating the OAuth client. A selected-person allowlist would require an additional app control.
+**Decision (2026-10-17):** The user selected External Google audience with a Cognito group allowlist. Unapproved people may finish Google sign-in but see access denied in the app. Task 4a implements this before deployment.
 
 - [ ] **Step 1: Complete prerequisites.** Confirm AWS profile and region, SAM CLI, the account's Free plan end date, Google test users and OAuth redirect URI, and the named Secrets Manager JSON secret. Do not read or echo its value.
 - [ ] **Step 2: Deploy.** Prepare and inspect the first CloudFormation change set, obtain the user's approval to apply it, then run `./scripts/deploy.sh`. Record only nonsecret stack outputs and the hosted URL.

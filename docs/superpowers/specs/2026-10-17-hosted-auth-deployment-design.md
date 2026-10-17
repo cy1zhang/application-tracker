@@ -65,6 +65,22 @@ moto-backed repository. They cover a valid subject, missing claims, a forged
 owner header, public `/health`, and cross-user reads. Deployed checks confirm
 API Gateway rejects missing and garbage tokens before they reach the app.
 
+## Approved users
+
+The Google OAuth audience is External. Any Google account may complete the
+basic sign-in flow, but only members of a Cognito `tracker-users` group may use
+application API routes. The API checks that group in API Gateway's verified
+access-token claims before it reads or writes application data. A signed-in
+person outside the group sees an access-denied screen with a sign-out option.
+`/health` and loopback local development retain their existing behavior.
+
+An operator grants access in Cognito after the person's first Google sign-in,
+then the person signs out and in to receive a token with the group claim.
+Removing a member prevents access when their current access token expires
+(configured for one hour). Group membership is managed in AWS, with no list of
+personal email addresses in the repository or deploy parameters. The existing
+owner `sub` remains the data-isolation key even among approved people.
+
 ## Frontend sign-in
 
 Use `oidc-client-ts` for Cognito's redirect-based code and PKCE flow. Without
