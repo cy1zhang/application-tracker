@@ -2,6 +2,8 @@
 
 import os
 from pathlib import Path
+import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -9,6 +11,7 @@ import unittest
 
 
 SOURCE = Path(__file__).with_name("deploy.sh")
+GUIDE = SOURCE.parent.parent / "docs/DEVELOPMENT.md"
 
 
 class DeployScriptTests(unittest.TestCase):
@@ -120,6 +123,24 @@ class DeployScriptTests(unittest.TestCase):
         self.assertIn("amplify create-deployment", calls)
         self.assertIn("amplify start-deployment", calls)
         self.assertIn("https://main.example.invalid", result.stdout)
+
+
+class DeploymentGuideTests(unittest.TestCase):
+    def test_google_secret_command_outputs_clean_json(self):
+        guide = GUIDE.read_text()
+        match = re.search(r"python3 -c '([^']+)' \|", guide)
+        self.assertIsNotNone(match)
+        result = subprocess.run(
+            ["python3", "-c", match.group(1)],
+            input="synthetic-client\nsynthetic-secret\n",
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout),
+            {"client_id": "synthetic-client", "client_secret": "synthetic-secret"},
+        )
 
 
 if __name__ == "__main__":

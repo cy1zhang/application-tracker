@@ -138,7 +138,7 @@ are included.
    `GOOGLE_SECRET_NAME` below:
 
    ```bash
-   python3 -c 'import getpass,json; cid=input("Google client ID: "); sec=getpass.getpass("Google client secret: "); print(json.dumps({"client_id":cid,"client_secret":sec}))' |
+   python3 -c 'import getpass,json,sys; print("Google client ID: ", end="", file=sys.stderr, flush=True); cid=input(); sec=getpass.getpass("Google client secret: "); print(json.dumps({"client_id":cid,"client_secret":sec}))' |
      aws secretsmanager create-secret \
        --name app-tracker/dev/google-oauth \
        --secret-string file:///dev/stdin \
