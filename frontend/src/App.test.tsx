@@ -94,6 +94,17 @@ test("shows a load error and retries", async () => {
   expect(await screen.findByRole("button", { name: "Acme" })).toBeInTheDocument();
 });
 
+test("shows access denied without tracker controls for an unapproved account", async () => {
+  vi.mocked(listAllApplications).mockRejectedValue(new ApiError(403, "Access denied"));
+  render(<App email="tester@example.com" onSignOut={() => {}} />);
+
+  expect(await screen.findByRole("heading", { name: "Access denied" })).toBeInTheDocument();
+  expect(screen.getByText(/ask the app administrator to approve your account/i)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "New application" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+});
+
 test("creates an application and opens its detail", async () => {
   vi.mocked(listAllApplications).mockResolvedValue([]);
   vi.mocked(createApplication).mockResolvedValue(internship);

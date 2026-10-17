@@ -25,6 +25,7 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
   const [view, setView] = useState<View>({ kind: "list" });
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("updated");
   // Loads can overlap; only the most recently started one may update state.
@@ -40,9 +41,13 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
       }
     } catch (error) {
       if (load === latestLoad.current) {
-        setLoadError(
-          error instanceof ApiError ? error.message : "Could not load applications.",
-        );
+        if (error instanceof ApiError && error.status === 403) {
+          setAccessDenied(true);
+        } else {
+          setLoadError(
+            error instanceof ApiError ? error.message : "Could not load applications.",
+          );
+        }
       }
     }
   }
@@ -78,7 +83,13 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
       </header>
 
       <main className="content">
-        {view.kind === "create" && (
+        {accessDenied && (
+          <section className="page" aria-labelledby="access-denied-title">
+            <h1 id="access-denied-title">Access denied</h1>
+            <p>Ask the app administrator to approve your account.</p>
+          </section>
+        )}
+        {!accessDenied && view.kind === "create" && (
           <section className="page" aria-labelledby="create-title">
             <h1 id="create-title">New application</h1>
             <ApplicationForm
@@ -88,10 +99,10 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
             />
           </section>
         )}
-        {view.kind === "detail" && (
+        {!accessDenied && view.kind === "detail" && (
           <ApplicationDetail applicationId={view.applicationId} onBack={showList} />
         )}
-        {view.kind === "list" &&
+        {!accessDenied && view.kind === "list" &&
           (loadError !== null ? (
             <div role="alert" className="error">
               <p>Could not load applications: {loadError}</p>
