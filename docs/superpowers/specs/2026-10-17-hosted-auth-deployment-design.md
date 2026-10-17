@@ -79,7 +79,9 @@ Keep tokens in browser `sessionStorage`. Configure one-hour access tokens and
 a one-day refresh-token lifetime. The client sends the access token in the
 `Authorization: Bearer` header on API calls, renews it while the session is
 valid, and returns to sign-in after a 401. Sign-out clears the local session
-and ends the Cognito session. Frontend tests use a fake user manager to cover
+and ends the Cognito session. Cognito does not sign the user out of Google, so
+a later sign-in may reuse their Google account; use separate browser profiles
+for the two-account verification. Frontend tests use a fake user manager to cover
 local mode, signed-out and signed-in views, token attachment, 401 handling,
 and sign-out. The actual Google redirect is verified on the hosted app.
 

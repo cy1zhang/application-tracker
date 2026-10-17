@@ -59,6 +59,28 @@ select {
   font-weight: 600;
 }
 
+.account-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  font-size: 0.85rem;
+}
+
+.auth-screen {
+  display: grid;
+  justify-items: center;
+  gap: 24px;
+  margin: 15vh auto 0;
+  padding: 32px;
+  text-align: center;
+}
+
+.auth-status {
+  margin: 15vh auto;
+  text-align: center;
+}
+
 .content {
   padding: 40px 48px 64px;
 }

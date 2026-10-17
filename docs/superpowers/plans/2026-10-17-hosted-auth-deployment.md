@@ -67,11 +67,11 @@
 
 **Interfaces:** `authConfig` is `null` when no deployment variables are set and otherwise contains `apiBaseUrl`, `authority`, `clientId`, `domain`. `getAccessToken(): Promise<string | null>` supplies the API client; `AuthGate` renders `App` only with a valid hosted user. The local API base remains `/api`.
 
-- [ ] **Step 1: Write failing tests.** Cover all-or-none Vite configuration; local mode without sign-in; hosted signed-out view; fake user manager redirect callback and sign-out; bearer token on GET/POST; 401 returning to sign-in. Assert local requests still target `/api/applications`.
-- [ ] **Step 2: Verify red.** Run `cd frontend && npm test -- --run src/auth src/api/client.test.ts`; expect the new auth tests to fail.
-- [ ] **Step 3: Implement.** Add pinned `oidc-client-ts`; use authorization-code PKCE, `sessionStorage`, one-hour access and one-day refresh settings supplied by Cognito. Configure Cognito's direct Google redirect, callback cleanup, renewal, and logout. Set deployed API base and bearer header; keep local mode unmodified when all variables are absent.
-- [ ] **Step 4: Verify green.** Run `cd frontend && npm run lint && npm test && npm run typecheck && npm run build`; expect all checks to pass.
-- [ ] **Step 5: Commit.** `git commit -m "feat: add Google sign-in to hosted frontend"` with only Task 2 files.
+- [x] **Step 1: Write failing tests.** Cover all-or-none Vite configuration; local mode without sign-in; hosted signed-out view; fake user manager redirect callback and sign-out; bearer token on GET/POST; 401 returning to sign-in. Assert local requests still target `/api/applications`.
+- [x] **Step 2: Verify red.** Run `cd frontend && npm test -- src/auth src/api/client.auth.test.ts`; the new auth tests failed for missing modules and token handling. A later StrictMode callback test failed with two redemptions.
+- [x] **Step 3: Implement.** Add pinned `oidc-client-ts`; use authorization-code PKCE, `sessionStorage`, one-hour access and one-day refresh settings supplied by Cognito. Configure Cognito's direct Google redirect, callback cleanup, renewal, and logout. Set deployed API base and bearer header; keep local mode unmodified when all variables are absent.
+- [x] **Step 4: Verify green.** Run pinned Node 22.23.3/npm 10.9.9: `cd frontend && npm ci && npm run lint && npm test && npm run typecheck && npm run build`; 57 tests and all checks passed.
+- [x] **Step 5: Commit.** `git commit -m "feat: add Google sign-in to hosted frontend"` with Task 2 files and checked design/plan corrections.
 
 ### Task 3: One-stack AWS infrastructure
 

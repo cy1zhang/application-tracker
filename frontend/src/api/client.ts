@@ -5,8 +5,10 @@ import type {
   ApplicationPage,
   ApplicationPatch,
 } from "./types";
+import { authConfig, authConfigError } from "../auth/config";
+import { getAccessToken } from "../auth/session";
 
-const API_BASE = "/api";
+const API_BASE = authConfig?.apiBaseUrl ?? "/api";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -19,16 +21,30 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (authConfigError) throw new ApiError(0, authConfigError);
+  const headers: Record<string, string> = {};
+  if (init?.body) headers["Content-Type"] = "application/json";
+  if (authConfig) {
+    const token = await getAccessToken();
+    if (!token) {
+      window.dispatchEvent(new Event("auth-required"));
+      throw new ApiError(401, "Authentication required");
+    }
+    headers.Authorization = `Bearer ${token}`;
+  }
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
       ...init,
-      headers: init?.body ? { "Content-Type": "application/json" } : undefined,
+      headers: Object.keys(headers).length ? headers : undefined,
     });
   } catch {
     throw new ApiError(0, "Could not reach the server. Is the backend running?");
   }
   if (!response.ok) {
+    if (authConfig && response.status === 401) {
+      window.dispatchEvent(new Event("auth-required"));
+    }
     throw new ApiError(response.status, await errorMessage(response));
   }
   return (await response.json()) as T;

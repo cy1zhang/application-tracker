@@ -21,7 +21,7 @@ type View =
   | { kind: "create" }
   | { kind: "detail"; applicationId: string };
 
-function App() {
+function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => void }) {
   const [view, setView] = useState<View>({ kind: "list" });
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -69,6 +69,12 @@ function App() {
           AT
         </span>
         <span className="wordmark-name">Application Tracker</span>
+        {onSignOut && (
+          <div className="account-actions">
+            <span>{email}</span>
+            <button type="button" onClick={onSignOut}>Sign out</button>
+          </div>
+        )}
       </header>
 
       <main className="content">
