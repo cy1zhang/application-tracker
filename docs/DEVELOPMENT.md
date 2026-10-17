@@ -119,9 +119,9 @@ are included.
    Audience, **Internal** admits members of the project's Google organization,
    while **External** admits Google accounts outside it. This app requests only
    `openid`, `email`, and `profile`, so Google's External Testing test-user list
-   does not restrict sign-in; selected-person access would need a separate app
-   allowlist. If using Internal, both accounts for owner-isolation verification
-   must belong to that organization. See [Google's audience rules](https://support.google.com/cloud/answer/15549945?hl=en).
+   does not restrict sign-in. Use **External** for this app; Cognito's
+   `tracker-users` group controls who can use the tracker after sign-in. See
+   [Google's audience rules](https://support.google.com/cloud/answer/15549945?hl=en).
    Add this **Authorized redirect URI**, replacing the account ID with the
    value from the command below:
 
@@ -185,15 +185,33 @@ put the Google secret value in a SAM parameter; pass only its Secrets Manager
 name. `sam validate --template-file infra/template.yaml --lint` and
 `python3 scripts/test_deploy.py -q` are offline checks.
 
+### Approve Google accounts
+
+The Google audience is External, so anyone can complete Google sign-in. A new
+account initially sees **Access denied** and cannot use any application API
+route. In the AWS console for `us-east-1`, open **Amazon Cognito → User pools →
+app-tracker-dev-users → Groups → tracker-users**. Add the person's Cognito user
+profile after they have signed in once. Confirm the profile's email with the
+person before granting access. They must sign out and back in to get a token
+with the new group membership. The stack's `UserPoolId` output identifies the
+pool if you use the AWS CLI instead.
+
+To revoke access, remove the person from `tracker-users` in Cognito. Existing
+access tokens may continue working until they expire, at most one hour under
+this app's token setting. Each approved person still sees only applications
+under their own Cognito subject.
+
 ### Verify and operate
 
 - `GET <ApiUrl>/health` should return 200 without a token. `GET
   <ApiUrl>/applications` should return 401 with no token or a garbage token.
   Read `ApiUrl` from the stack outputs in `us-east-1`.
-- Sign in as Google account A in one browser profile, create an application,
-  and record its ID. Sign in as account B in another profile: B's list must be
-  empty and opening A's ID must return 404. Cognito sign-out does not sign out
-  the underlying Google account, which is why separate profiles matter.
+- Sign in as Google account A in one browser profile and confirm **Access
+  denied**. Approve A in Cognito, sign out and back in, then create an
+  application and record its ID. Sign in as account B in another profile and
+  confirm **Access denied**; approve B, sign out and back in, then verify B's
+  list is empty and opening A's ID returns 404. Cognito sign-out does not sign
+  out the underlying Google account, which is why separate profiles matter.
 - On the hosted app, check edit, history, filters, and the stale-edit flow.
   A controlled burst above the API's 10-request-per-second rate and 20-request
   burst setting should eventually return 429.

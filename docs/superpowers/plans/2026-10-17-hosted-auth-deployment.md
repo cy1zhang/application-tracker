@@ -111,7 +111,7 @@ pool ID; `docs/DEVELOPMENT.md` explains grant and revoke.
 - [x] **Step 2: Implement and verify backend.** Require exact group membership in the trusted claims. Backend lint and full tests pass (55 tests; the existing Mangum event-loop deprecation warning remains). Commit this step.
 - [x] **Step 3: Test frontend denied state.** Added an App test for an API 403; it failed because the UI showed the generic retry error instead of access denied.
 - [x] **Step 4: Implement and verify frontend.** Render the denied view. Frontend lint, 58 tests, typecheck, and build pass. Commit this step.
-- [ ] **Step 5: Wire AWS and operator instructions.** Add the Cognito group and user pool output; document granting and revoking membership after first sign-in. Run SAM lint and inspect the transformed template. Commit this step.
+- [x] **Step 5: Wire AWS and operator instructions.** Added the Cognito group and user pool output, with grant/revoke instructions after first sign-in. SAM lint and container build pass; the built template contains the group and output. Commit this step.
 
 ### Task 5: Deploy and verify in AWS
 

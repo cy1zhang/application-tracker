@@ -73,6 +73,12 @@ Resources:
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: true
 
+  ApprovedUsersGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: tracker-users
+      UserPoolId: !Ref UserPool
+
   GoogleIdentityProvider:
     Type: AWS::Cognito::UserPoolIdentityProvider
     Properties:
@@ -244,6 +250,8 @@ Resources:
               Address: !Ref BudgetEmail
 
 Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
   ApiUrl:
     Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}'
   CognitoAuthority:
