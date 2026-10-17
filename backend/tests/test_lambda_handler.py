@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 
-def api_event(method, path, *, subject=None, body=None, headers=None):
+def api_event(method, path, *, subject=None, groups=("tracker-users",), body=None, headers=None):
     event = {
         "version": "2.0",
         "routeKey": "$default",
@@ -26,8 +26,11 @@ def api_event(method, path, *, subject=None, body=None, headers=None):
         "isBase64Encoded": False,
     }
     if subject is not None:
+        claims = {"sub": subject}
+        if groups is not None:
+            claims["cognito:groups"] = groups
         event["requestContext"]["authorizer"] = {
-            "jwt": {"claims": {"sub": subject}, "scopes": []}
+            "jwt": {"claims": claims, "scopes": []}
         }
     if body is not None:
         event["body"] = json.dumps(body)
@@ -77,6 +80,32 @@ def test_lambda_missing_claims_fail_closed(lambda_tables) -> None:
     response = invoke(api_event("GET", "/applications"))
 
     assert response["statusCode"] == 401
+
+
+@pytest.mark.parametrize("groups", [None, [], ["other-users"], "[other-users]", "[tracker-users-extra]"])
+def test_signed_in_user_without_approval_cannot_list_applications(lambda_tables, groups) -> None:
+    response = invoke(api_event("GET", "/applications", subject="user-a", groups=groups))
+
+    assert response["statusCode"] == 403
+    assert json.loads(response["body"])["detail"] == "Access denied"
+
+
+def test_signed_in_user_without_approval_cannot_create_application(lambda_tables) -> None:
+    response = invoke(
+        api_event(
+            "POST", "/applications", subject="user-a", groups=None,
+            body={"company": "Acme", "role": "Engineer", "status": "applied"},
+        )
+    )
+
+    assert response["statusCode"] == 403
+    assert lambda_tables.list(owner_id="user-a", limit=100, cursor=None).items == []
+
+
+def test_approved_group_claim_from_gateway_can_list_applications(lambda_tables) -> None:
+    response = invoke(api_event("GET", "/applications", subject="user-a", groups="[tracker-users]"))
+
+    assert response["statusCode"] == 200
 
 
 def test_lambda_rejects_local_subject_configuration(lambda_tables, monkeypatch) -> None:

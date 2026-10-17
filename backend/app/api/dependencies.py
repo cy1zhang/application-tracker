@@ -7,6 +7,7 @@ from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb import DynamoApplicationRepository
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
+APPROVED_GROUP = "tracker-users"
 
 
 def get_current_subject(request: Request) -> str:
@@ -23,6 +24,11 @@ def get_current_subject(request: Request) -> str:
         )
         verified_subject = claims.get("sub")
         if isinstance(verified_subject, str) and verified_subject.strip():
+            groups = claims.get("cognito:groups")
+            if isinstance(groups, str):
+                groups = groups.strip("[]").replace(",", " ").split()
+            if not isinstance(groups, (list, tuple)) or APPROVED_GROUP not in groups:
+                raise HTTPException(status_code=403, detail="Access denied")
             return verified_subject
         raise HTTPException(status_code=401, detail="Authentication required")
 

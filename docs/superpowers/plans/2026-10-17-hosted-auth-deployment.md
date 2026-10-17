@@ -107,8 +107,8 @@ pool ID; `docs/DEVELOPMENT.md` explains grant and revoke.
 
 **Interfaces:** The hosted API accepts `sub` only when verified claims include `tracker-users` in `cognito:groups`; otherwise it returns 403. Local loopback authentication and public `/health` remain unchanged. The group is created in the user pool, and `UserPoolId` is a stack output for operator access.
 
-- [ ] **Step 1: Test backend authorization.** Add failing Mangum tests for a valid subject without the group, an approved subject, and a malformed group claim. Existing synthetic approved events carry the group.
-- [ ] **Step 2: Implement and verify backend.** Require exact group membership in the trusted claims, then run backend lint and full tests. Commit this step.
+- [x] **Step 1: Test backend authorization.** Added Mangum tests for missing, wrong, malformed, and approved group claims. Six denied-path assertions failed before implementation (HTTP 200/201 instead of 403).
+- [x] **Step 2: Implement and verify backend.** Require exact group membership in the trusted claims. Backend lint and full tests pass (55 tests; the existing Mangum event-loop deprecation warning remains). Commit this step.
 - [ ] **Step 3: Test frontend denied state.** Add a failing App test for an API 403: show access denied and sign out, without showing tracker controls.
 - [ ] **Step 4: Implement and verify frontend.** Render the denied view, then run frontend lint, full tests, typecheck, and build. Commit this step.
 - [ ] **Step 5: Wire AWS and operator instructions.** Add the Cognito group and user pool output; document granting and revoking membership after first sign-in. Run SAM lint and inspect the transformed template. Commit this step.
