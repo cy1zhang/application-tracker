@@ -55,11 +55,11 @@
 
 **Interfaces:** `get_current_subject(request: Request) -> str` consumes `request.scope["aws.event"]["requestContext"]["authorizer"]["jwt"]["claims"]["sub"]` only when running through a Lambda event. `handler = Mangum(app)` in `app/lambda_handler.py` is the SAM entry point.
 
-- [ ] **Step 1: Write failing tests.** Add `test_lambda_claims_select_owner`, `test_lambda_missing_claims_fail_closed`, `test_lambda_rejects_local_subject_configuration`, `test_forged_owner_header_is_ignored`, `test_other_subject_cannot_read_application`, and `test_public_health_without_claims` using synthetic HTTP API v2 events and moto tables. Assert create returns 201, cross-owner read returns 404, missing claims returns 401, local subject configuration raises, and health returns 200.
-- [ ] **Step 2: Verify red.** Run `cd backend && uv run pytest tests/test_lambda_handler.py tests/test_dependencies.py -q`; expect the new tests to fail for the missing handler/claim extraction.
-- [ ] **Step 3: Implement.** Add `mangum` with `uv add mangum`; add `handler = Mangum(app)`; read the subject only from the trusted Lambda event, validate nonblank string, fail closed, then retain the existing local branch. Keep the existing Lambda guard against `LOCAL_DEV_SUBJECT`.
-- [ ] **Step 4: Verify green.** Run `cd backend && uv run ruff check . && uv run pytest -q`; expect all checks to pass.
-- [ ] **Step 5: Commit.** `git commit -m "feat: derive hosted owner from verified JWT claims"` with only Task 1 files.
+- [x] **Step 1: Write failing tests.** Add `test_lambda_claims_select_owner`, `test_lambda_missing_claims_fail_closed`, `test_lambda_rejects_local_subject_configuration`, `test_forged_owner_header_is_ignored`, `test_other_subject_cannot_read_application`, and `test_public_health_without_claims` using synthetic HTTP API v2 events and moto tables. Assert create returns 201, cross-owner read returns 404, missing claims returns 401, local subject configuration returns 500 through Mangum (the existing direct dependency test checks the raised error), and health returns 200.
+- [x] **Step 2: Verify red.** Run `cd backend && uv run pytest tests/test_lambda_handler.py tests/test_dependencies.py -q`; expect the new tests to fail for the missing handler/claim extraction.
+- [x] **Step 3: Implement.** Add `mangum` with `uv add mangum`; add `handler = Mangum(app)`; read the subject only from the trusted Lambda event, validate nonblank string, fail closed, then retain the existing local branch. Keep the existing Lambda guard against `LOCAL_DEV_SUBJECT`.
+- [x] **Step 4: Verify green.** Run `cd backend && uv run ruff check . && uv run pytest -q`; expect all checks to pass.
+- [x] **Step 5: Commit.** `git commit -m "feat: derive hosted owner from verified JWT claims"` with Task 1 files and this checked plan.
 
 ### Task 2: Browser sign-in and authenticated API calls
 

@@ -10,11 +10,24 @@ LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
 
 
 def get_current_subject(request: Request) -> str:
-    if subject := os.getenv("LOCAL_DEV_SUBJECT", "").strip():
-        if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
-            raise RuntimeError("LOCAL_DEV_SUBJECT must not be set in AWS Lambda")
-        if request.client is not None and request.client.host in LOOPBACK_HOSTS:
-            return subject
+    subject = os.getenv("LOCAL_DEV_SUBJECT", "").strip()
+    if subject and os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        raise RuntimeError("LOCAL_DEV_SUBJECT must not be set in AWS Lambda")
+
+    if event := request.scope.get("aws.event"):
+        claims = (
+            event.get("requestContext", {})
+            .get("authorizer", {})
+            .get("jwt", {})
+            .get("claims", {})
+        )
+        verified_subject = claims.get("sub")
+        if isinstance(verified_subject, str) and verified_subject.strip():
+            return verified_subject
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    if subject and request.client is not None and request.client.host in LOOPBACK_HOSTS:
+        return subject
     raise HTTPException(status_code=401, detail="Authentication required")
 
 
