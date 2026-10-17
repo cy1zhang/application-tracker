@@ -8,8 +8,9 @@ Application Tracker is a job-application tracker that will eventually sync Gmail
 and classify recruiting email. It is built in milestones defined in
 `docs/IMPLEMENTATION_ROADMAP.md`; **build only the active milestone and do not
 scaffold later subsystems early.** Milestones 0–3 (foundation, DynamoDB-backed
-application domain, manual tracker) are done. Cognito auth, Gmail, SQS sync, and
-AI providers do not exist yet. The frontend is the manual-tracker dashboard: it
+application domain, manual tracker) are done. Milestone 4 hosted auth and
+deployment code is implemented but still needs live AWS verification. Gmail,
+SQS sync, and AI providers do not exist yet. The frontend is the manual-tracker dashboard: it
 loads all of the owner's applications and filters, searches, and sorts them in
 the browser.
 
@@ -53,8 +54,16 @@ npm run typecheck
 npm run build
 ```
 
+Infrastructure and manual deployment (from the repo root):
+
+```bash
+sam validate --template-file infra/template.yaml --lint
+python3 scripts/test_deploy.py -q
+./scripts/deploy.sh                         # applies AWS changes; see docs/DEVELOPMENT.md
+```
+
 CI (`.github/workflows/ci.yml`) runs the install, lint, test, typecheck, and
-build commands above plus `npm audit` (not the `uvicorn`/`npm run dev` servers,
+build commands above plus `npm audit`, SAM lint, and the offline deploy tests (not the `uvicorn`/`npm run dev` servers,
 which don't exit). Run those checks locally before claiming work is done.
 
 ## Backend architecture
@@ -78,9 +87,10 @@ Layers:
   version / 422 bad cursor). IDs and timestamps (`uuid4().hex`,
   `datetime.now(UTC)`) are generated in the router and passed into the
   repository, which keeps the repository deterministic in tests.
-- `api/dependencies.py` — `get_current_subject` returns 401 until Cognito lands,
-  except that the server-side `LOCAL_DEV_SUBJECT` variable authenticates
-  loopback clients for local development (refused inside AWS Lambda);
+- `api/dependencies.py` — `get_current_subject` reads the verified Cognito
+  `sub` from API Gateway in Lambda, with 401 for missing claims. The server-side
+  `LOCAL_DEV_SUBJECT` variable authenticates loopback clients locally and is
+  refused inside AWS Lambda;
   `get_application_repository` builds the DynamoDB repo from
   `APPLICATIONS_TABLE`, `EVENTS_TABLE`, and optional `AWS_REGION`.
 

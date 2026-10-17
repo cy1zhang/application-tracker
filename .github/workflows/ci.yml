@@ -8,6 +8,21 @@ permissions:
   contents: read
 
 jobs:
+  infrastructure:
+    runs-on: ubuntu-latest
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v3
+        with:
+          version: 1.169.0
+          use-installer: true
+      - name: Validate SAM template
+        run: sam validate --template-file infra/template.yaml --lint
+      - name: Test deploy script offline
+        run: python3 scripts/test_deploy.py -q
+
   backend:
     runs-on: ubuntu-latest
     steps:

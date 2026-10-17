@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+!.env.deploy.example
 *.pem
 *.key
 credentials*.json
@@ -13,3 +14,4 @@ node_modules/
 dist/
 .aws-sam/
 .superpowers/
+backend/requirements.txt

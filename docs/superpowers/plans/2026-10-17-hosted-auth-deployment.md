@@ -89,11 +89,11 @@
 
 **Interfaces:** The script reads local `AWS_PROFILE`, `AWS_REGION=us-east-1`, `STACK_NAME=app-tracker-dev`, `BUDGET_EMAIL`, and `GOOGLE_SECRET_NAME`. It consumes Task 3 outputs and builds Task 2's four `VITE_` variables. It uploads a zip of the *contents* of `frontend/dist` using `aws amplify create-deployment`, the returned upload URL, and `start-deployment`.
 
-- [ ] **Step 1: Write failing script checks.** With fake `aws`/`sam`/`npm` binaries, show missing secret, missing identity, or wrong region aborts before `sam deploy`; show missing stack output aborts before frontend upload.
-- [ ] **Step 2: Verify red.** Run the script checks and expect their assertions to fail before the script exists.
-- [ ] **Step 3: Implement.** Add explicit prereq checks, `uv export --locked --no-dev` to a generated ignored requirements file, `sam build`, `sam deploy` with capabilities and parameter overrides, output retrieval, Vite build, zip upload, deployment start/wait, and final URL. Keep secret content out of shell output. Document Google Cloud OAuth client setup, secret creation in the user's terminal, first deploy, verification, reruns, Free plan end date check, logs, and teardown. Add SAM template lint to CI with no AWS credentials.
-- [ ] **Step 4: Verify green.** Run script checks, `shellcheck` if installed, CI-equivalent backend/frontend checks, `sam validate --lint`, and a local dry run through the stubbed CLI; expect success. Confirm `.env.deploy` and generated requirements are ignored.
-- [ ] **Step 5: Commit.** `git commit -m "feat: add manual development deployment workflow"` with only Task 4 files.
+- [x] **Step 1: Write failing script checks.** Five offline checks cover missing secret, missing identity, wrong region, missing stack output, and a full simulated upload.
+- [x] **Step 2: Verify red.** All five checks failed before the deploy script existed.
+- [x] **Step 3: Implement.** Added prerequisite checks, locked requirements export, Linux container build, SAM deploy, output retrieval, Vite build, zipped Amplify upload, job polling, operator guide, and credential-free CI validation.
+- [x] **Step 4: Verify green.** Five deploy checks pass; `bash -n`, backend lint and 48 tests, frontend audit/lint/57 tests/typecheck/build, and SAM lint pass. `.env.deploy` and `backend/requirements.txt` are ignored. `shellcheck` is not installed.
+- [x] **Step 5: Commit.** `git commit -m "feat: add manual development deployment workflow"` with only Task 4 files.
 
 ### Task 5: Deploy and verify in AWS
 
