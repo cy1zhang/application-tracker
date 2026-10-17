@@ -26,7 +26,7 @@ def get_current_subject(request: Request) -> str:
         if isinstance(verified_subject, str) and verified_subject.strip():
             groups = claims.get("cognito:groups")
             if isinstance(groups, str):
-                groups = groups.strip("[]").replace(",", " ").split()
+                groups = groups.strip("[]").replace(",", " ").replace('"', "").split()
             if not isinstance(groups, (list, tuple)) or APPROVED_GROUP not in groups:
                 raise HTTPException(status_code=403, detail="Access denied")
             return verified_subject

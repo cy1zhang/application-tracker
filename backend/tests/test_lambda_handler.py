@@ -102,8 +102,9 @@ def test_signed_in_user_without_approval_cannot_create_application(lambda_tables
     assert lambda_tables.list(owner_id="user-a", limit=100, cursor=None).items == []
 
 
-def test_approved_group_claim_from_gateway_can_list_applications(lambda_tables) -> None:
-    response = invoke(api_event("GET", "/applications", subject="user-a", groups="[tracker-users]"))
+@pytest.mark.parametrize("groups", ["[tracker-users]", '["other-users", "tracker-users"]'])
+def test_approved_group_claim_from_gateway_can_list_applications(lambda_tables, groups) -> None:
+    response = invoke(api_event("GET", "/applications", subject="user-a", groups=groups))
 
     assert response["statusCode"] == 200
 
