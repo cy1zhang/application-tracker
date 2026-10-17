@@ -115,10 +115,15 @@ are included.
 
 3. In [Google Cloud Console](https://console.cloud.google.com/), create or
    select a project. Configure the Google Auth Platform consent screen and
-   create an OAuth client of type **Web application**. If the app is in testing
-   mode, add the two Google accounts used for owner-isolation verification as
-   test users. Add this **Authorized redirect URI**, replacing the account ID
-   with the value from the command below:
+   create an OAuth client of type **Web application**. For the consent screen's
+   Audience, **Internal** admits members of the project's Google organization,
+   while **External** admits Google accounts outside it. This app requests only
+   `openid`, `email`, and `profile`, so Google's External Testing test-user list
+   does not restrict sign-in; selected-person access would need a separate app
+   allowlist. If using Internal, both accounts for owner-isolation verification
+   must belong to that organization. See [Google's audience rules](https://support.google.com/cloud/answer/15549945?hl=en).
+   Add this **Authorized redirect URI**, replacing the account ID with the
+   value from the command below:
 
    ```bash
    aws sts get-caller-identity --profile application-tracker-bootstrap \

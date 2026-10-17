@@ -101,6 +101,8 @@
 
 **Interfaces:** Requires the user's Google Cloud OAuth web-client ID/secret stored in Secrets Manager and an alert email in ignored local config. Two consenting Google test accounts are required for the owner-isolation check.
 
+**Open decision (2026-10-17):** The user is considering Internal Google OAuth audience. Internal allows all members of the project's Google organization and excludes outside accounts; External Testing does not enforce a test-user list for this app's basic identity scopes. Confirm the desired audience and whether both test accounts are organization members before creating the OAuth client. A selected-person allowlist would require an additional app control.
+
 - [ ] **Step 1: Complete prerequisites.** Confirm AWS profile and region, SAM CLI, the account's Free plan end date, Google test users and OAuth redirect URI, and the named Secrets Manager JSON secret. Do not read or echo its value.
 - [ ] **Step 2: Deploy.** Prepare and inspect the first CloudFormation change set, obtain the user's approval to apply it, then run `./scripts/deploy.sh`. Record only nonsecret stack outputs and the hosted URL.
 - [ ] **Step 3: Verify.** Check 200 `/health`; 401 with absent/garbage tokens; Google login; owner A create versus owner B empty list and 404 for A's ID; edit/history/filters/stale edit; 429 under a controlled burst; $5 budget and 14-day logs. Report any checks that could not be performed.
