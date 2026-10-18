@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Response
 
-from app.api import applications
+from app.api import applications, gmail
 
 app = FastAPI(title="Application Tracker API")
 app.include_router(applications.router)
+app.include_router(gmail.router)
 
 
 @app.options("/{path:path}")

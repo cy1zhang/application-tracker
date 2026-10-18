@@ -7,6 +7,9 @@ from fastapi import Depends, HTTPException, Request
 from app.domain.gmail import TrackerIdentity
 from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb import DynamoApplicationRepository
+from app.repositories.dynamodb_gmail import DynamoGmailRepository
+from app.services.credential_crypto import CredentialCipher
+from app.services.google_oauth import GoogleOAuthClient
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
 APPROVED_GROUP = "tracker-users"
@@ -85,3 +88,23 @@ def get_current_identity(
         raise HTTPException(status_code=401, detail="Authentication required")
 
     return TrackerIdentity(owner_id=subject, username=username, email=email)
+
+
+def get_gmail_repository() -> DynamoGmailRepository:
+    return DynamoGmailRepository(
+        client=boto3.client("dynamodb"),
+        users_table=os.environ["USERS_TABLE"],
+        oauth_states_table=os.environ["OAUTH_STATES_TABLE"],
+    )
+
+
+def get_credential_cipher() -> CredentialCipher:
+    return CredentialCipher(boto3.client("kms"), os.environ["GMAIL_KMS_KEY_ARN"])
+
+
+def get_google_oauth_client() -> GoogleOAuthClient:
+    return GoogleOAuthClient(
+        boto3.client("secretsmanager"),
+        os.environ["GMAIL_OAUTH_SECRET_NAME"],
+        os.environ["GMAIL_REDIRECT_URI"],
+    )

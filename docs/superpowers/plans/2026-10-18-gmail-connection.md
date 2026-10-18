@@ -72,11 +72,11 @@
 
 **Interfaces:** `GET /gmail/connection` returns `GmailConnectionStatus`; `POST /gmail/connect` returns `{authorization_url}`; public `GET /oauth/google/callback` consumes state, exchanges the code on the server, uses Gmail `users.getProfile("me")` to verify the address, and redirects to the fixed Amplify origin with only `gmail=connected|failed`; `DELETE /gmail/connection` returns 204. Connect, status, and disconnect require the approved owner. The Google client reads a distinct Secrets Manager client ID/secret at runtime and never returns them. `POST /gmail/connect` uses `access_type=offline`, requests consent for a first connection, and uses a fixed redirect URI. Callback errors are sanitized; no external response body enters logs or API errors.
 
-- [ ] Write `test_gmail_api.py` and `test_google_oauth.py` cases for the authorized flow, 401/403 callers, public callback with state, missing/expired/replayed state, Google error, wrong mailbox, missing refresh token, same-mailbox reconnect, owner isolation, disconnect during consent, and redirect with no secret-bearing query values.
-- [ ] Run `uv run pytest tests/test_gmail_api.py tests/test_google_oauth.py -q`; confirm failures for the absent service/routes.
-- [ ] Implement the Google client, service, and routes using injected clients for offline tests.
-- [ ] Run the targeted tests and `uv run ruff check .`; confirm both pass.
-- [ ] Commit as `feat: add Gmail connection API`.
+- [x] Write `test_gmail_api.py` and `test_google_oauth.py` cases for the authorized flow, 401/403 callers, public callback with state, missing/expired/replayed state, Google error, wrong mailbox, missing refresh token, same-mailbox reconnect, owner isolation, disconnect during consent, and redirect with no secret-bearing query values.
+- [x] Run `uv run pytest tests/test_gmail_api.py tests/test_google_oauth.py -q`; confirm failures for the absent service/routes.
+- [x] Implement the Google client, service, and routes using injected clients for offline tests.
+- [x] Run the targeted tests and `uv run ruff check .`; confirm both pass.
+- [x] Commit as `feat: add Gmail connection API`.
 
 ### Task 5: Show connection controls in the dashboard
 
