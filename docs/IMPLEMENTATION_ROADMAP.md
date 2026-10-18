@@ -76,6 +76,8 @@ application with an audit history.
 
 ### 4. Add hosted authentication and deployment
 
+**Status: complete**
+
 - Define backend AWS resources with SAM/CloudFormation.
 - Add Cognito Google federation and JWT validation.
 - Derive ownership only from verified authentication claims.
@@ -85,6 +87,8 @@ application with an audit history.
 records.
 
 ### 5. Connect Gmail safely
+
+**Status: complete**
 
 - Implement the separate Gmail OAuth flow.
 - Store single-use OAuth state and encrypted refresh tokens.
@@ -148,7 +152,7 @@ injection, tools, or credentials.
 **Verification:** Every PRD acceptance criterion maps to an automated test or a
 documented controlled-deployment check.
 
-## Current implementation batch: milestones 0 and 1
+## Historical implementation batch: milestones 0 and 1
 
 ### Task 1: Baseline and roadmap
 

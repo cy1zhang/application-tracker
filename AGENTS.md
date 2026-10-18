@@ -9,8 +9,9 @@ and classify recruiting email. It is built in milestones defined in
 `docs/IMPLEMENTATION_ROADMAP.md`; **build only the active milestone and do not
 scaffold later subsystems early.** Milestones 0–3 (foundation, DynamoDB-backed
 application domain, manual tracker) are done. Milestone 4 hosted auth and
-deployment were live-verified. Milestone 5 Gmail connection code is in progress;
-Gmail import, SQS sync, and AI providers do not exist yet. The frontend is the manual-tracker dashboard: it
+deployment and milestone 5 Gmail connection were live-verified. Milestone 6
+deterministic email processing has not started; Gmail import, SQS sync, and AI
+providers do not exist yet. The frontend is the manual-tracker dashboard: it
 loads all of the owner's applications and filters, searches, and sorts them in
 the browser.
 
