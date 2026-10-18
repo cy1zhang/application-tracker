@@ -24,6 +24,8 @@ def main() -> None:
         client,
         applications_table=os.environ["APPLICATIONS_TABLE"],
         events_table=os.environ["EVENTS_TABLE"],
+        users_table=os.getenv("USERS_TABLE"),
+        oauth_states_table=os.getenv("OAUTH_STATES_TABLE"),
     )
     print("Local DynamoDB tables are ready.")
 

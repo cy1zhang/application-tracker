@@ -48,11 +48,11 @@
 
 **Interfaces:** `create_state(state_hash, owner_id, expected_email, expected_generation, expires_at)`, `consume_state(state_hash, now) -> OAuthState | None`, `get_connection(owner_id)`, `save_connection(owner_id, expected_generation, email, encrypted_token)`, `disconnect(owner_id)`, and `get_active(owner_id, expected_generation)`. `OAuthStates` is keyed by a SHA-256 hash of a 32-byte random state with a ten-minute TTL and atomic conditional delete. `Users` is keyed by owner ID and contains only the Gmail connection fields needed now; connect/reconnect and disconnect each advance a monotonic generation, and disconnect removes the encrypted token. Saving a callback is conditional on the generation recorded when consent started, so disconnect invalidates outstanding consent. DynamoDB TTL is cleanup only; expiry is checked on consume. A connected-user enumeration index belongs with the later scheduled-sync milestone.
 
-- [ ] Write `test_state_consumed_once`, `test_expired_state_rejected_before_ttl_cleanup`, `test_connection_is_owner_scoped`, `test_disconnect_advances_generation`, and `test_stale_generation_has_no_active_credential` in `test_gmail_repository.py`.
-- [ ] Run `uv run pytest tests/test_gmail_repository.py -q`; confirm the tests fail for the absent repository.
-- [ ] Add table definitions and repository methods with conditional writes.
-- [ ] Run the targeted tests and `uv run ruff check .`; confirm both pass.
-- [ ] Commit as `feat: persist Gmail OAuth state and connection generations`.
+- [x] Write `test_state_consumed_once`, `test_expired_state_rejected_before_ttl_cleanup`, `test_connection_is_owner_scoped`, `test_disconnect_advances_generation`, and `test_stale_generation_has_no_active_credential` in `test_gmail_repository.py`.
+- [x] Run `uv run pytest tests/test_gmail_repository.py -q`; confirm the tests fail for the absent repository.
+- [x] Add table definitions and repository methods with conditional writes.
+- [x] Run the targeted tests and `uv run ruff check .`; confirm both pass.
+- [x] Commit as `feat: persist Gmail OAuth state and connection generations`.
 
 ### Task 3: Encrypt stored refresh tokens
 
