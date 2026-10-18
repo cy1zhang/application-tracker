@@ -60,6 +60,11 @@ _ROLE = (
         r"\bthe\s+(?P<role>[a-z0-9 /+&-]{3,80}?)\s+(?:position|role)\b",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"\b(?:your|the)\s+(?P<role>[a-z0-9 /+&-]{3,80}?)\s+"
+        r"interview\s+(?:is\s+)?scheduled\b",
+        re.IGNORECASE,
+    ),
 )
 
 
@@ -93,11 +98,11 @@ def classify_message(
         return RuleDecision(outcome="ignored", reason="non_application_message")
 
     raw_matches = _stage_matches(message.text)
+    stage_content = message.text if raw_matches else message.subject
     if not raw_matches:
-        raw_matches = _stage_matches(message.subject)
-    stage_content = message.text if _stage_matches(message.text) else message.subject
+        raw_matches = _stage_matches(stage_content)
     found = [
-        (status, match.group(0))
+        (status, match)
         for status, match in raw_matches
         if not _is_hypothetical(stage_content, match.start())
     ]
@@ -118,8 +123,13 @@ def classify_message(
         return RuleDecision(outcome="review_required", reason="conflicting_requisitions")
 
     status = found[0][0] if found else None
-    evidence = found[0][1] if found else ""
-    season, year = next(iter(cycles)) if cycles else (None, None)
+    evidence = found[0][1].group(0) if found else ""
+    event_sentence = _sentence_at(stage_content, found[0][1].start()) if found else ""
+    event_cycles = {
+        (Season(season.lower()), int(year))
+        for season, year in _CYCLE.findall(event_sentence)
+    }
+    season, year = next(iter(event_cycles)) if event_cycles else (None, None)
     candidate = _match_application(message, applications, content, season, year)
 
     if status is None:
@@ -248,6 +258,13 @@ def _stage_matches(content: str) -> list[tuple[ApplicationStatus, re.Match[str]]
 def _is_hypothetical(content: str, position: int) -> bool:
     clause_start = max(content.rfind(char, 0, position) for char in ".!?\n") + 1
     return _HYPOTHETICAL.search(content[clause_start:position]) is not None
+
+
+def _sentence_at(content: str, position: int) -> str:
+    start = max(content.rfind(char, 0, position) for char in ".!?\n") + 1
+    ends = [content.find(char, position) for char in ".!?\n"]
+    end = min((value for value in ends if value >= 0), default=len(content))
+    return content[start:end]
 
 
 def _would_regress(

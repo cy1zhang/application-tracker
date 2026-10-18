@@ -193,6 +193,22 @@ def test_thread_link_with_two_named_roles_requires_review() -> None:
     assert decision.application_id is None
 
 
+def test_thread_link_cannot_take_role_from_unrelated_sentence() -> None:
+    decision = classify_message(
+        _message(
+            "Your Data Analyst interview is scheduled. "
+            "Please see the profile for Software Engineer Intern."
+        ),
+        [
+            _candidate(threads={"thread-1"}),
+            _candidate("app-2", role="Data Analyst"),
+        ],
+    )
+
+    assert decision.outcome == "review_required"
+    assert decision.application_id is None
+
+
 def test_unique_requisition_link_is_strong_match() -> None:
     decision = classify_message(
         _message("Req ID: REQ-123. We invite you to interview."),
@@ -263,6 +279,21 @@ def test_conflicting_subject_and_body_cycles_require_review() -> None:
     )
 
     assert decision.outcome == "review_required"
+
+
+def test_unrelated_promotion_does_not_set_application_cycle() -> None:
+    decision = classify_message(
+        _message(
+            "Acme invites you to interview for Software Engineer Intern. "
+            "Browse our Fall 2028 openings.",
+            subject="Interview invitation",
+        ),
+        [_candidate()],
+    )
+
+    assert decision.outcome == "applied"
+    assert decision.season is None
+    assert decision.year is None
 
 
 def test_unsupported_cycle_remains_unknown() -> None:
