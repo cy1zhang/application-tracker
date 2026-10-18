@@ -17,7 +17,7 @@ require_command() {
 # This file is local and git-ignored. It contains names and an alert address, not OAuth credentials.
 source .env.deploy
 
-for name in AWS_PROFILE AWS_REGION STACK_NAME BUDGET_EMAIL GOOGLE_SECRET_NAME; do
+for name in AWS_PROFILE AWS_REGION STACK_NAME BUDGET_EMAIL GOOGLE_SECRET_NAME GMAIL_SECRET_NAME; do
   [[ -n "${!name:-}" ]] || fail "set $name in .env.deploy"
 done
 [[ "$AWS_REGION" == us-east-1 ]] || fail "AWS_REGION must be us-east-1 for this stack"
@@ -33,6 +33,9 @@ aws sts get-caller-identity --query Account --output text >/dev/null 2>&1 ||
 aws secretsmanager describe-secret --secret-id "$GOOGLE_SECRET_NAME" \
   --query ARN --output text >/dev/null 2>&1 ||
   fail "Google OAuth secret is missing or inaccessible in us-east-1"
+aws secretsmanager describe-secret --secret-id "$GMAIL_SECRET_NAME" \
+  --query ARN --output text >/dev/null 2>&1 ||
+  fail "Gmail OAuth secret is missing or inaccessible in us-east-1"
 
 printf 'Building Lambda package in a Linux container...\n'
 (cd backend && uv export --locked --no-dev --format requirements.txt --output-file requirements.txt >/dev/null)
@@ -49,7 +52,7 @@ if ! sam deploy \
   --no-confirm-changeset \
   --no-fail-on-empty-changeset \
   --no-progressbar \
-  --parameter-overrides "BudgetEmail=$BUDGET_EMAIL" "GoogleOAuthSecretName=$GOOGLE_SECRET_NAME" \
+  --parameter-overrides "BudgetEmail=$BUDGET_EMAIL" "GoogleOAuthSecretName=$GOOGLE_SECRET_NAME" "GmailOAuthSecretName=$GMAIL_SECRET_NAME" \
   >.aws-sam/deploy.log 2>&1; then
   fail "SAM deploy failed; inspect the private .aws-sam/deploy.log on this laptop"
 fi

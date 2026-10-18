@@ -96,10 +96,10 @@
 
 **Interfaces:** SAM adds the `Users` and `OAuthStates` DynamoDB tables, customer-managed KMS key, scoped Lambda IAM for those tables, the KMS key, `AdminGetUser`, and the Gmail OAuth secret, a public exact callback route, and environment variables with resource names/ARNs and fixed URLs only. The new tables are deleted on stack teardown; application/history tables retain their existing policy. Document KMS key deletion behavior in the teardown guide. `GmailOAuthSecretName` names a separate manually created Secrets Manager secret; the deploy script checks its existence without reading its value. The Google Cloud setup uses the existing development project with a second web OAuth client, Gmail API enabled, read-only scope, a designated test user, and the exact API callback URI.
 
-- [ ] Add offline deploy tests for missing Gmail secret, new parameter wiring, and safe output; run `python3 scripts/test_deploy.py -q` and confirm the new tests fail.
-- [ ] Add the SAM resources, scoped permissions, deploy-script wiring, and operator documentation.
-- [ ] Run `sam validate --template-file infra/template.yaml --lint`, container build, offline deploy tests, backend tests/Ruff, and frontend install/audit/lint/tests/typecheck/build; confirm all pass.
-- [ ] Commit verified infrastructure and documentation changes, leaving the branch clean for review.
+- [x] Add offline deploy tests for missing Gmail secret, new parameter wiring, and safe output; run `python3 scripts/test_deploy.py -q` and confirm the new tests fail.
+- [x] Add the SAM resources, scoped permissions, deploy-script wiring, and operator documentation.
+- [x] Run `sam validate --template-file infra/template.yaml --lint`, container build, offline deploy tests, backend tests/Ruff, and frontend install/audit/lint/tests/typecheck/build; confirm all pass.
+- [x] Commit verified infrastructure and documentation changes, leaving the branch clean for review.
 - [ ] Prepare and inspect a CloudFormation change set and document the new KMS cost; obtain deployment approval before applying it. Do not read or print secret values.
 - [ ] After manual Google setup and approved deployment, verify no-token 401s, public callback handling, approved test-user connect/status/disconnect, mismatched-mailbox rejection, absence of token material in URLs/logs/responses, and stale-generation rejection. Record any unavailable live check precisely.
 - [ ] Commit the live verification result, leave a clean branch, and request read-only review before asking to merge.

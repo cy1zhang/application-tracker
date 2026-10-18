@@ -29,6 +29,7 @@ class DeployScriptTests(unittest.TestCase):
             "AWS_PROFILE=test-profile\nAWS_REGION=us-east-1\n"
             "STACK_NAME=app-tracker-dev\nBUDGET_EMAIL=test@example.invalid\n"
             "GOOGLE_SECRET_NAME=test/google-oauth\n"
+            "GMAIL_SECRET_NAME=test/gmail-oauth\n"
         )
         self.bin = self.root / "bin"
         self.bin.mkdir()
@@ -38,7 +39,9 @@ class DeployScriptTests(unittest.TestCase):
             'echo "aws $*" >> "$CALLS"\n'
             'case "$1 $2" in\n'
             '  "sts get-caller-identity") [ "${FAIL_IDENTITY:-}" ] && exit 1; echo 123456789012;;\n'
-            '  "secretsmanager describe-secret") [ "${FAIL_SECRET:-}" ] && exit 1; echo arn:aws:secretsmanager:us-east-1:123456789012:secret:test;;\n'
+            '  "secretsmanager describe-secret")\n'
+            '    case "$*" in *test/gmail-oauth*) [ "${FAIL_GMAIL_SECRET:-}" ] && exit 1;; esac\n'
+            '    [ "${FAIL_SECRET:-}" ] && exit 1; echo arn:aws:secretsmanager:us-east-1:123456789012:secret:test;;\n'
             '  "cloudformation describe-stacks")\n'
             '    case "$*" in\n'
             '      *ApiUrl*) key=ApiUrl;; *CognitoAuthority*) key=CognitoAuthority;;\n'
@@ -107,6 +110,11 @@ class DeployScriptTests(unittest.TestCase):
         self.assert_no_deploy(result)
         self.assertIn("Google OAuth secret", result.stderr)
 
+    def test_missing_gmail_secret_stops_before_deploy(self):
+        result = self.run_deploy(FAIL_GMAIL_SECRET="1")
+        self.assert_no_deploy(result)
+        self.assertIn("Gmail OAuth secret", result.stderr)
+
     def test_missing_output_stops_before_frontend_upload(self):
         result = self.run_deploy(MISSING_OUTPUT="CognitoClientId")
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -122,7 +130,11 @@ class DeployScriptTests(unittest.TestCase):
         self.assertIn("sam build --use-container", calls)
         self.assertIn("amplify create-deployment", calls)
         self.assertIn("amplify start-deployment", calls)
+        self.assertIn("GmailOAuthSecretName=test/gmail-oauth", calls)
+        self.assertIn("GoogleOAuthSecretName=test/google-oauth", calls)
+        self.assertNotIn("get-secret-value", calls)
         self.assertIn("https://main.example.invalid", result.stdout)
+        self.assertNotIn("test/gmail-oauth", result.stdout)
 
 
 class DeploymentGuideTests(unittest.TestCase):

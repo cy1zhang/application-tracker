@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Annotated, Any
 
 import boto3
@@ -102,9 +103,20 @@ def get_credential_cipher() -> CredentialCipher:
     return CredentialCipher(boto3.client("kms"), os.environ["GMAIL_KMS_KEY_ARN"])
 
 
-def get_google_oauth_client() -> GoogleOAuthClient:
+def get_gmail_redirect_uri(request: Request) -> str:
+    context = request.scope.get("aws.event", {}).get("requestContext", {})
+    api_id = context.get("apiId")
+    if not isinstance(api_id, str) or re.fullmatch(r"[a-z0-9]+", api_id) is None:
+        raise RuntimeError("Gmail OAuth requires an API Gateway request")
+    return (
+        f"https://{api_id}.execute-api.{os.environ['AWS_REGION']}"
+        ".amazonaws.com/oauth/google/callback"
+    )
+
+
+def get_google_oauth_client(request: Request) -> GoogleOAuthClient:
     return GoogleOAuthClient(
         boto3.client("secretsmanager"),
         os.environ["GMAIL_OAUTH_SECRET_NAME"],
-        os.environ["GMAIL_REDIRECT_URI"],
+        get_gmail_redirect_uri(request),
     )

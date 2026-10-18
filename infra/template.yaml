@@ -9,6 +9,9 @@ Parameters:
   GoogleOAuthSecretName:
     Type: String
     Description: Secrets Manager JSON secret with client_id and client_secret
+  GmailOAuthSecretName:
+    Type: String
+    Description: Separate Secrets Manager JSON secret for Gmail consent
   ReserveConcurrency:
     Type: String
     Default: 'false'
@@ -65,6 +68,49 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: owner_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: owner_id
+          KeyType: HASH
+
+  OAuthStatesTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: state_hash
+          AttributeType: S
+      KeySchema:
+        - AttributeName: state_hash
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  GmailKmsKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Delete
+    Properties:
+      Description: Encrypt Application Tracker Gmail refresh tokens
+      PendingWindowInDays: 7
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableAccountIAM
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
 
   UserPool:
     Type: AWS::Cognito::UserPool
@@ -184,6 +230,12 @@ Resources:
         Variables:
           APPLICATIONS_TABLE: !Ref ApplicationsTable
           EVENTS_TABLE: !Ref EventsTable
+          USERS_TABLE: !Ref UsersTable
+          OAUTH_STATES_TABLE: !Ref OAuthStatesTable
+          COGNITO_USER_POOL_ID: !Ref UserPool
+          GMAIL_KMS_KEY_ARN: !GetAtt GmailKmsKey.Arn
+          GMAIL_OAUTH_SECRET_NAME: !Ref GmailOAuthSecretName
+          FRONTEND_URL: !Sub 'https://main.${AmplifyApp.DefaultDomain}'
       Policies:
         - Version: '2012-10-17'
           Statement:
@@ -196,6 +248,21 @@ Resources:
                 - !GetAtt ApplicationsTable.Arn
                 - !GetAtt EventsTable.Arn
                 - !Sub '${EventsTable.Arn}/index/application-events-index'
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+              Resource: !GetAtt UsersTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:PutItem, dynamodb:DeleteItem]
+              Resource: !GetAtt OAuthStatesTable.Arn
+            - Effect: Allow
+              Action: cognito-idp:AdminGetUser
+              Resource: !GetAtt UserPool.Arn
+            - Effect: Allow
+              Action: [kms:GenerateDataKey, kms:Decrypt]
+              Resource: !GetAtt GmailKmsKey.Arn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GmailOAuthSecretName}-*'
       Events:
         Health:
           Type: HttpApi
@@ -212,6 +279,15 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /{proxy+}
             Method: OPTIONS
+            PayloadFormatVersion: '2.0'
+            Auth:
+              Authorizer: NONE
+        GmailCallback:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /oauth/google/callback
+            Method: GET
             PayloadFormatVersion: '2.0'
             Auth:
               Authorizer: NONE

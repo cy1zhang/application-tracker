@@ -2,9 +2,9 @@
 
 The project contains the manual tracker: a FastAPI backend persisting to
 DynamoDB and a React/TypeScript dashboard for creating, editing, filtering,
-and inspecting applications. Hosted Google authentication is implemented for
-milestone 4, but the first AWS deployment still needs live verification.
-Gmail access and AI providers are later milestones.
+and inspecting applications. Hosted Google sign-in and the manual tracker were
+verified in the development deployment. Milestone 5 adds a separate Gmail
+connection; importing email and AI providers are later milestones.
 
 ## Prerequisites
 
@@ -88,11 +88,13 @@ not add a request header that lets callers choose an owner.
 ## Deploying the development app
 
 The manual deploy targets one SAM stack, `app-tracker-dev`, in `us-east-1`.
-It creates two DynamoDB tables, a FastAPI Lambda and HTTP API, a Cognito user
+It creates four DynamoDB tables, a FastAPI Lambda and HTTP API, a Cognito user
 pool with Google sign-in, an Amplify Hosting app, a 14-day Lambda log group,
-and a $5 monthly budget. The existing separate $1 budget remains in place.
-The Google OAuth secret is a separate Secrets Manager resource and has a small
-monthly charge. No automatic deploys, Gmail scopes, or production environment
+a customer-managed KMS key for Gmail credentials, and a $5 monthly budget.
+The [KMS key currently costs $1 per month](https://aws.amazon.com/kms/pricing/) while active; the budget sends alerts
+and does not cap spending. The existing separate $1 budget remains in place.
+The two Google OAuth secrets are separate Secrets Manager resources and have
+their own small monthly charges. No automatic deploys or production environment
 are included.
 
 ### One-time setup
@@ -164,9 +166,45 @@ are included.
    Cognito provider update as well as a new secret value; simply rerunning an
    unchanged stack does not refresh the dynamic reference.
 
-5. Copy `.env.deploy.example` to `.env.deploy`, then edit the AWS profile,
-   region, stack name, alert email, and secret name. `.env.deploy` is ignored by
-   Git. It contains no credentials or OAuth secret values.
+5. For Gmail consent, enable the Gmail API in the same Google Cloud development
+   project. On the Google Auth Platform consent screen, add only
+   `https://www.googleapis.com/auth/gmail.readonly` under Data Access. Keep the
+   audience **External / Testing** and add the designated Gmail account as a
+   test user. This account must have the same email address as its Cognito
+   sign-in. Create a **second** Web application OAuth client for Gmail, separate
+   from the Cognito sign-in client. Set its authorized redirect URI to the
+   existing stack's `ApiUrl` followed by `/oauth/google/callback`:
+
+   ```bash
+   aws cloudformation describe-stacks --stack-name app-tracker-dev \
+     --profile application-tracker-bootstrap --region us-east-1 \
+     --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue | [0]' \
+     --output text
+   # Redirect URI: https://<api-id>.execute-api.us-east-1.amazonaws.com/oauth/google/callback
+   ```
+
+   Store this second client's ID and secret under a different Secrets Manager
+   name. Run the prompt in your own terminal; it does not print the secret or
+   put it in shell history:
+
+   ```bash
+   python3 -c 'import getpass,json,sys; print("Gmail client ID: ", end="", file=sys.stderr, flush=True); cid=input(); sec=getpass.getpass("Gmail client secret: "); print(json.dumps({"client_id":cid,"client_secret":sec}))' |
+     aws secretsmanager create-secret \
+       --name app-tracker/dev/gmail-oauth \
+       --secret-string file:///dev/stdin \
+       --profile application-tracker-bootstrap --region us-east-1 \
+       --query ARN --output text
+   ```
+
+   [Google classifies Gmail read-only access as restricted](https://developers.google.com/workspace/gmail/api/auth/scopes).
+   External Testing grants with this scope normally expire after seven days;
+   reconnect when authorization expires. Public Gmail access requires a
+   separate Google verification and security review before launch.
+
+6. Copy `.env.deploy.example` to `.env.deploy`, then edit the AWS profile,
+   region, stack name, alert email, sign-in secret name, and Gmail secret name.
+   `.env.deploy` is ignored by Git. It contains no credentials or OAuth secret
+   values.
 
    ```bash
    cp .env.deploy.example .env.deploy
@@ -175,7 +213,7 @@ are included.
 ### Build and deploy
 
 From the repository root, run `./scripts/deploy.sh`. It checks Docker, the AWS
-identity, region, and named secret before changing the stack. It exports the
+identity, region, and both named secrets before changing the stack. It exports the
 locked backend dependencies to an ignored `backend/requirements.txt`, builds
 the Lambda in a Linux container, and deploys the SAM stack. It then reads the
 public stack outputs, builds the Vite frontend with the API and Cognito URLs,
@@ -188,8 +226,8 @@ The first deployment should be reviewed as a CloudFormation change set before
 execution. The driver can prepare one with `sam deploy --no-execute-changeset`
 using the built template and the same parameters from `.env.deploy`, inspect
 the proposed resources, then run `./scripts/deploy.sh` after approval. Do not
-put the Google secret value in a SAM parameter; pass only its Secrets Manager
-name. `sam validate --template-file infra/template.yaml --lint` and
+put either Google secret value in a SAM parameter; pass only the Secrets Manager
+names. `sam validate --template-file infra/template.yaml --lint` and
 `python3 scripts/test_deploy.py -q` are offline checks.
 
 ### Approve Google accounts
@@ -228,11 +266,27 @@ under their own Cognito subject.
   return 503 from Lambda throttling first.
 - Confirm the $5 stack budget and its alert email, the 14-day retention on
   `/aws/lambda/app-tracker-dev-api`, and that no request bodies appear in logs.
+- Before approving a Gmail deployment, review the new `Users` and `OAuthStates`
+  tables, KMS key, Lambda permissions, and public exact callback route in the
+  CloudFormation change set. The callback is public so Google can return to it;
+  its single-use state binds the result to the original owner.
+- After deployment, `GET <ApiUrl>/gmail/connection` and `POST
+  <ApiUrl>/gmail/connect` must return 401 without a token. Sign in as an
+  approved designated test user, connect the same Gmail address, confirm the
+  status shows that address, then disconnect and confirm the status is empty.
+  A different mailbox must fail. Browser URLs after the callback, API responses,
+  and Lambda logs must not contain authorization codes, access tokens, refresh
+  tokens, or client secrets. The Google callback URL necessarily receives a
+  short-lived authorization code before redirecting to the clean Amplify URL.
+  This milestone does not read messages or run a scheduler.
 
 For a repeat deploy, run the same script after making code changes. Lambda
 logs are in CloudWatch Logs. To remove the stack, run `sam delete --stack-name
 app-tracker-dev --region us-east-1 --profile application-tracker-bootstrap`.
-The two DynamoDB tables have `DeletionPolicy: Retain`; deleting the stack does
-not delete their data. The separate Secrets Manager secret and $1 budget also
-remain until you explicitly remove them. A later fresh stack will create new
-tables rather than automatically reuse retained ones.
+The Applications and Events tables have `DeletionPolicy: Retain`; deleting the
+stack does not delete their data. The Gmail `Users` and `OAuthStates` tables are
+deleted with the stack. The KMS key enters a seven-day pending-deletion period
+and cannot decrypt credentials during that period. Both separate Secrets
+Manager secrets and the $1 budget remain until you explicitly remove them. A
+later fresh stack will create new tables rather than automatically reuse
+retained ones.

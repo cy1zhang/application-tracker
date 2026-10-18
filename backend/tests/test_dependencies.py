@@ -2,7 +2,11 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app.api.dependencies import get_current_identity, get_current_subject
+from app.api.dependencies import (
+    get_current_identity,
+    get_current_subject,
+    get_gmail_redirect_uri,
+)
 
 
 def request_from(host: str) -> Request:
@@ -141,3 +145,18 @@ def test_gmail_identity_rejects_unverified_email(monkeypatch) -> None:
         get_current_identity(request, get_current_subject(request), client)
 
     assert error.value.status_code == 401
+
+
+def test_gmail_redirect_uri_uses_api_gateway_id_not_host_header(monkeypatch) -> None:
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    request = Request(
+        {
+            "type": "http",
+            "headers": [(b"host", b"attacker.example.test")],
+            "aws.event": {"requestContext": {"apiId": "abc123"}},
+        }
+    )
+
+    assert get_gmail_redirect_uri(request) == (
+        "https://abc123.execute-api.us-east-1.amazonaws.com/oauth/google/callback"
+    )
