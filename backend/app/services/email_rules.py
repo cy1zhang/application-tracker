@@ -125,11 +125,12 @@ def classify_message(
     status = found[0][0] if found else None
     evidence = found[0][1].group(0) if found else ""
     event_sentence = _sentence_at(stage_content, found[0][1].start()) if found else ""
-    event_cycles = {
-        (Season(season.lower()), int(year))
-        for season, year in _CYCLE.findall(event_sentence)
-    }
-    season, year = next(iter(event_cycles)) if event_cycles else (None, None)
+    event_roles = _explicit_roles(event_sentence)
+    season, year = (
+        _cycle_for_role(event_sentence, next(iter(event_roles)))
+        if len(event_roles) == 1
+        else (None, None)
+    )
     candidate = _match_application(message, applications, content, season, year)
 
     if status is None:
@@ -155,6 +156,13 @@ def classify_message(
             season=season,
             year=year,
             requisition_id=requisitions[0] if requisitions else None,
+            evidence=evidence,
+        )
+    if event_roles != {(candidate.application.role or "").casefold()}:
+        return RuleDecision(
+            outcome="review_required",
+            reason="ambiguous_event_role",
+            status=status,
             evidence=evidence,
         )
 
@@ -261,10 +269,20 @@ def _is_hypothetical(content: str, position: int) -> bool:
 
 
 def _sentence_at(content: str, position: int) -> str:
-    start = max(content.rfind(char, 0, position) for char in ".!?\n") + 1
-    ends = [content.find(char, position) for char in ".!?\n"]
+    start = max(content.rfind(char, 0, position) for char in ".!?;\n") + 1
+    ends = [content.find(char, position) for char in ".!?;\n"]
     end = min((value for value in ends if value >= 0), default=len(content))
     return content[start:end]
+
+
+def _cycle_for_role(content: str, role: str) -> tuple[Season | None, int | None]:
+    match = re.search(
+        rf"\bfor\s+{re.escape(role)}\s+in\s+"
+        rf"{_CYCLE.pattern}",
+        content,
+        re.IGNORECASE,
+    )
+    return (Season(match.group(1).lower()), int(match.group(2))) if match else (None, None)
 
 
 def _would_regress(

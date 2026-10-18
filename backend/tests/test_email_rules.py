@@ -154,14 +154,20 @@ def test_new_body_event_takes_precedence_over_old_thread_subject() -> None:
     assert decision.status == ApplicationStatus.INTERVIEWING
 
 
-def test_unique_thread_link_is_strong_match() -> None:
+def test_unique_thread_link_still_needs_event_role() -> None:
     decision = classify_message(
         _message("We invite you to interview."),
         [_candidate(threads={"thread-1"}), _candidate("app-2", role="Analyst")],
     )
 
-    assert decision.outcome == "applied"
-    assert decision.application_id == "app-1"
+    assert decision.outcome == "review_required"
+
+    named_role = classify_message(
+        _message("We invite you to interview for Software Engineer Intern."),
+        [_candidate(threads={"thread-1"}), _candidate("app-2", role="Analyst")],
+    )
+    assert named_role.outcome == "applied"
+    assert named_role.application_id == "app-1"
 
 
 def test_thread_link_cannot_override_explicit_different_role() -> None:
@@ -209,15 +215,37 @@ def test_thread_link_cannot_take_role_from_unrelated_sentence() -> None:
     assert decision.application_id is None
 
 
-def test_unique_requisition_link_is_strong_match() -> None:
+def test_unique_requisition_link_still_needs_event_role() -> None:
     decision = classify_message(
         _message("Req ID: REQ-123. We invite you to interview."),
         [_candidate(reqs={"REQ-123"}), _candidate("app-2", role="Analyst")],
     )
 
-    assert decision.outcome == "applied"
-    assert decision.application_id == "app-1"
-    assert decision.requisition_id == "REQ-123"
+    assert decision.outcome == "review_required"
+
+    named_role = classify_message(
+        _message(
+            "Req ID: REQ-123. We invite you to interview for Software Engineer Intern."
+        ),
+        [_candidate(reqs={"REQ-123"}), _candidate("app-2", role="Analyst")],
+    )
+    assert named_role.outcome == "applied"
+    assert named_role.application_id == "app-1"
+    assert named_role.requisition_id == "REQ-123"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Acme invites you to interview regarding your Data Analyst application.",
+        "Acme invites you to interview with our Data Analyst team.",
+    ],
+)
+def test_linked_event_with_unrecognized_role_context_requires_review(text) -> None:
+    decision = classify_message(_message(text), [_candidate(threads={"thread-1"})])
+
+    assert decision.outcome == "review_required"
+    assert decision.application_id is None
 
 
 def test_company_alone_does_not_select_among_roles() -> None:
@@ -286,6 +314,21 @@ def test_unrelated_promotion_does_not_set_application_cycle() -> None:
         _message(
             "Acme invites you to interview for Software Engineer Intern. "
             "Browse our Fall 2028 openings.",
+            subject="Interview invitation",
+        ),
+        [_candidate()],
+    )
+
+    assert decision.outcome == "applied"
+    assert decision.season is None
+    assert decision.year is None
+
+
+def test_unrelated_cycle_in_same_sentence_does_not_set_application_cycle() -> None:
+    decision = classify_message(
+        _message(
+            "Acme invites you to interview for Software Engineer Intern; "
+            "browse our Fall 2028 openings.",
             subject="Interview invitation",
         ),
         [_candidate()],
