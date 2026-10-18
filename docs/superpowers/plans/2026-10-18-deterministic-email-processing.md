@@ -74,9 +74,11 @@
 - [x] Run `uv run pytest tests/test_email_processing.py -q`; confirm failure for the absent service.
 - [x] Implement the small orchestration function and document the future Milestone 8 worker handoff.
 - [x] Run backend lint/tests and `git diff --check`; confirm pass.
-- [ ] Commit the completed milestone as a focused implementation commit, then request read-only branch review before any merge.
+- [x] Commit the completed milestone as a focused implementation commit, then request read-only branch review before any merge.
 
 ## Open decisions
 
+- The read-only review reproduced three unsafe automatic-update paths (two roles in a linked thread, conflicting subject/body cycles, and an HTML `gmail_quote` containing an old event) plus an inline attachment-disposition parsing gap. Focused regression tests and fixes were added; the reviewer will recheck the correction commit before handoff.
 - No live Gmail read or deployment is part of this milestone. The user asked to reduce manual live testing; synthetic offline tests are the verification gate here.
+- Until Milestone 7 adds field-specific correction timestamps, the processor conservatively sends evidence older than the application's last edit to review, even when that edit changed an unrelated field. This can reduce automatic coverage but prevents an older email from undoing a manual correction.
 - The future AI provider choice will be revisited around Milestone 9 for the user's open-weight preference. No model infrastructure is added now.

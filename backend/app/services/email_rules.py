@@ -103,10 +103,11 @@ def classify_message(
     ]
     if raw_matches and not found:
         return RuleDecision(outcome="ignored", reason="hypothetical_event")
-    cycle_text = message.text if _CYCLE.search(message.text) else message.subject
+    if len(_explicit_roles(message.text)) > 1:
+        return RuleDecision(outcome="review_required", reason="conflicting_roles")
     cycles = {
         (Season(season.lower()), int(year))
-        for season, year in _CYCLE.findall(cycle_text)
+        for season, year in _CYCLE.findall(content)
     }
     requisitions = list(dict.fromkeys(_REQUISITION.findall(content)))
     if len(found) > 1 and len({status for status, _ in found}) > 1:

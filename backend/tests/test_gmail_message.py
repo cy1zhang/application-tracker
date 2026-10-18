@@ -90,6 +90,19 @@ def test_html_quoted_block_is_excluded() -> None:
     assert parse_gmail_message(message).text == "We invite you to interview."
 
 
+def test_gmail_quote_container_is_excluded() -> None:
+    message = _message(
+        _part(
+            '<div>Thanks for the update.</div><div class="gmail_quote">'
+            "<div>Acme invites you to interview for Software Engineer Intern.</div>"
+            "</div>",
+            "text/html",
+        )
+    )
+
+    assert parse_gmail_message(message).text == "Thanks for the update."
+
+
 def test_empty_plain_part_falls_back_to_html() -> None:
     message = _message(
         {
@@ -123,6 +136,25 @@ def test_external_attachment_is_never_fetched() -> None:
                     "filename": "secret.txt",
                     "body": {"attachmentId": "external-attachment"},
                 },
+            ],
+        }
+    )
+
+    assert parse_gmail_message(message).text == "Visible message"
+
+
+def test_content_disposition_attachment_is_excluded_without_filename() -> None:
+    message = _message(
+        {
+            "mimeType": "multipart/mixed",
+            "parts": [
+                {
+                    **_part("ATTACHMENT SECRET"),
+                    "headers": [
+                        {"name": "Content-Disposition", "value": "attachment"}
+                    ],
+                },
+                _part("Visible message"),
             ],
         }
     )

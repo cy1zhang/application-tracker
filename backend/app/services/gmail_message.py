@@ -26,23 +26,40 @@ class ParsedGmailMessage:
 class _VisibleHTML(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self._hidden = 0
+        self._hidden_tags: list[str] = []
         self._chunks: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in {"script", "style", "head", "template", "blockquote"}:
-            self._hidden += 1
-        elif not self._hidden and tag in {"br", "div", "p", "li", "tr"}:
+        if self._hidden_tags:
+            if tag not in {"br", "img", "hr", "meta", "input", "link"}:
+                self._hidden_tags.append(tag)
+            return
+        is_quote = any(
+            name.lower() == "class" and value and "gmail_quote" in value.split()
+            for name, value in attrs
+        )
+        if tag in {"script", "style", "head", "template", "blockquote"} or is_quote:
+            self._hidden_tags.append(tag)
+        elif tag in {"br", "div", "p", "li", "tr"}:
             self._chunks.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in {"script", "style", "head", "template", "blockquote"}:
-            self._hidden = max(0, self._hidden - 1)
-        elif not self._hidden and tag in {"div", "p", "li", "tr"}:
+        if self._hidden_tags:
+            if tag in self._hidden_tags:
+                while self._hidden_tags.pop() != tag:
+                    pass
+            return
+        if tag in {"div", "p", "li", "tr"}:
+            self._chunks.append("\n")
+
+    def handle_startendtag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        if not self._hidden_tags and tag == "br":
             self._chunks.append("\n")
 
     def handle_data(self, data: str) -> None:
-        if not self._hidden:
+        if not self._hidden_tags:
             self._chunks.append(data)
 
     def visible_text(self) -> str:
@@ -116,6 +133,20 @@ def _collect_text(
         if seen > 100 or depth > 12 or not isinstance(part, dict):
             raise ValueError
         if part.get("filename"):
+            continue
+        headers = part.get("headers", [])
+        if not isinstance(headers, list):
+            raise TypeError
+        if any(
+            isinstance(header, dict)
+            and str(header.get("name", "")).lower() == "content-disposition"
+            and re.match(
+                r"\s*attachment(?:\s*;|\s*$)",
+                str(header.get("value", "")),
+                re.IGNORECASE,
+            )
+            for header in headers
+        ):
             continue
         body = part.get("body", {})
         if not isinstance(body, dict):
