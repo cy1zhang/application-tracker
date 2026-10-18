@@ -60,11 +60,11 @@
 
 **Interfaces:** `encrypt_refresh_token(owner_id, plaintext) -> EncryptedCredential` and `decrypt_refresh_token(owner_id, encrypted) -> str`. Generate an AES-256 data key through KMS with encryption context `{owner_id, credential_type: gmail_refresh_token}`; use AES-GCM with a fresh nonce to encrypt the token and store ciphertext, nonce, and encrypted data key. Decrypt with the same context. No plaintext token or data key appears in exceptions or logs.
 
-- [ ] Write `test_refresh_token_round_trip`, `test_wrong_owner_cannot_decrypt`, `test_tampered_ciphertext_fails`, and `test_kms_failure_has_no_secret_in_error` with a fake KMS client.
-- [ ] Run `uv run pytest tests/test_credential_crypto.py -q`; confirm failures for the absent cipher.
-- [ ] Add the cryptography dependency and envelope-encryption implementation.
-- [ ] Run the targeted tests and `uv run ruff check .`; confirm both pass.
-- [ ] Commit as `feat: envelope-encrypt Gmail refresh tokens`.
+- [x] Write `test_refresh_token_round_trip`, `test_wrong_owner_cannot_decrypt`, `test_tampered_ciphertext_fails`, and `test_kms_failure_has_no_secret_in_error` with a fake KMS client.
+- [x] Run `uv run pytest tests/test_credential_crypto.py -q`; confirm failures for the absent cipher.
+- [x] Add the cryptography dependency and envelope-encryption implementation.
+- [x] Run the targeted tests and `uv run ruff check .`; confirm both pass.
+- [x] Commit as `feat: envelope-encrypt Gmail refresh tokens`.
 
 ### Task 4: Complete server-side Gmail consent and disconnect
 
