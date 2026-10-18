@@ -1,8 +1,10 @@
 import os
+from typing import Annotated, Any
 
 import boto3
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 
+from app.domain.gmail import TrackerIdentity
 from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb import DynamoApplicationRepository
 
@@ -47,3 +49,39 @@ def get_application_repository() -> ApplicationRepository:
         applications_table=os.environ["APPLICATIONS_TABLE"],
         events_table=os.environ["EVENTS_TABLE"],
     )
+
+
+def get_cognito_client() -> Any:
+    return boto3.client("cognito-idp")
+
+
+def get_current_identity(
+    request: Request,
+    subject: Annotated[str, Depends(get_current_subject)],
+    cognito_client: Annotated[Any, Depends(get_cognito_client)],
+) -> TrackerIdentity:
+    claims = (
+        request.scope.get("aws.event", {})
+        .get("requestContext", {})
+        .get("authorizer", {})
+        .get("jwt", {})
+        .get("claims", {})
+    )
+    username = claims.get("username")
+    if not isinstance(username, str) or not username.strip():
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user = cognito_client.admin_get_user(
+        UserPoolId=os.environ["COGNITO_USER_POOL_ID"], Username=username
+    )
+    attributes = {item["Name"]: item["Value"] for item in user["UserAttributes"]}
+    email = attributes.get("email")
+    if (
+        attributes.get("sub") != subject
+        or attributes.get("email_verified") != "true"
+        or not isinstance(email, str)
+        or not email.strip()
+    ):
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    return TrackerIdentity(owner_id=subject, username=username, email=email)

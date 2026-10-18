@@ -36,11 +36,11 @@
 
 **Interfaces:** `GmailConnectionStatus` exposes only `connected` and `email`. `get_current_identity(request) -> TrackerIdentity` supplies `owner_id`, Cognito `username`, and verified sign-in email. In Lambda, resolve the email with `AdminGetUser` using the verified JWT username and require its `sub` to equal the verified JWT `sub`; local tests inject this dependency. Do not accept an email or owner from a request body/header.
 
-- [ ] Write `test_gmail_identity_from_approved_claims`, `test_gmail_identity_rejects_missing_username`, `test_gmail_identity_rejects_mismatched_sub`, and `test_gmail_identity_rejects_unverified_email` with synthetic Cognito responses.
-- [ ] Run `uv run pytest tests/test_dependencies.py tests/test_gmail_models.py -q` from `backend/`; confirm the new tests fail for the absent interface.
-- [ ] Add the models and `get_current_identity` using the existing owner dependency and injected Cognito client.
-- [ ] Run the targeted tests and `uv run ruff check .`; confirm both pass.
-- [ ] Commit as `feat: bind Gmail identity to verified Cognito user`.
+- [x] Write `test_gmail_identity_from_approved_claims`, `test_gmail_identity_rejects_missing_username`, `test_gmail_identity_rejects_mismatched_sub`, and `test_gmail_identity_rejects_unverified_email` with synthetic Cognito responses.
+- [x] Run `uv run pytest tests/test_dependencies.py tests/test_gmail_models.py -q` from `backend/`; confirm the new tests fail for the absent interface.
+- [x] Add the models and `get_current_identity` using the existing owner dependency and injected Cognito client.
+- [x] Run the targeted tests and `uv run ruff check .`; confirm both pass.
+- [x] Commit as `feat: bind Gmail identity to verified Cognito user`.
 
 ### Task 2: Store single-use states and generation-gated connections
 
