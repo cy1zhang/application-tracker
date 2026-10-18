@@ -4,7 +4,10 @@ import { makeApplication } from "../test/fixtures";
 import {
   ApiError,
   createApplication,
+  disconnectGmail,
+  getGmailConnection,
   listAllApplications,
+  startGmailConnection,
   updateApplication,
 } from "./client";
 
@@ -106,4 +109,26 @@ test("explains when the server cannot be reached", async () => {
     status: 0,
     message: "Could not reach the server. Is the backend running?",
   });
+});
+
+test("Gmail API returns status and authorization URL without credentials", async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(fakeResponse({ connected: false, email: null }))
+    .mockResolvedValueOnce(fakeResponse({ authorization_url: "https://google.test/consent" }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(getGmailConnection()).resolves.toEqual({ connected: false, email: null });
+  await expect(startGmailConnection()).resolves.toEqual({
+    authorization_url: "https://google.test/consent",
+  });
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+    "/api/gmail/connection",
+    "/api/gmail/connect",
+  ]);
+});
+
+test("Gmail disconnect accepts an empty 204 response", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 204 }));
+
+  await expect(disconnectGmail()).resolves.toBeUndefined();
 });

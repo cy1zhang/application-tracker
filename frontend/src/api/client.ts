@@ -47,6 +47,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(response.status, await errorMessage(response));
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -104,4 +105,23 @@ export function updateApplication(
     method: "PATCH",
     body: JSON.stringify(patch),
   });
+}
+
+export interface GmailConnectionStatus {
+  connected: boolean;
+  email: string | null;
+}
+
+export function getGmailConnection(): Promise<GmailConnectionStatus> {
+  return request<GmailConnectionStatus>("/gmail/connection");
+}
+
+export function startGmailConnection(): Promise<{ authorization_url: string }> {
+  return request<{ authorization_url: string }>("/gmail/connect", {
+    method: "POST",
+  });
+}
+
+export function disconnectGmail(): Promise<void> {
+  return request<void>("/gmail/connection", { method: "DELETE" });
 }

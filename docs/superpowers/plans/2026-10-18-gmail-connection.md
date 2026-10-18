@@ -84,11 +84,11 @@
 
 **Interfaces:** The signed-in dashboard shows disconnected, connected address, and failed-consent states, plus a short Testing-mode reconnect note. Connect requests the backend authorization URL then navigates to it; disconnect confirms the action, calls the API, and refreshes status. Clear the generic `gmail` result query parameter after display. Never handle a Google code or refresh token in the browser.
 
-- [ ] Write focused `GmailConnection.test.tsx` and API-client tests for status, connect navigation, cancellation, disconnect, result query cleanup, and API errors.
-- [ ] Run `npx vitest run src/gmail/GmailConnection.test.tsx` from `frontend/`; confirm failures for the absent component.
-- [ ] Implement a small connection section using existing dashboard styles.
-- [ ] Run targeted Vitest, `npm run lint`, `npm run typecheck`, and `npm run build`; confirm all pass.
-- [ ] Commit as `feat: show Gmail connection controls`.
+- [x] Write focused `GmailConnection.test.tsx` and API-client tests for status, connect navigation, cancellation, disconnect, result query cleanup, and API errors.
+- [x] Run `npx vitest run src/gmail/GmailConnection.test.tsx` from `frontend/`; confirm failures for the absent component.
+- [x] Implement a small connection section using existing dashboard styles.
+- [x] Run targeted Vitest, `npm run lint`, `npm run typecheck`, and `npm run build`; confirm all pass.
+- [x] Commit as `feat: show Gmail connection controls`.
 
 ### Task 6: Package and verify the hosted development deployment
 

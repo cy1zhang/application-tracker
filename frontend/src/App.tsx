@@ -14,6 +14,7 @@ import {
   type Filters,
   type SortKey,
 } from "./applications/filtering";
+import { GmailConnection } from "./gmail/GmailConnection";
 import "./styles.css";
 
 type View =
@@ -83,6 +84,9 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
       </header>
 
       <main className="content">
+        {!accessDenied && applications !== null && email && onSignOut && (
+          <GmailConnection />
+        )}
         {accessDenied && (
           <section className="page" aria-labelledby="access-denied-title">
             <h1 id="access-denied-title">Access denied</h1>

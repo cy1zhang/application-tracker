@@ -85,6 +85,31 @@ select {
   padding: 40px 48px 64px;
 }
 
+.gmail-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 32px;
+  padding: 16px 20px;
+  border: 1px solid #d4ddd7;
+  border-radius: 4px;
+}
+
+.gmail-connection h2 {
+  margin: 0;
+}
+
+.gmail-connection p {
+  margin: 8px 0 0;
+}
+
+.gmail-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .page {
   display: grid;
   gap: 24px;
