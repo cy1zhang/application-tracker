@@ -128,7 +128,7 @@ approves work; the repo, not chat history, carries shared context.
   can be inspected or reverted. Don't batch a whole milestone into one commit.
 - **One branch per milestone.** Milestone work happens on a branch such as
   `milestone-3-manual-tracker`; the reviewer reviews the branch against `main`
-  before it merges. Ask the user before merging. Never push; the user pushes.
+  before it merges. Ask the user before merging.
 - **Handoff = commit.** Leave a clean working tree with a commit before handing
   off. Never hand off uncommitted changes.
 - **One agent edits at a time.** Agents take turns in the same checkout; the

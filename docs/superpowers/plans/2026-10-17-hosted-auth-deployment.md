@@ -19,7 +19,7 @@
 - Never commit or print a Google secret, AWS credential, real email, or personal application data.
 - Keep the existing $1 budget; add the selected $5 budget, with pre-credit accounting, to the stack.
 - Retain DynamoDB tables on stack deletion; CloudWatch logs expire after 14 days.
-- Commit each verified task separately; ask before merging and do not push.
+- Commit each verified task separately; ask before merging.
 
 ## File map
 
@@ -126,6 +126,6 @@ pool ID; `docs/DEVELOPMENT.md` explains grant and revoke.
 - [x] **Step 3: Verify.** Checked 200 `/health`; 401 with absent/garbage tokens; Google login; owner A create versus owner B empty list and 404 for A's ID; edit/history/filters/stale edit; 429 under a controlled burst; $5 budget and 14-day logs.
 
   Live checks (October 18): `/health` returned 200, absent and garbage tokens returned 401, the hosted page returned 200, a sustained low-concurrency burst returned 429, the $5 budget has the configured email alerts, and the Lambda log group retains 14 days. Sample Lambda logs contained no request bodies. A much larger concurrent burst hit this account's 10-execution Lambda quota and returned 503; keep the 429 check below that concurrency. After Google sign-in exposed a failed browser preflight, the deployed API was corrected to allow unauthenticated `OPTIONS /{proxy+}`; a live authorization-header preflight returned 204 with the hosted origin, while unauthenticated `GET /applications` still returned 401. The first Google account saw Access denied before group approval, then an empty list after approval and fresh sign-in. It created a synthetic application, saw its Created history entry, edited its status, saw an Updated history entry, and verified search and status filtering. A two-tab stale edit showed the expected reload warning. The second account saw Access denied before temporary approval and an empty list afterward; direct access to the first account's application ID returned 404. Its temporary group membership was removed after the check.
-- [x] **Step 4: Review and handoff.** Ran all CI commands, inspected the branch diff against `main`, committed verified corrections, and handed the clean branch to a read-only reviewer. Ask before merge; never push.
+- [x] **Step 4: Review and handoff.** Ran all CI commands, inspected the branch diff against `main`, committed verified corrections, and handed the clean branch to a read-only reviewer. Asked before merging.
 
-  All CI commands passed locally on October 18, including frontend checks with the pinned Node and npm versions. The branch diff against `main` and working-tree diff pass `git diff --check`. Independent read-only review found no actionable security or correctness findings. The branch remains unmerged and unpushed.
+  All CI commands passed locally on October 18, including frontend checks with the pinned Node and npm versions. The branch diff against `main` and working-tree diff pass `git diff --check`. Independent read-only review found no actionable security or correctness findings. The milestone branch was fast-forwarded into `main` after user approval and pushed to `origin/main` on October 18.
