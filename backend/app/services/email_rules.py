@@ -44,6 +44,13 @@ _HYPOTHETICAL = re.compile(
     r"(?:invite|receive|be offered)\b",
     re.IGNORECASE,
 )
+_UNCERTAIN = re.compile(
+    r"\b(?:if|may|might|could|would|unable|cannot|can't|won't|"
+    r"haven't|hasn't|pending)\b|\b(?:plan|expect|hope|intend)\s+to\b|"
+    r"\b(?:have|has|had)\s+not\s+(?:yet\s+)?decided\b",
+    re.IGNORECASE,
+)
+_FUTURE_OR_NEGATED = re.compile(r"\b(?:will|not)\b", re.IGNORECASE)
 _CYCLE = re.compile(r"\b(summer|fall|spring|winter)\s+(20\d{2})\b", re.IGNORECASE)
 _REQUISITION = re.compile(
     r"\b(?:req(?:uisition)?\s*(?:id|#)?|job\s*id)\s*[:#-]?\s*"
@@ -125,6 +132,13 @@ def classify_message(
     status = found[0][0] if found else None
     evidence = found[0][1].group(0) if found else ""
     event_sentence = _sentence_at(stage_content, found[0][1].start()) if found else ""
+    if status is not None and (
+        _UNCERTAIN.search(event_sentence)
+        or (status != ApplicationStatus.REJECTED and _FUTURE_OR_NEGATED.search(event_sentence))
+    ):
+        return RuleDecision(
+            outcome="review_required", reason="nonaffirmative_event", status=status, evidence=evidence
+        )
     event_roles = _explicit_roles(event_sentence)
     season, year = (
         _cycle_for_role(event_sentence, next(iter(event_roles)))
@@ -158,10 +172,14 @@ def classify_message(
             requisition_id=requisitions[0] if requisitions else None,
             evidence=evidence,
         )
-    if event_roles != {(candidate.application.role or "").casefold()}:
+    if (
+        event_roles != {(candidate.application.role or "").casefold()}
+        or not candidate.application.company
+        or not _mentions(event_sentence, candidate.application.company)
+    ):
         return RuleDecision(
             outcome="review_required",
-            reason="ambiguous_event_role",
+            reason="ambiguous_event_identity",
             status=status,
             evidence=evidence,
         )

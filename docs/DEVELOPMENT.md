@@ -94,7 +94,10 @@ It parses bounded inline text, ignores attachments, applies only explicit
 recruiting rules, and records an owner-scoped outcome in the existing Events
 table. Clear evidence changes an existing application and writes its history
 event in one DynamoDB transaction. Ambiguous messages become review-required
-records; duplicates return their first terminal outcome. The code does not
+records; duplicates return their first terminal outcome. An automatic change
+requires an affirmative event that names both the company and the exact role
+in the event sentence. A season and year are added only when tied directly to
+that role; unsupported wording stays for review. The code does not
 fetch Gmail messages or run automatically yet. A later sync worker will supply
 the owner and candidate applications from trusted records.
 

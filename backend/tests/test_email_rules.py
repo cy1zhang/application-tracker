@@ -163,7 +163,7 @@ def test_unique_thread_link_still_needs_event_role() -> None:
     assert decision.outcome == "review_required"
 
     named_role = classify_message(
-        _message("We invite you to interview for Software Engineer Intern."),
+        _message("Acme invites you to interview for Software Engineer Intern."),
         [_candidate(threads={"thread-1"}), _candidate("app-2", role="Analyst")],
     )
     assert named_role.outcome == "applied"
@@ -225,7 +225,7 @@ def test_unique_requisition_link_still_needs_event_role() -> None:
 
     named_role = classify_message(
         _message(
-            "Req ID: REQ-123. We invite you to interview for Software Engineer Intern."
+            "Req ID: REQ-123. Acme invites you to interview for Software Engineer Intern."
         ),
         [_candidate(reqs={"REQ-123"}), _candidate("app-2", role="Analyst")],
     )
@@ -243,6 +243,45 @@ def test_unique_requisition_link_still_needs_event_role() -> None:
 )
 def test_linked_event_with_unrecognized_role_context_requires_review(text) -> None:
     decision = classify_message(_message(text), [_candidate(threads={"thread-1"})])
+
+    assert decision.outcome == "review_required"
+    assert decision.application_id is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "We are unable to invite you to interview for Software Engineer Intern at Acme.",
+        "We cannot offer you the Software Engineer Intern role at Acme.",
+        "We will invite you to interview for Software Engineer Intern at Acme if a slot opens.",
+    ],
+)
+def test_nonaffirmative_event_cannot_advance_status(text) -> None:
+    decision = classify_message(_message(text), [_candidate()])
+
+    assert decision.outcome != "applied"
+
+
+def test_undecided_rejection_does_not_reject_application() -> None:
+    decision = classify_message(
+        _message(
+            "We have not decided not to move forward with your application "
+            "for Software Engineer Intern at Acme."
+        ),
+        [_candidate()],
+    )
+
+    assert decision.outcome != "applied"
+
+
+def test_company_elsewhere_in_message_cannot_select_application() -> None:
+    decision = classify_message(
+        _message(
+            "Beta invites you to interview for Software Engineer Intern. "
+            "Acme is listed below."
+        ),
+        [_candidate()],
+    )
 
     assert decision.outcome == "review_required"
     assert decision.application_id is None
