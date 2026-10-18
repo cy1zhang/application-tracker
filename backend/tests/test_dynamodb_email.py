@@ -1,0 +1,211 @@
+from datetime import UTC, datetime, timedelta
+
+import boto3
+import pytest
+from boto3.dynamodb.types import TypeDeserializer
+from moto import mock_aws
+
+from app.domain.applications import (
+    ApplicationCreate,
+    ApplicationPatch,
+    ApplicationStatus,
+)
+from app.repositories.dynamodb import DynamoApplicationRepository
+from app.repositories.dynamodb_email import DynamoEmailRepository
+from app.repositories.dynamodb_tables import create_tables
+from app.services.email_rules import RuleDecision
+from app.services.gmail_message import ParsedGmailMessage
+
+NOW = datetime(2026, 10, 18, tzinfo=UTC)
+
+
+@pytest.fixture
+def storage():
+    with mock_aws():
+        client = boto3.client(
+            "dynamodb",
+            region_name="us-east-1",
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
+        )
+        create_tables(client, applications_table="Applications", events_table="Events")
+        applications = DynamoApplicationRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        )
+        emails = DynamoEmailRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        )
+        yield client, applications, emails
+
+
+def _message(message_id="msg-1", text="SECRET BODY"):
+    return ParsedGmailMessage(
+        message_id=message_id,
+        thread_id="thread-1",
+        received_at=NOW,
+        subject="Update",
+        sender="jobs@example.test",
+        text=text,
+    )
+
+
+def _create(applications, owner_id="user-a"):
+    return applications.create(
+        owner_id=owner_id,
+        payload=ApplicationCreate(
+            company="Acme", role="Software Engineer Intern", status="applied"
+        ),
+        application_id="app-1",
+        event_id="create-1",
+        occurred_at=NOW - timedelta(days=1),
+    )
+
+
+def _decision(outcome="applied", application_id="app-1", status=None):
+    return RuleDecision(
+        outcome=outcome,
+        reason="explicit_event" if outcome == "applied" else "ambiguous_application",
+        application_id=application_id,
+        status=status or ApplicationStatus.INTERVIEWING,
+        evidence="invite you to interview",
+    )
+
+
+def _stored_event(client, owner_id, message_id):
+    response = client.get_item(
+        TableName="Events",
+        Key={"owner_id": {"S": owner_id}, "event_id": {"S": f"gmail#{message_id}"}},
+        ConsistentRead=True,
+    )
+    deserializer = TypeDeserializer()
+    return {
+        key: deserializer.deserialize(value)
+        for key, value in response["Item"].items()
+    }
+
+
+def test_applied_status_and_outcome_are_one_idempotent_history_event(storage) -> None:
+    client, applications, emails = storage
+    _create(applications)
+
+    first = emails.record(
+        owner_id="user-a",
+        message=_message(),
+        decision=_decision(),
+        application_version=1,
+    )
+    second = emails.record(
+        owner_id="user-a",
+        message=_message(),
+        decision=_decision(),
+        application_version=1,
+    )
+
+    assert first == second
+    assert first.outcome == "applied"
+    application = applications.get(owner_id="user-a", application_id="app-1")
+    assert application.version == 2
+    assert application.status == ApplicationStatus.INTERVIEWING
+    events = applications.list_events(owner_id="user-a", application_id="app-1")
+    assert len(events) == 2
+    assert events[-1].origin.value == "rules"
+    item = _stored_event(client, "user-a", "msg-1")
+    assert item["source_message_id"] == "msg-1"
+    assert item["thread_id"] == "thread-1"
+    assert "SECRET BODY" not in str(item)
+
+
+def test_ignored_and_review_outcomes_are_persisted_without_mutation(storage) -> None:
+    client, applications, emails = storage
+    _create(applications)
+
+    ignored = emails.record(
+        owner_id="user-a",
+        message=_message("ignored"),
+        decision=_decision(outcome="ignored", application_id=None),
+    )
+    review = emails.record(
+        owner_id="user-a",
+        message=_message("review"),
+        decision=_decision(outcome="review_required", application_id=None),
+    )
+
+    assert ignored.outcome == "ignored"
+    assert review.outcome == "review_required"
+    assert _stored_event(client, "user-a", "review")["outcome"] == "review_required"
+    assert applications.get(owner_id="user-a", application_id="app-1").version == 1
+    assert len(applications.list_events(owner_id="user-a", application_id="app-1")) == 1
+
+
+def test_message_and_application_keys_are_owner_scoped(storage) -> None:
+    _, applications, emails = storage
+    _create(applications)
+    foreign = emails.record(
+        owner_id="user-b",
+        message=_message(),
+        decision=_decision(),
+        application_version=1,
+    )
+    owner = emails.record(
+        owner_id="user-a",
+        message=_message(),
+        decision=_decision(),
+        application_version=1,
+    )
+
+    assert foreign.outcome == "review_required"
+    assert owner.outcome == "applied"
+    assert applications.get(owner_id="user-a", application_id="app-1").version == 2
+
+
+def test_stale_version_is_retryable_and_can_be_reprocessed(storage) -> None:
+    _, applications, emails = storage
+    _create(applications)
+    applications.update(
+        owner_id="user-a",
+        application_id="app-1",
+        patch=ApplicationPatch(expected_version=1, role="Software Developer Intern"),
+        event_id="manual-edit",
+        occurred_at=NOW - timedelta(hours=1),
+    )
+
+    stale = emails.record(
+        owner_id="user-a",
+        message=_message(),
+        decision=_decision(),
+        application_version=1,
+    )
+    retried = emails.record(
+        owner_id="user-a",
+        message=_message(),
+        decision=_decision(),
+        application_version=2,
+    )
+
+    assert stale.outcome == "retryable"
+    assert retried.outcome == "applied"
+    assert applications.get(owner_id="user-a", application_id="app-1").version == 3
+
+
+def test_explicit_cycle_fills_unknown_fields_without_guessing(storage) -> None:
+    client, applications, emails = storage
+    _create(applications)
+    decision = RuleDecision(
+        outcome="applied",
+        reason="explicit_event",
+        application_id="app-1",
+        status=ApplicationStatus.INTERVIEWING,
+        season="summer",
+        year=2027,
+        requisition_id="REQ-123",
+        evidence="Summer 2027 interview",
+    )
+
+    emails.record(
+        owner_id="user-a", message=_message(), decision=decision, application_version=1
+    )
+
+    application = applications.get(owner_id="user-a", application_id="app-1")
+    assert application.season.value == "summer"
+    assert application.year == 2027
+    assert _stored_event(client, "user-a", "msg-1")["requisition_id"] == "REQ-123"

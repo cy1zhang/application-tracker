@@ -31,14 +31,14 @@
 
 ### Task 1: Parse bounded Gmail message text
 
-**Files:** Create `backend/app/services/gmail_message.py`, `backend/tests/test_gmail_message.py`, and synthetic `backend/tests/fixtures/gmail_messages.py`.
+**Files:** Create `backend/app/services/gmail_message.py` and `backend/tests/test_gmail_message.py`. Keep the small synthetic message builders in the focused tests.
 
 **Interfaces:** `parse_gmail_message(message: dict) -> ParsedGmailMessage` with `message_id`, `thread_id`, `received_at`, `subject`, `sender`, and `text`. Accept Gmail `format=full` payloads with inline base64url `text/plain` or `text/html`; prefer plain text, strip HTML to visible text, ignore attachments, and cap decoded text at 16 KiB. Reject missing IDs/date, bad encoding, or no usable inline text with `MessageParseError`.
 
-- [ ] Write synthetic fixtures and tests for plain text, nested alternative parts, HTML fallback, attachment exclusion, quoted-reply stripping, invalid base64, and oversized content.
-- [ ] Run `uv run pytest tests/test_gmail_message.py -q`; confirm failure because the parser is absent.
-- [ ] Implement the parser with Python standard-library MIME/base64/HTML utilities and no network reads.
-- [ ] Run targeted tests and `uv run ruff check .`; confirm pass.
+- [x] Write synthetic fixtures and tests for plain text, nested alternative parts, HTML fallback, attachment exclusion, quoted-reply stripping, invalid base64, and oversized content.
+- [x] Run `uv run pytest tests/test_gmail_message.py -q`; confirm failure because the parser is absent.
+- [x] Implement the parser with Python standard-library MIME/base64/HTML utilities and no network reads.
+- [x] Run targeted tests and `uv run ruff check .`; confirm pass.
 
 ### Task 2: Classify and match conservatively
 
@@ -46,12 +46,12 @@
 
 **Interfaces:** `classify_message(message: ParsedGmailMessage, applications: list[ApplicationCandidate]) -> RuleDecision`. `ApplicationCandidate` carries an existing application plus known Gmail thread IDs and requisition IDs. `RuleDecision` has `outcome` (`ignored`, `review_required`, or `applied`), a nullable application ID/status, and a short reason. “Applied” means eligible for the repository's guarded mutation, not yet persisted.
 
-- [ ] Write tests for explicit Applied, OA, Interviewing, Offer, and Rejected messages; newsletters, job ads, hypothetical text, unknown status, and conflicting stages.
-- [ ] Write tests for unique thread/requisition match, unique company-and-role match, company-only, two roles/cycles at one company, and cycle extraction only when explicit.
-- [ ] Write tests for older evidence and terminal-state reopening going to review.
-- [ ] Run `uv run pytest tests/test_email_rules.py -q`; confirm failure for the absent rules.
-- [ ] Implement the minimum evidence phrases, matching rules, and decision types; do not infer a date, cycle, or stage.
-- [ ] Run targeted tests and `uv run ruff check .`; confirm pass.
+- [x] Write tests for explicit Applied, OA, Interviewing, Offer, and Rejected messages; newsletters, job ads, hypothetical text, unknown status, and conflicting stages.
+- [x] Write tests for unique thread/requisition match, unique company-and-role match, company-only, two roles/cycles at one company, and cycle extraction only when explicit.
+- [x] Write tests for older evidence and terminal-state reopening going to review.
+- [x] Run `uv run pytest tests/test_email_rules.py -q`; confirm failure for the absent rules.
+- [x] Implement the minimum evidence phrases, matching rules, and decision types; do not infer a date, cycle, or stage.
+- [x] Run targeted tests and `uv run ruff check .`; confirm pass.
 
 ### Task 3: Persist idempotent outcomes and guarded mutations
 
@@ -59,10 +59,10 @@
 
 **Interfaces:** `DynamoEmailRepository.record(owner_id, message, decision, application_version=None) -> StoredOutcome`. Store an outcome at `event_id = gmail#<message_id>` in Events, with only message/thread IDs, received time, bounded evidence excerpt, status/reason, and optional application ID. `ignored` and `review_required` use a conditional put. `applied` conditionally updates the owner-scoped application and writes an `updated` history event in one transaction. On duplicate, return the existing outcome; on a missing/stale application, persist `retryable` (version race) or `review_required` (missing/deleted) without silently mutating. Never overwrite a terminal outcome.
 
-- [ ] Write moto tests for applied event plus version bump, duplicate delivery, owner isolation, ignored/review persistence, stale writes, and no raw-body storage.
-- [ ] Run `uv run pytest tests/test_dynamodb_email.py -q`; confirm failure for the absent repository.
-- [ ] Implement conditional writes and outcome reads with strongly consistent owner-scoped keys.
-- [ ] Run targeted tests, full backend tests, and `uv run ruff check .`; confirm pass.
+- [x] Write moto tests for applied event plus version bump, duplicate delivery, owner isolation, ignored/review persistence, stale writes, and no raw-body storage.
+- [x] Run `uv run pytest tests/test_dynamodb_email.py -q`; confirm failure for the absent repository.
+- [x] Implement conditional writes and outcome reads with strongly consistent owner-scoped keys.
+- [x] Run targeted tests, full backend tests, and `uv run ruff check .`; confirm pass.
 
 ### Task 4: Wire the offline processing boundary and handoff
 
@@ -70,10 +70,10 @@
 
 **Interfaces:** `process_message(owner_id, gmail_message, applications, repository) -> StoredOutcome` invokes parser, rules, and persistence in that order. The caller supplies candidate records and an owner derived from verified authentication or the future worker's connection record; the Gmail payload never chooses an owner. Malformed content yields a persisted retryable or review outcome when the message ID is available, without leaking the body.
 
-- [ ] Write an end-to-end synthetic test that processes a clear message twice, an ambiguous message, and the same Gmail ID for a second owner.
-- [ ] Run `uv run pytest tests/test_email_processing.py -q`; confirm failure for the absent service.
-- [ ] Implement the small orchestration function and document the future Milestone 8 worker handoff.
-- [ ] Run backend lint/tests and `git diff --check`; confirm pass.
+- [x] Write an end-to-end synthetic test that processes a clear message twice, an ambiguous message, and the same Gmail ID for a second owner.
+- [x] Run `uv run pytest tests/test_email_processing.py -q`; confirm failure for the absent service.
+- [x] Implement the small orchestration function and document the future Milestone 8 worker handoff.
+- [x] Run backend lint/tests and `git diff --check`; confirm pass.
 - [ ] Commit the completed milestone as a focused implementation commit, then request read-only branch review before any merge.
 
 ## Open decisions

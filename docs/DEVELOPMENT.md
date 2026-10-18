@@ -4,7 +4,8 @@ The project contains the manual tracker: a FastAPI backend persisting to
 DynamoDB and a React/TypeScript dashboard for creating, editing, filtering,
 and inspecting applications. Hosted Google sign-in and the manual tracker were
 verified in the development deployment. Milestone 5 adds a separate Gmail
-connection; importing email and AI providers are later milestones.
+connection. Milestone 6 adds offline, deterministic processing of synthetic
+Gmail messages; live import, scheduling, and AI providers are later milestones.
 
 ## Prerequisites
 
@@ -84,6 +85,23 @@ authenticates requests from loopback addresses (`127.0.0.1`, `::1`) as that
 subject; it is ignored for other clients and refused inside AWS Lambda. API
 tests inject synthetic user subjects through FastAPI dependency overrides. Do
 not add a request header that lets callers choose an owner.
+
+## Offline email processing
+
+`app.services.email_processing.process_message` accepts a Gmail `format=full`
+message, the authenticated owner ID, and that owner's candidate applications.
+It parses bounded inline text, ignores attachments, applies only explicit
+recruiting rules, and records an owner-scoped outcome in the existing Events
+table. Clear evidence changes an existing application and writes its history
+event in one DynamoDB transaction. Ambiguous messages become review-required
+records; duplicates return their first terminal outcome. The code does not
+fetch Gmail messages or run automatically yet. A later sync worker will supply
+the owner and candidate applications from trusted records.
+
+Use `uv run pytest tests/test_gmail_message.py tests/test_email_rules.py
+tests/test_dynamodb_email.py tests/test_email_processing.py -q` from `backend/`
+to run the synthetic processing checks. No Gmail account or AWS credentials are
+needed.
 
 ## Deploying the development app
 
