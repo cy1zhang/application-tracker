@@ -100,12 +100,14 @@
 - [x] Add the SAM resources, scoped permissions, deploy-script wiring, and operator documentation.
 - [x] Run `sam validate --template-file infra/template.yaml --lint`, container build, offline deploy tests, backend tests/Ruff, and frontend install/audit/lint/tests/typecheck/build; confirm all pass.
 - [x] Commit verified infrastructure and documentation changes, leaving the branch clean for review.
-- [ ] Prepare and inspect a CloudFormation change set and document the new KMS cost; obtain deployment approval before applying it. Do not read or print secret values.
+- [x] Prepare and inspect a CloudFormation change set and document the new KMS cost; obtain deployment approval before applying it. Do not read or print secret values.
 - [ ] After manual Google setup and approved deployment, verify no-token 401s, public callback handling, approved test-user connect/status/disconnect, mismatched-mailbox rejection, absence of token material in URLs/logs/responses, and stale-generation rejection. Record any unavailable live check precisely.
 - [ ] Commit the live verification result, leave a clean branch, and request read-only review before asking to merge.
 
+**Review and deployment status (2026-10-18):** An independent read-only review found one Important callback timeout issue, fixed in `1111874` with a failing regression test; the backend suite now passes 87 tests. The reviewer noted one Minor wording issue: the Gmail panel says “not connected” if its initial status request fails, when the status is actually unknown. Defer that UI copy change until the next UI pass. A fresh, unexecuted CloudFormation change set, `samcli-deploy1792356994`, includes the fix and has no replacements. The user selected `alex.cy1zhang@gmail.com` as the designated test mailbox and approved applying this change set after the separate Gmail OAuth secret exists. That secret is not yet present in `us-east-1`; Google client setup and live checks remain open.
+
 ## Open decisions and deployment boundary
 
-- The designated live Gmail test mailbox is not selected. Automated work uses synthetic accounts; no real Gmail consent is initiated until the user chooses one and authorizes the consent screen.
+- The designated live Gmail test mailbox is `alex.cy1zhang@gmail.com`. Automated work uses synthetic accounts; the user completes real Google consent in their own browser.
 - The new customer-managed KMS key has an ongoing charge. Infrastructure can be coded and validated offline; applying the stack change requires review of the exact change set and budget impact.
 - [Google classifies `gmail.readonly` as restricted](https://developers.google.com/workspace/gmail/api/auth/scopes), and [External Testing grants with Gmail scopes expire after seven days](https://support.google.com/cloud/answer/15549945). The UI explains that test authorization may need repeating. Detecting a revoked/expired token during background reads belongs to the later sync milestone; this milestone does not include public verification or a production Gmail connection.
