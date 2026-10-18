@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
+from unittest.mock import Mock
 from urllib.parse import parse_qs, urlparse
 
 import boto3
@@ -15,6 +16,7 @@ from app.main import app
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_tables import create_tables
 from app.services.gmail_connection import GmailConnectionService
+from app.services.google_oauth import GoogleOAuthClient
 
 
 class FakeGoogle:
@@ -164,6 +166,39 @@ def test_google_denial_burns_state(setup) -> None:
         "gmail=failed"
     )
     assert google.exchanges == 0
+
+
+def test_google_response_read_timeout_redirects_to_failure(setup) -> None:
+    api, repository, _google, _identity = setup
+    state = start_consent(api)
+
+    class TimeoutResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self, _size):
+            raise TimeoutError("synthetic token response timeout")
+
+    secrets = Mock()
+    secrets.get_secret_value.return_value = {
+        "SecretString": '{"client_id":"synthetic-id","client_secret":"synthetic-secret"}'
+    }
+    service = app.dependency_overrides[get_gmail_service]()
+    service._google = GoogleOAuthClient(
+        secrets,
+        "gmail-test-secret",
+        "https://api.example.test/oauth/google/callback",
+        urlopen=lambda _request, *, timeout: TimeoutResponse(),
+    )
+
+    response = callback(api, state, code="synthetic-code")
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "https://main.example.test/?gmail=failed"
+    assert repository.get_connection("owner-a").email is None
 
 
 def test_wrong_mailbox_is_not_saved(setup) -> None:

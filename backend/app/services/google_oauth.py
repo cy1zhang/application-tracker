@@ -1,7 +1,7 @@
 import json
 from collections.abc import Callable
+from http.client import HTTPException
 from typing import Any
-from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -97,5 +97,5 @@ class GoogleOAuthClient:
             if not isinstance(value, dict):
                 raise TypeError("Invalid Google response")
             return value
-        except (URLError, ValueError, TypeError):
+        except (OSError, HTTPException, ValueError, TypeError):
             raise OAuthError("Google OAuth request failed") from None
