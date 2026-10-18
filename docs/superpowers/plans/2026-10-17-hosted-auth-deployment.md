@@ -122,6 +122,8 @@ pool ID; `docs/DEVELOPMENT.md` explains grant and revoke.
 **Decision (2026-10-17):** The user selected External Google audience with a Cognito group allowlist. Unapproved people may finish Google sign-in but see access denied in the app. Task 4a implements this before deployment.
 
 - [ ] **Step 1: Complete prerequisites.** Confirm AWS profile and region, SAM CLI, the account's Free plan end date, Google test users and OAuth redirect URI, and the named Secrets Manager JSON secret. Do not read or echo its value.
-- [ ] **Step 2: Deploy.** Prepare and inspect the first CloudFormation change set, obtain the user's approval to apply it, then run `./scripts/deploy.sh`. Record only nonsecret stack outputs and the hosted URL.
+- [x] **Step 2: Deploy.** Prepared and inspected the 17-addition change set, obtained the user's approval, executed that change set, and ran `./scripts/deploy.sh`. CloudFormation reached `CREATE_COMPLETE` and Amplify reported a successful upload on October 18, 2026. The hosted URL is recorded in the deployment handoff, not in this plan.
 - [ ] **Step 3: Verify.** Check 200 `/health`; 401 with absent/garbage tokens; Google login; owner A create versus owner B empty list and 404 for A's ID; edit/history/filters/stale edit; 429 under a controlled burst; $5 budget and 14-day logs. Report any checks that could not be performed.
+
+  Partial live checks (October 18): `/health` returned 200, absent and garbage tokens returned 401, the hosted page returned 200, a sustained low-concurrency burst returned 429, the $5 budget has the configured email alerts, and the Lambda log group retains 14 days. A much larger concurrent burst hit this account's 10-execution Lambda quota and returned 503; keep the 429 check below that concurrency.
 - [ ] **Step 4: Review and handoff.** Run all CI commands, inspect branch diff against `main`, commit verified corrections, and hand the clean branch to the read-only reviewer. Ask before merge; never push.

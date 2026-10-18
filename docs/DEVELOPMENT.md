@@ -108,10 +108,12 @@ are included.
    aws sts get-caller-identity --profile application-tracker-bootstrap --region us-east-1
    ```
 
-2. In the AWS console, recheck the account's Free plan end date. The design
-   discussion showed **March 26, 2027**; that date must be confirmed in the
-   account before the first deploy. Check that the separate $1 budget is still
-   present if you want that earlier alert.
+2. The account's Free plan was active when checked on October 18, 2026, with
+   a scheduled expiration of **March 26, 2027** in Eastern time (March 27 at
+   01:48 UTC). It can end earlier if credits run out. Recheck before later
+   deployments with `aws freetier get-account-plan-state --profile
+   application-tracker-bootstrap --region us-east-1`. The separate $1 budget,
+   `application-tracker-zero-spend`, was also present.
 
 3. In [Google Cloud Console](https://console.cloud.google.com/), create or
    select a project. Configure the Google Auth Platform consent screen and
@@ -122,18 +124,23 @@ are included.
    does not restrict sign-in. Use **External** for this app; Cognito's
    `tracker-users` group controls who can use the tracker after sign-in. See
    [Google's audience rules](https://support.google.com/cloud/answer/15549945?hl=en).
-   Add this **Authorized redirect URI**, replacing the account ID with the
-   value from the command below:
+   Add an **Authorized JavaScript origin** with the Cognito domain and an
+   **Authorized redirect URI** with its `/oauth2/idpresponse` path, replacing
+   the account ID with the value from the command below:
 
    ```bash
    aws sts get-caller-identity --profile application-tracker-bootstrap \
      --region us-east-1 --query Account --output text
+   # Origin: https://app-tracker-dev-<account-id>.auth.us-east-1.amazoncognito.com
    # https://app-tracker-dev-<account-id>.auth.us-east-1.amazoncognito.com/oauth2/idpresponse
    ```
 
-   This is Cognito's Google callback, not the Amplify URL. Request only the
-   `openid`, `email`, and `profile` scopes. Save the client ID and secret in a
-   password manager; do not paste them into this repository or a chat.
+   This is Cognito's Google callback, not the Amplify URL. In **Data Access →
+   Add or remove scopes**, select only `openid`, `.../auth/userinfo.email`, and
+   `.../auth/userinfo.profile`, then click **Update** and **Save**. Save the
+   client ID and secret in a password manager; do not paste them into this
+   repository or a chat.
+   Google may show a newly created client's secret only once.
    [Cognito's Google setup guide](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-user-pools-social-idp-google.html)
    documents the callback format.
 
@@ -214,7 +221,9 @@ under their own Cognito subject.
   out the underlying Google account, which is why separate profiles matter.
 - On the hosted app, check edit, history, filters, and the stale-edit flow.
   A controlled burst above the API's 10-request-per-second rate and 20-request
-  burst setting should eventually return 429.
+  burst setting should eventually return 429. Keep concurrent requests below
+  this account's 10-execution Lambda quota; a larger simultaneous burst can
+  return 503 from Lambda throttling first.
 - Confirm the $5 stack budget and its alert email, the 14-day retention on
   `/aws/lambda/app-tracker-dev-api`, and that no request bodies appear in logs.
 

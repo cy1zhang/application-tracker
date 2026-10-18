@@ -91,6 +91,7 @@ Resources:
         client_secret: !Sub '{{resolve:secretsmanager:${GoogleOAuthSecretName}:SecretString:client_secret}}'
       AttributeMapping:
         email: email
+        email_verified: email_verified
         name: name
 
   AmplifyApp:
