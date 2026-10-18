@@ -142,3 +142,19 @@ def test_public_health_without_claims(lambda_tables) -> None:
 
     assert response["statusCode"] == 200
     assert json.loads(response["body"]) == {"status": "ok"}
+
+
+def test_preflight_does_not_require_jwt(lambda_tables) -> None:
+    response = invoke(
+        api_event(
+            "OPTIONS",
+            "/applications",
+            headers={
+                "origin": "https://tracker.example.test",
+                "access-control-request-method": "GET",
+                "access-control-request-headers": "authorization",
+            },
+        )
+    )
+
+    assert response["statusCode"] == 204

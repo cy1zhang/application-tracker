@@ -212,6 +212,8 @@ under their own Cognito subject.
 
 - `GET <ApiUrl>/health` should return 200 without a token. `GET
   <ApiUrl>/applications` should return 401 with no token or a garbage token.
+  An `OPTIONS <ApiUrl>/applications` browser preflight with the hosted origin
+  and `authorization` request header should return 204 with CORS headers.
   Read `ApiUrl` from the stack outputs in `us-east-1`.
 - Sign in as Google account A in one browser profile and confirm **Access
   denied**. Approve A in Cognito, sign out and back in, then create an

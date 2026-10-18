@@ -206,6 +206,15 @@ Resources:
             PayloadFormatVersion: '2.0'
             Auth:
               Authorizer: NONE
+        Preflight:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /{proxy+}
+            Method: OPTIONS
+            PayloadFormatVersion: '2.0'
+            Auth:
+              Authorizer: NONE
         ApplicationRoutes:
           Type: HttpApi
           Properties:
