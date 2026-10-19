@@ -134,7 +134,6 @@ def classify_message(
     status = found[0][0] if found else None
     evidence = found[0][1].group(0) if found else ""
     event_sentence = _sentence_at(stage_content, found[0][1].start()) if found else ""
-    event_requisitions = _REQUISITION.findall(event_sentence)
     if status is not None and (
         _UNCERTAIN.search(event_sentence)
         or (status != ApplicationStatus.REJECTED and _FUTURE_OR_NEGATED.search(event_sentence))
@@ -143,12 +142,19 @@ def classify_message(
             outcome="review_required", reason="nonaffirmative_event", status=status, evidence=evidence
         )
     event_roles = _explicit_roles(event_sentence)
+    event_requisitions = (
+        _direct_requisitions(event_sentence, next(iter(event_roles)))
+        if len(event_roles) == 1
+        else []
+    )
     season, year = (
         _cycle_for_role(event_sentence, next(iter(event_roles)))
         if len(event_roles) == 1
         else (None, None)
     )
-    candidate = _match_application(message, applications, event_sentence, season, year)
+    candidate = _match_application(
+        message, applications, event_requisitions, season, year
+    )
 
     if status is None:
         names_mentioned = any(
@@ -218,11 +224,11 @@ def classify_message(
 def _match_application(
     message: ParsedGmailMessage,
     applications: list[ApplicationCandidate],
-    event_sentence: str,
+    event_requisitions: list[str],
     season: Season | None,
     year: int | None,
 ) -> ApplicationCandidate | None:
-    requisitions = {value.casefold() for value in _REQUISITION.findall(event_sentence)}
+    requisitions = {value.casefold() for value in event_requisitions}
     roles = _explicit_roles(message.text)
     if not roles:
         roles = _explicit_roles(message.subject)
@@ -297,6 +303,15 @@ def _cycle_for_role(content: str, role: str) -> tuple[Season | None, int | None]
         re.IGNORECASE,
     )
     return (Season(match.group(1).lower()), int(match.group(2))) if match else (None, None)
+
+
+def _direct_requisitions(content: str, role: str) -> list[str]:
+    match = re.search(
+        rf"\bfor\s+{re.escape(role)}\s*,?\s*{_REQUISITION.pattern}\s*$",
+        content,
+        re.IGNORECASE,
+    )
+    return [match.group(1)] if match else []
 
 
 def _company_matches_event(content: str, company: str, role: str) -> bool:

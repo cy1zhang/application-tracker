@@ -258,6 +258,36 @@ def test_previous_requisition_cannot_link_new_interview() -> None:
     assert decision.application_id is None
 
 
+def test_previous_requisition_in_same_sentence_cannot_link_new_interview() -> None:
+    decision = classify_message(
+        _message(
+            "Acme invites you to interview for Software Engineer Intern, "
+            "while your previous Req ID OLD-123 is closed.",
+            thread="unlinked-thread",
+        ),
+        [
+            _candidate("old", season=Season.SUMMER, year=2026, reqs={"OLD-123"}),
+            _candidate("new", season=Season.SUMMER, year=2027, reqs={"NEW-456"}),
+        ],
+    )
+
+    assert decision.outcome == "review_required"
+    assert decision.application_id is None
+
+
+def test_closed_requisition_after_role_cannot_link_new_interview() -> None:
+    decision = classify_message(
+        _message(
+            "Acme invites you to interview for Software Engineer Intern, "
+            "Req ID OLD-123 is closed.",
+            thread="unlinked-thread",
+        ),
+        [_candidate("old", reqs={"OLD-123"})],
+    )
+
+    assert decision.outcome == "review_required"
+
+
 @pytest.mark.parametrize(
     "text",
     [

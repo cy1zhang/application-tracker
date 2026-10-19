@@ -97,7 +97,8 @@ event in one DynamoDB transaction. Ambiguous messages become review-required
 records; duplicates return their first terminal outcome. An automatic change
 requires an affirmative event that names both the company and the exact role
 in the event sentence, plus an existing unique thread or requisition link.
-Requisition IDs count only when stated in that event clause.
+Requisition IDs count only when directly attached to the named role at the end
+of that event clause.
 Unlinked messages go to review. A season and year are added only when tied directly to
 that role; unsupported wording stays for review. The code does not
 fetch Gmail messages or run automatically yet. A later sync worker will supply
