@@ -78,7 +78,7 @@
 
 ## Open decisions
 
-- Read-only review found misleading quoted text, inline attachments, competing roles and cycles, unrelated cycle promotions, negated or future event wording, and company names outside the event. Focused regression tests now require an affirmative event that names the exact role and company in the event sentence; a cycle is recorded only for `for <role> in <season year>`. Unsupported wording goes to review. The final correction is awaiting read-only recheck.
+- Read-only review found misleading quoted or forwarded text, inline attachments, competing roles and cycles, unrelated cycle promotions, negated or future event wording, and company names outside the event. Focused regression tests now require an affirmative body event that names the exact role and directly identifies the company; a cycle is recorded only for `for <role> in <season year>`. Forwarded and subject-only events go to review. The final correction is awaiting read-only recheck.
 - No live Gmail read or deployment is part of this milestone. The user asked to reduce manual live testing; synthetic offline tests are the verification gate here.
 - Until Milestone 7 adds field-specific correction timestamps, the processor conservatively sends evidence older than the application's last edit to review, even when that edit changed an unrelated field. This can reduce automatic coverage but prevents an older email from undoing a manual correction.
 - The future AI provider choice will be revisited around Milestone 9 for the user's open-weight preference. No model infrastructure is added now.

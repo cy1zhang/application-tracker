@@ -100,6 +100,8 @@ in the event sentence. A season and year are added only when tied directly to
 that role; unsupported wording stays for review. The code does not
 fetch Gmail messages or run automatically yet. A later sync worker will supply
 the owner and candidate applications from trusted records.
+Forwarded messages and messages whose only event evidence is in the subject
+also go to review, so old thread text cannot create a new status change.
 
 Use `uv run pytest tests/test_gmail_message.py tests/test_email_rules.py
 tests/test_dynamodb_email.py tests/test_email_processing.py -q` from `backend/`

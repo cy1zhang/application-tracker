@@ -43,6 +43,22 @@ def test_plain_text_and_quoted_reply_are_bounded() -> None:
     assert parsed.text == "We invite you to interview."
 
 
+def test_forwarded_old_message_is_flagged_and_excluded() -> None:
+    message = _message(
+        _part(
+            "FYI, sharing the old email.\n\n"
+            "---------- Forwarded message ---------\n"
+            "From: Acme Recruiting\n"
+            "Acme invites you to interview for Software Engineer Intern."
+        )
+    )
+
+    parsed = parse_gmail_message(message)
+
+    assert parsed.is_forwarded
+    assert parsed.text == "FYI, sharing the old email."
+
+
 def test_nested_alternative_prefers_plain_and_ignores_attachments() -> None:
     message = _message(
         {

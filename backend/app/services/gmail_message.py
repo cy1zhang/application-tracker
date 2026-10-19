@@ -21,6 +21,7 @@ class ParsedGmailMessage:
     subject: str
     sender: str
     text: str
+    is_forwarded: bool = False
 
 
 class _VisibleHTML(HTMLParser):
@@ -107,6 +108,11 @@ def parse_gmail_message(message: dict) -> ParsedGmailMessage:
             text = parser.visible_text()
         else:
             raise ValueError
+        subject = values.get("subject", "")[:512]
+        is_forwarded = bool(
+            re.match(r"\s*fwd?:", subject, re.IGNORECASE)
+            or re.search(r"^-{2,}\s*Forwarded message\s*-{2,}\s*$", text, re.IGNORECASE | re.MULTILINE)
+        )
         text = _strip_quoted_reply(text)[:MAX_TEXT].strip()
         if not text:
             raise ValueError
@@ -114,9 +120,10 @@ def parse_gmail_message(message: dict) -> ParsedGmailMessage:
             message_id=message_id,
             thread_id=thread_id,
             received_at=received_at,
-            subject=values.get("subject", "")[:512],
+            subject=subject,
             sender=values.get("from", "")[:512],
             text=text,
+            is_forwarded=is_forwarded,
         )
     except (KeyError, TypeError, ValueError, OverflowError, Base64Error) as error:
         raise MessageParseError("Gmail message cannot be parsed") from error
@@ -170,6 +177,8 @@ def _strip_quoted_reply(text: str) -> str:
         if re.match(r"^On .+ wrote:\s*$", line, re.IGNORECASE):
             break
         if re.match(r"^-{2,}\s*Original Message\s*-{2,}$", line, re.IGNORECASE):
+            break
+        if re.match(r"^-{2,}\s*Forwarded message\s*-{2,}$", line, re.IGNORECASE):
             break
         if line.lstrip().startswith(">"):
             break

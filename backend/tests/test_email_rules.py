@@ -287,6 +287,38 @@ def test_company_elsewhere_in_message_cannot_select_application() -> None:
     assert decision.application_id is None
 
 
+def test_referral_company_in_event_cannot_replace_employer() -> None:
+    decision = classify_message(
+        _message(
+            "Beta invites you to interview for Software Engineer Intern at Beta, "
+            "and Acme handled the referral."
+        ),
+        [_candidate()],
+    )
+
+    assert decision.outcome == "review_required"
+    assert decision.application_id is None
+
+
+def test_forwarded_old_event_requires_review() -> None:
+    message = _message("Acme invites you to interview for Software Engineer Intern.")
+    message = ParsedGmailMessage(**{**message.__dict__, "is_forwarded": True})
+
+    assert classify_message(message, [_candidate()]).outcome == "review_required"
+
+
+def test_old_event_in_reply_subject_cannot_advance_status() -> None:
+    decision = classify_message(
+        _message(
+            "FYI, sharing the update.",
+            subject="Re: Acme invites you to interview for Software Engineer Intern",
+        ),
+        [_candidate()],
+    )
+
+    assert decision.outcome != "applied"
+
+
 def test_company_alone_does_not_select_among_roles() -> None:
     decision = classify_message(
         _message("Acme invites you to interview."),

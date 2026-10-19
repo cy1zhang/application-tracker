@@ -98,6 +98,8 @@ def classify_message(
     message: ParsedGmailMessage, applications: list[ApplicationCandidate]
 ) -> RuleDecision:
     content = f"{message.subject}\n{message.text}"
+    if message.is_forwarded:
+        return RuleDecision(outcome="review_required", reason="forwarded_message")
     if (
         _MARKETING.search(message.subject)
         or re.match(r"\s*apply now\b", message.text, re.IGNORECASE)
@@ -105,9 +107,9 @@ def classify_message(
         return RuleDecision(outcome="ignored", reason="non_application_message")
 
     raw_matches = _stage_matches(message.text)
-    stage_content = message.text if raw_matches else message.subject
-    if not raw_matches:
-        raw_matches = _stage_matches(stage_content)
+    if not raw_matches and _stage_matches(message.subject):
+        return RuleDecision(outcome="review_required", reason="subject_only_event")
+    stage_content = message.text
     found = [
         (status, match)
         for status, match in raw_matches
@@ -175,7 +177,9 @@ def classify_message(
     if (
         event_roles != {(candidate.application.role or "").casefold()}
         or not candidate.application.company
-        or not _mentions(event_sentence, candidate.application.company)
+        or not _company_matches_event(
+            event_sentence, candidate.application.company, candidate.application.role or ""
+        )
     ):
         return RuleDecision(
             outcome="review_required",
@@ -301,6 +305,20 @@ def _cycle_for_role(content: str, role: str) -> tuple[Season | None, int | None]
         re.IGNORECASE,
     )
     return (Season(match.group(1).lower()), int(match.group(2))) if match else (None, None)
+
+
+def _company_matches_event(content: str, company: str, role: str) -> bool:
+    role_at_company = re.search(
+        rf"\bfor\s+{re.escape(role)}\s+at\s+([^,;.!?]+)", content, re.IGNORECASE
+    )
+    if role_at_company:
+        return role_at_company.group(1).strip().casefold() == company.casefold()
+    return re.match(
+        rf"\s*{re.escape(company)}\s+"
+        r"(?:invites?|invited|is pleased|has decided|has received)\b",
+        content,
+        re.IGNORECASE,
+    ) is not None
 
 
 def _would_regress(
