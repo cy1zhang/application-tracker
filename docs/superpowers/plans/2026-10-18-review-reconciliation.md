@@ -44,9 +44,9 @@
 
 **Interface:** `GET /reviews?limit=&cursor=` returns pending review items and an opaque cursor. `POST /reviews/{message_id}/resolve` accepts one of accept/edit/reject/attach/create with action-specific fields and an expected application version where needed. Resolve the existing `gmail#` outcome atomically with application creation/update/linking. A rejected item stays terminal; accept/edit use only explicit proposed or user-supplied fields. Include a Gmail thread link built from stored thread ID, never email content.
 
-- [ ] Write failing moto/API tests for pagination, every action, stale versions, duplicate resolution, and owner isolation.
-- [ ] Implement typed input/output, repository transactions, and API exception mapping.
-- [ ] Run focused tests and backend lint; commit the verified backend step.
+- [x] Write failing moto/API tests for pagination, every action, stale versions, duplicate resolution, and owner isolation.
+- [x] Implement typed input/output, repository transactions, and API exception mapping.
+- [x] Run focused tests and backend lint; commit the verified backend step.
 
 ### Task 3: Explicit duplicate merge and history preservation
 

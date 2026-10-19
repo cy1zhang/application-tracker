@@ -44,6 +44,8 @@ class EventType(str, Enum):
     CREATED = "created"
     UPDATED = "updated"
     DELETED = "deleted"
+    ATTACHED = "attached"
+    MERGED = "merged"
 
 
 class ApplicationCreate(BaseModel):
@@ -115,3 +117,5 @@ class ApplicationEvent(BaseModel):
     origin: EventOrigin
     occurred_at: datetime
     changes: dict[str, FieldChange]
+    source_message_id: str | None = None
+    thread_id: str | None = None

@@ -9,6 +9,7 @@ from app.domain.gmail import TrackerIdentity
 from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
+from app.repositories.dynamodb_reviews import DynamoReviewRepository
 from app.services.credential_crypto import CredentialCipher
 from app.services.google_oauth import GoogleOAuthClient
 
@@ -49,6 +50,17 @@ def get_application_repository() -> ApplicationRepository:
         client_options["region_name"] = region
 
     return DynamoApplicationRepository(
+        client=boto3.client("dynamodb", **client_options),
+        applications_table=os.environ["APPLICATIONS_TABLE"],
+        events_table=os.environ["EVENTS_TABLE"],
+    )
+
+
+def get_review_repository() -> DynamoReviewRepository:
+    client_options = {}
+    if region := os.getenv("AWS_REGION"):
+        client_options["region_name"] = region
+    return DynamoReviewRepository(
         client=boto3.client("dynamodb", **client_options),
         applications_table=os.environ["APPLICATIONS_TABLE"],
         events_table=os.environ["EVENTS_TABLE"],
