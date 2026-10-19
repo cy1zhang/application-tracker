@@ -67,6 +67,11 @@ class DynamoApplicationRepository:
             "created_at": occurred_at.isoformat(),
             "updated_at": occurred_at.isoformat(),
             "version": 1,
+            "field_updated_at": {
+                field: occurred_at.isoformat()
+                for field in APPLICATION_FIELDS
+                if values[field] is not None
+            },
         }
         event_item = {
             "owner_id": owner_id,
@@ -212,6 +217,14 @@ class DynamoApplicationRepository:
             **updates,
             "updated_at": occurred_at.isoformat(),
             "version": patch.expected_version + 1,
+            "field_updated_at": {
+                **field_times_for(current),
+                **{field: occurred_at.isoformat() for field in changes},
+            },
+            "field_corrections": {
+                **current.get("field_corrections", {}),
+                **{field: occurred_at.isoformat() for field in changes},
+            },
         }
         event_item = self._mutation_event_item(
             owner_id=owner_id,
@@ -423,3 +436,13 @@ def _stored_value(value: Any) -> Any:
     if isinstance(value, date):
         return value.isoformat()
     return value
+
+
+def field_times_for(item: dict[str, Any]) -> dict[str, str]:
+    if "field_updated_at" in item:
+        return dict(item["field_updated_at"])
+    return {
+        field: item["updated_at"]
+        for field in APPLICATION_FIELDS
+        if item.get(field) is not None
+    }

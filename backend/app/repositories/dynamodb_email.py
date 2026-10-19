@@ -6,6 +6,7 @@ from typing import Any, Literal
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
 
+from app.repositories.dynamodb import field_times_for
 from app.services.email_rules import RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
 
@@ -58,11 +59,6 @@ class DynamoEmailRepository:
             return self._save_outcome(
                 owner_id, message, "retryable", "stale_application", decision
             )
-        if datetime.fromisoformat(application["updated_at"]) > message.received_at:
-            return self._save_outcome(
-                owner_id, message, "review_required", "older_evidence", decision
-            )
-
         proposed = {"status": decision.status.value}
         for field in ("season", "year"):
             value = getattr(decision, field)
@@ -83,6 +79,15 @@ class DynamoEmailRepository:
             return self._save_outcome(
                 owner_id, message, "ignored", "no_change", decision
             )
+        field_times = field_times_for(application)
+        if any(
+            datetime.fromisoformat(field_times[field]) >= message.received_at
+            for field in changes
+            if field in field_times
+        ):
+            return self._save_outcome(
+                owner_id, message, "review_required", "older_evidence", decision
+            )
 
         event = self._outcome_item(owner_id, message, "applied", decision.reason, decision)
         event.update(
@@ -101,8 +106,14 @@ class DynamoEmailRepository:
         updated = {
             **application,
             **proposed,
-            "updated_at": message.received_at.isoformat(),
+            "updated_at": max(
+                datetime.fromisoformat(application["updated_at"]), message.received_at
+            ).isoformat(),
             "version": application_version + 1,
+            "field_updated_at": {
+                **field_times,
+                **{field: message.received_at.isoformat() for field in changes},
+            },
         }
         try:
             self._client.transact_write_items(

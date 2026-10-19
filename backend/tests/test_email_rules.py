@@ -490,7 +490,7 @@ def test_unsupported_cycle_remains_unknown() -> None:
     assert decision.year is None
 
 
-def test_older_evidence_and_terminal_reopening_require_review() -> None:
+def test_ordering_is_checked_per_field_at_persistence_and_terminal_reopening_requires_review() -> None:
     text = "Acme invites you to interview for Software Engineer Intern."
     old = classify_message(
         _message(text), [_candidate(updated_at=NOW + timedelta(days=1), threads={"thread-1"})]
@@ -499,7 +499,7 @@ def test_older_evidence_and_terminal_reopening_require_review() -> None:
         _message(text), [_candidate(status=ApplicationStatus.REJECTED, threads={"thread-1"})]
     )
 
-    assert old.outcome == "review_required"
+    assert old.outcome == "applied"
     assert terminal.outcome == "review_required"
 
 

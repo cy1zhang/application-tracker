@@ -204,8 +204,6 @@ def classify_message(
         "requisition_id": event_requisitions[0] if event_requisitions else None,
         "evidence": evidence,
     }
-    if message.received_at < application.updated_at:
-        return RuleDecision(outcome="review_required", reason="older_evidence", **common)
     if _would_regress(application.status, status):
         return RuleDecision(outcome="review_required", reason="status_regression", **common)
     if season is not None and application.season not in {None, season}:

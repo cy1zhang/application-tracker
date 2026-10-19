@@ -34,9 +34,9 @@
 
 **Interface:** Store `field_updated_at` and `field_corrections` maps on application items. User updates set both for changed fields; rule updates set `field_updated_at` using email receipt time. Compare each proposed changed field against its own timestamp. Legacy items use their last known update time until first touched. Keep `updated_at` as the latest activity time.
 
-- [ ] Write failing tests for old replay after status correction, later clear status evidence, and old cycle evidence after unrelated role edit.
-- [ ] Implement field timestamps and remove the classifier's whole-record `updated_at` veto.
-- [ ] Run focused tests and backend lint; commit the verified backend step.
+- [x] Write failing tests for old replay after status correction, later clear status evidence, and old cycle evidence after unrelated role edit.
+- [x] Implement field timestamps and remove the classifier's whole-record `updated_at` veto.
+- [x] Run focused tests and backend lint; commit the verified backend step.
 
 ### Task 2: Owner-scoped review queue and resolution API
 

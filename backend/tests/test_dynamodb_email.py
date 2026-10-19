@@ -38,11 +38,11 @@ def storage():
         yield client, applications, emails
 
 
-def _message(message_id="msg-1", text="SECRET BODY"):
+def _message(message_id="msg-1", text="SECRET BODY", received_at=NOW):
     return ParsedGmailMessage(
         message_id=message_id,
         thread_id="thread-1",
-        received_at=NOW,
+        received_at=received_at,
         subject="Update",
         sender="jobs@example.test",
         text=text,
@@ -209,3 +209,80 @@ def test_explicit_cycle_fills_unknown_fields_without_guessing(storage) -> None:
     assert application.season.value == "summer"
     assert application.year == 2027
     assert _stored_event(client, "user-a", "msg-1")["requisition_id"] == "REQ-123"
+
+
+def test_old_email_cannot_undo_manual_status_correction(storage) -> None:
+    _, applications, emails = storage
+    _create(applications)
+    applications.update(
+        owner_id="user-a",
+        application_id="app-1",
+        patch=ApplicationPatch(expected_version=1, status=ApplicationStatus.OFFER),
+        event_id="manual-status",
+        occurred_at=NOW + timedelta(hours=1),
+    )
+
+    result = emails.record(
+        owner_id="user-a",
+        message=_message(received_at=NOW),
+        decision=_decision(status=ApplicationStatus.INTERVIEWING),
+        application_version=2,
+    )
+
+    assert result.outcome == "review_required"
+    assert applications.get(owner_id="user-a", application_id="app-1").status == ApplicationStatus.OFFER
+
+
+def test_later_clear_email_can_update_manually_corrected_status(storage) -> None:
+    _, applications, emails = storage
+    _create(applications)
+    applications.update(
+        owner_id="user-a",
+        application_id="app-1",
+        patch=ApplicationPatch(expected_version=1, status=ApplicationStatus.INTERVIEWING),
+        event_id="manual-status",
+        occurred_at=NOW,
+    )
+
+    result = emails.record(
+        owner_id="user-a",
+        message=_message(received_at=NOW + timedelta(hours=1)),
+        decision=_decision(status=ApplicationStatus.REJECTED),
+        application_version=2,
+    )
+
+    assert result.outcome == "applied"
+    assert applications.get(owner_id="user-a", application_id="app-1").status == ApplicationStatus.REJECTED
+
+
+def test_older_email_can_fill_unknown_cycle_after_unrelated_role_edit(storage) -> None:
+    _, applications, emails = storage
+    _create(applications)
+    applications.update(
+        owner_id="user-a",
+        application_id="app-1",
+        patch=ApplicationPatch(expected_version=1, role="Software Developer Intern"),
+        event_id="manual-role",
+        occurred_at=NOW + timedelta(hours=1),
+    )
+
+    result = emails.record(
+        owner_id="user-a",
+        message=_message(received_at=NOW),
+        decision=RuleDecision(
+            outcome="applied",
+            reason="explicit_event",
+            application_id="app-1",
+            status=ApplicationStatus.INTERVIEWING,
+            season="summer",
+            year=2027,
+        ),
+        application_version=2,
+    )
+
+    assert result.outcome == "applied"
+    application = applications.get(owner_id="user-a", application_id="app-1")
+    assert application.role == "Software Developer Intern"
+    assert application.season.value == "summer"
+    assert application.year == 2027
+    assert application.updated_at == NOW + timedelta(hours=1)
