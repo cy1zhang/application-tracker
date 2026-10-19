@@ -11,11 +11,13 @@ from app.domain.applications import (
     ApplicationEvent,
     ApplicationPage,
     ApplicationPatch,
+    MergeRequest,
 )
 from app.repositories.applications import (
     ApplicationNotFound,
     ApplicationRepository,
     InvalidCursor,
+    InvalidMerge,
     VersionConflict,
 )
 
@@ -136,3 +138,26 @@ def delete_application(
             detail="Application version is stale",
         ) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{application_id}/merge", response_model=Application)
+def merge_application(
+    application_id: str,
+    payload: MergeRequest,
+    owner_id: Owner,
+    repository: Repository,
+) -> Application:
+    try:
+        return repository.merge(
+            owner_id=owner_id,
+            keep_id=application_id,
+            payload=payload,
+            event_id=uuid4().hex,
+            occurred_at=datetime.now(UTC),
+        )
+    except ApplicationNotFound as error:
+        raise HTTPException(status_code=404, detail="Application not found") from error
+    except VersionConflict as error:
+        raise HTTPException(status_code=409, detail="Application version is stale") from error
+    except InvalidMerge as error:
+        raise HTTPException(status_code=422, detail="Explicit merge resolutions required") from error

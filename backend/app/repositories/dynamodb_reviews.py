@@ -143,9 +143,10 @@ class DynamoReviewRepository:
         )
         if not application_id:
             raise InvalidReviewResolution
-        application = self._get_application(owner_id, application_id)
+        application = self._resolve_application(owner_id, application_id)
         if application is None or "deleted_at" in application:
             raise ReviewNotFound
+        application_id = application["application_id"]
         expected_version = (
             resolution.patch.expected_version
             if resolution.action == "edit" and resolution.patch is not None
@@ -279,6 +280,16 @@ class DynamoReviewRepository:
             ConsistentRead=True,
         )
         return self._decode(response["Item"]) if "Item" in response else None
+
+    def _resolve_application(self, owner_id: str, application_id: str) -> dict[str, Any] | None:
+        visited: set[str] = set()
+        while application_id not in visited:
+            visited.add(application_id)
+            item = self._get_application(owner_id, application_id)
+            if item is None or "merged_into" not in item:
+                return item
+            application_id = item["merged_into"]
+        return None
 
     @staticmethod
     def _linked_review(

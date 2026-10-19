@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from enum import Enum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -86,6 +86,15 @@ class ApplicationPatch(BaseModel):
         return self
 
 
+class MergeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    duplicate_id: str = Field(min_length=1)
+    expected_keep_version: int = Field(ge=1)
+    expected_duplicate_version: int = Field(ge=1)
+    resolutions: dict[str, Literal["keep", "duplicate"]] = Field(default_factory=dict)
+
+
 class Application(BaseModel):
     application_id: str
     company: str | None
@@ -119,3 +128,4 @@ class ApplicationEvent(BaseModel):
     changes: dict[str, FieldChange]
     source_message_id: str | None = None
     thread_id: str | None = None
+    merged_application_id: str | None = None

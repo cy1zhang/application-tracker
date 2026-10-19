@@ -54,9 +54,9 @@
 
 **Interface:** `POST /applications/{keep_id}/merge` names the duplicate, both expected versions, and a choice for each conflicting field. Combine compatible nullable fields, require choices for conflicting values, atomically update the retained record and a `merged_into` tombstone, and write a merge event. Resolve merged IDs for reads and review attachment; include both event histories in retained history. Never automatically merge distinct roles/cycles.
 
-- [ ] Write failing tests for happy path, explicit conflict choices, stale/self/cross-owner merges, merged-ID reads, combined history, and replay protection.
-- [ ] Implement the guarded transaction, redirect, and history query.
-- [ ] Run focused tests and backend lint; commit the verified backend step.
+- [x] Write failing tests for happy path, explicit conflict choices, stale/self/cross-owner merges, merged-ID reads, combined history, and replay protection.
+- [x] Implement the guarded transaction, redirect, and history query.
+- [x] Run focused tests and backend lint; commit the verified backend step.
 
 ### Task 4: Review and merge controls in the dashboard
 

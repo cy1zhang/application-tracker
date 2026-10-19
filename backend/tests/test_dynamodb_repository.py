@@ -204,6 +204,15 @@ def test_list_events_reads_every_dynamodb_page() -> None:
     }
     with Stubber(client) as stubber:
         stubber.add_response(
+            "get_item",
+            {"Item": serialize_item({"owner_id": "user-a", "application_id": "app-1"})},
+            {
+                "TableName": "Applications",
+                "Key": serialize_item({"owner_id": "user-a", "application_id": "app-1"}),
+                "ConsistentRead": True,
+            },
+        )
+        stubber.add_response(
             "query",
             {"Items": [first_event], "LastEvaluatedKey": last_key},
             query,

@@ -18,10 +18,12 @@ from app.domain.applications import (
     ApplicationPatch,
     EventOrigin,
     EventType,
+    MergeRequest,
 )
 from app.repositories.applications import (
     ApplicationNotFound,
     InvalidCursor,
+    InvalidMerge,
     VersionConflict,
 )
 
@@ -144,10 +146,7 @@ class DynamoApplicationRepository:
         return ApplicationPage(items=items, next_cursor=next_cursor)
 
     def get(self, *, owner_id: str, application_id: str) -> Application | None:
-        item = self._get_stored_item(
-            owner_id=owner_id,
-            application_id=application_id,
-        )
+        item = self._resolve_item(owner_id=owner_id, application_id=application_id)
         if item is None:
             return None
         if "deleted_at" in item:
@@ -160,30 +159,35 @@ class DynamoApplicationRepository:
         owner_id: str,
         application_id: str,
     ) -> builtins.list[ApplicationEvent]:
-        query: dict[str, Any] = {
-            "TableName": self._events_table,
-            "IndexName": "application-events-index",
-            "KeyConditionExpression": "owner_application_id = :owner_application_id",
-            "ExpressionAttributeValues": {
-                ":owner_application_id": self._serializer.serialize(
-                    f"{owner_id}#{application_id}"
-                )
-            },
-            "ScanIndexForward": True,
-        }
+        retained = self._resolve_item(owner_id=owner_id, application_id=application_id)
+        if retained is None:
+            return []
         items = []
-        while True:
-            response = self._client.query(**query)
-            items.extend(response.get("Items", []))
-            last_key = response.get("LastEvaluatedKey")
-            if last_key is None:
-                break
-            query["ExclusiveStartKey"] = last_key
+        for source_id in [retained["application_id"], *retained.get("merged_from", [])]:
+            query: dict[str, Any] = {
+                "TableName": self._events_table,
+                "IndexName": "application-events-index",
+                "KeyConditionExpression": "owner_application_id = :owner_application_id",
+                "ExpressionAttributeValues": {
+                    ":owner_application_id": self._serializer.serialize(
+                        f"{owner_id}#{source_id}"
+                    )
+                },
+                "ScanIndexForward": True,
+            }
+            while True:
+                response = self._client.query(**query)
+                items.extend(response.get("Items", []))
+                last_key = response.get("LastEvaluatedKey")
+                if last_key is None:
+                    break
+                query["ExclusiveStartKey"] = last_key
 
-        return [
+        events = [
             ApplicationEvent.model_validate(self._deserialize_item(item))
             for item in items
         ]
+        return sorted(events, key=lambda event: (event.occurred_at, event.event_id))
 
     def update(
         self,
@@ -283,6 +287,132 @@ class DynamoApplicationRepository:
             application_item=tombstone,
             event_item=event_item,
         )
+
+    def merge(
+        self,
+        *,
+        owner_id: str,
+        keep_id: str,
+        payload: MergeRequest,
+        event_id: str,
+        occurred_at: datetime,
+    ) -> Application:
+        duplicate_id = payload.duplicate_id
+        if keep_id == duplicate_id:
+            raise InvalidMerge
+        keep = self._get_active_item(owner_id=owner_id, application_id=keep_id)
+        duplicate = self._get_active_item(owner_id=owner_id, application_id=duplicate_id)
+        if (
+            keep["version"] != payload.expected_keep_version
+            or duplicate["version"] != payload.expected_duplicate_version
+        ):
+            raise VersionConflict
+
+        conflicts = {
+            field
+            for field in APPLICATION_FIELDS
+            if keep[field] is not None
+            and duplicate[field] is not None
+            and keep[field] != duplicate[field]
+        }
+        if set(payload.resolutions) != conflicts:
+            raise InvalidMerge
+        values = {
+            field: (
+                duplicate[field]
+                if payload.resolutions.get(field) == "duplicate" or keep[field] is None
+                else keep[field]
+            )
+            for field in APPLICATION_FIELDS
+        }
+        changes = {
+            field: {"before": keep[field], "after": value}
+            for field, value in values.items()
+            if keep[field] != value
+        }
+        retained = {
+            **keep,
+            **values,
+            "version": payload.expected_keep_version + 1,
+            "updated_at": occurred_at.isoformat(),
+            "merged_from": list(dict.fromkeys([
+                *keep.get("merged_from", []), duplicate_id, *duplicate.get("merged_from", [])
+            ])),
+            "field_updated_at": {
+                **field_times_for(keep),
+                **{field: occurred_at.isoformat() for field in changes},
+            },
+            "field_corrections": {
+                **keep.get("field_corrections", {}),
+                **{field: occurred_at.isoformat() for field in changes},
+            },
+        }
+        tombstone = {
+            **duplicate,
+            "version": payload.expected_duplicate_version + 1,
+            "deleted_at": occurred_at.isoformat(),
+            "merged_into": keep_id,
+        }
+        event = self._mutation_event_item(
+            owner_id=owner_id,
+            application_id=keep_id,
+            event_id=event_id,
+            event_type=EventType.MERGED,
+            occurred_at=occurred_at,
+            changes=changes,
+        )
+        event["merged_application_id"] = duplicate_id
+
+        try:
+            self._client.transact_write_items(TransactItems=[
+                self._merge_put(keep_id, owner_id, payload.expected_keep_version, retained),
+                self._merge_put(duplicate_id, owner_id, payload.expected_duplicate_version, tombstone),
+                {"Put": {
+                    "TableName": self._events_table,
+                    "Item": self._serialize_item(event),
+                    "ConditionExpression": "attribute_not_exists(event_id)",
+                }},
+            ])
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            latest_keep = self._get_stored_item(owner_id=owner_id, application_id=keep_id)
+            latest_duplicate = self._get_stored_item(owner_id=owner_id, application_id=duplicate_id)
+            if (
+                latest_keep is None or "deleted_at" in latest_keep
+                or latest_duplicate is None or "deleted_at" in latest_duplicate
+            ):
+                raise ApplicationNotFound from error
+            if (
+                latest_keep["version"] != payload.expected_keep_version
+                or latest_duplicate["version"] != payload.expected_duplicate_version
+            ):
+                raise VersionConflict from error
+            raise
+        return self._application_from_item(retained)
+
+    def _merge_put(
+        self, application_id: str, owner_id: str, version: int, item: dict[str, Any]
+    ) -> dict[str, Any]:
+        return {"Put": {
+            "TableName": self._applications_table,
+            "Item": self._serialize_item(item),
+            "ConditionExpression": (
+                "attribute_exists(application_id) AND "
+                "attribute_not_exists(deleted_at) AND version = :version"
+            ),
+            "ExpressionAttributeValues": {":version": self._serializer.serialize(version)},
+        }}
+
+    def _resolve_item(self, *, owner_id: str, application_id: str) -> dict[str, Any] | None:
+        visited: set[str] = set()
+        while application_id not in visited:
+            visited.add(application_id)
+            item = self._get_stored_item(owner_id=owner_id, application_id=application_id)
+            if item is None or "merged_into" not in item:
+                return item
+            application_id = item["merged_into"]
+        return None
 
     def _write_mutation(
         self,

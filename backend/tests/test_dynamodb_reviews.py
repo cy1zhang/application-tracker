@@ -8,6 +8,7 @@ from app.domain.applications import (
     ApplicationCreate,
     ApplicationPatch,
     ApplicationStatus,
+    MergeRequest,
 )
 from app.domain.reviews import ReviewApplicationCreate, ReviewResolution
 from app.repositories.dynamodb import DynamoApplicationRepository
@@ -191,3 +192,33 @@ def test_create_from_review_can_keep_status_unknown(store) -> None:
     created = applications.get(owner_id="user-a", application_id="new-app")
     assert created.status is None
     assert len(applications.list_events(owner_id="user-a", application_id="new-app")) == 1
+
+
+def test_attach_to_merged_id_uses_retained_application(store) -> None:
+    applications, emails, reviews = store
+    _application(applications, app_id="keep")
+    _application(applications, app_id="duplicate")
+    applications.merge(
+        owner_id="user-a",
+        keep_id="keep",
+        payload=MergeRequest(
+            duplicate_id="duplicate",
+            expected_keep_version=1,
+            expected_duplicate_version=1,
+        ),
+        event_id="merge-1",
+        occurred_at=NOW - timedelta(hours=1),
+    )
+    _review(emails, app_id="duplicate")
+
+    result = reviews.resolve(
+        owner_id="user-a",
+        message_id="msg-1",
+        resolution=ReviewResolution(
+            action="attach", application_id="duplicate", expected_version=2
+        ),
+        occurred_at=NOW,
+    )
+
+    assert result.application_id == "keep"
+    assert len(applications.list_events(owner_id="user-a", application_id="keep")) == 4

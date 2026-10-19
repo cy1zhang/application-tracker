@@ -8,6 +8,7 @@ from app.domain.applications import (
     ApplicationEvent,
     ApplicationPage,
     ApplicationPatch,
+    MergeRequest,
 )
 
 
@@ -20,6 +21,10 @@ class VersionConflict(Exception):
 
 
 class InvalidCursor(Exception):
+    pass
+
+
+class InvalidMerge(Exception):
     pass
 
 
@@ -70,3 +75,13 @@ class ApplicationRepository(Protocol):
         event_id: str,
         occurred_at: datetime,
     ) -> None: ...
+
+    def merge(
+        self,
+        *,
+        owner_id: str,
+        keep_id: str,
+        payload: MergeRequest,
+        event_id: str,
+        occurred_at: datetime,
+    ) -> Application: ...
