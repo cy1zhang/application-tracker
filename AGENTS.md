@@ -7,14 +7,13 @@ Guidance for coding agents (Claude Code, Codex, etc.) working in this repository
 Application Tracker is a job-application tracker that will eventually sync Gmail
 and classify recruiting email. It is built in milestones defined in
 `docs/IMPLEMENTATION_ROADMAP.md`; **build only the active milestone and do not
-scaffold later subsystems early.** Milestones 0–3 (foundation, DynamoDB-backed
-application domain, manual tracker) are done. Milestone 4 hosted auth and
-deployment and milestone 5 Gmail connection were live-verified. Milestone 6
-deterministic email processing is implemented offline on its feature branch;
-Gmail import, SQS sync, and AI providers do not exist yet. The frontend is the
-manual-tracker dashboard: it
-loads all of the owner's applications and filters, searches, and sorts them in
-the browser.
+scaffold later subsystems early.** Milestones 0–5 (foundation through Gmail
+connection) were implemented and verified in the development deployment.
+Milestone 6 deterministic email processing is complete offline and integrated
+locally. Milestone 7 review and reconciliation is complete offline on its
+feature branch; live deployment remains. Gmail import, SQS sync, and AI
+providers do not exist yet. The dashboard loads and filters the owner's
+applications and offers review and merge controls.
 
 Key docs: `docs/PRD.md` (product behavior), `docs/TECHNICAL_DESIGN.md` (target AWS
 architecture, tables, API surface, sync/classification rules),

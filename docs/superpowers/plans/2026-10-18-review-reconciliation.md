@@ -72,12 +72,18 @@
 
 **Files:** Update `docs/DEVELOPMENT.md`, `docs/IMPLEMENTATION_ROADMAP.md`, and `AGENTS.md` only after implementation is verified.
 
-- [ ] Run all backend/frontend CI commands, SAM lint, offline deploy tests, and `git diff --check`.
-- [ ] Request read-only branch review against `main`; fix material findings and rerun affected checks.
-- [ ] Document remaining live-sync boundary, mark Milestone 7 complete offline, and commit a clean handoff.
+- [x] Run all backend/frontend CI commands, SAM lint, offline deploy tests, and `git diff --check`.
+- [x] Request read-only branch review against `main`; fix material findings and rerun affected checks.
+- [x] Document remaining live-sync boundary, mark Milestone 7 complete offline, and commit a clean handoff.
 
 ## Open decisions
 
 - The existing Events table suffices for the development queue; if real sync volume later makes owner-partition filtering costly, revisit indexing in Milestone 8 with measurements.
 - Manual review creation permits null status to preserve unknown stage; ordinary manual creation keeps its current required status.
 - A merged duplicate remains a tombstone pointing to the retained record. New evidence for an old ID must resolve to the retained record or require review; it must never recreate the duplicate.
+
+## Handoff
+
+- Offline verification: 165 backend tests, 78 frontend tests, backend/frontend lint, frontend typecheck/build, npm audit, SAM lint, and 7 offline deploy tests passed. Frontend checks ran with Node 22.23.3 and npm 10.9.9.
+- Read-only branch review found merge provenance, audit, source-link, and UI state issues; commit `7b16e6c` fixes them. The reviewer verified the fixes with focused tests.
+- No Milestone 7 AWS deployment or live Gmail sync was performed. The review queue stays empty until trusted processing records review outcomes; Gmail import and scheduling begin in Milestone 8.

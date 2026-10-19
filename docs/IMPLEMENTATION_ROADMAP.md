@@ -100,7 +100,7 @@ credentials appearing in logs, URLs, or API responses.
 
 ### 6. Add deterministic email processing
 
-**Status: complete (offline; awaiting branch integration)**
+**Status: complete (offline; integrated locally)**
 
 - Create synthetic recruiting-email fixtures.
 - Parse safe text from Gmail messages.
@@ -111,6 +111,8 @@ credentials appearing in logs, URLs, or API responses.
 ambiguous messages cannot silently mutate an application.
 
 ### 7. Add review and reconciliation
+
+**Status: complete (offline; live deployment pending)**
 
 - Build review queue endpoints and UI.
 - Support accept, edit, reject, attach, and create-new actions.

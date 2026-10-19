@@ -5,7 +5,9 @@ DynamoDB and a React/TypeScript dashboard for creating, editing, filtering,
 and inspecting applications. Hosted Google sign-in and the manual tracker were
 verified in the development deployment. Milestone 5 adds a separate Gmail
 connection. Milestone 6 adds offline, deterministic processing of synthetic
-Gmail messages; live import, scheduling, and AI providers are later milestones.
+Gmail messages. Milestone 7 adds an owner-scoped review queue and duplicate
+merge. Live import, scheduling, and AI providers are later milestones; review
+items appear only when trusted processing records them.
 
 ## Prerequisites
 
@@ -110,6 +112,25 @@ Use `uv run pytest tests/test_gmail_message.py tests/test_email_rules.py
 tests/test_dynamodb_email.py tests/test_email_processing.py -q` from `backend/`
 to run the synthetic processing checks. No Gmail account or AWS credentials are
 needed.
+
+## Review and reconciliation
+
+`GET /reviews` lists pending outcomes for the authenticated owner. The dashboard
+shows each item's reason, bounded evidence, proposed fields, and a Gmail source
+link when available. The owner can accept a proposal, edit the linked
+application, reject it, attach the email to an application, or create an
+application from it. Creating from review permits an unknown (`null`) status.
+The resolution API guards repeated actions and stale application versions;
+successful changes and links appear in application history.
+
+Application detail also offers **Merge duplicate**. Choose the duplicate and
+resolve every field where both applications have different known values. The
+retained application gets the combined history, while the duplicate ID points
+to the retained record and cannot be recreated by replaying old evidence.
+Manual changes are tracked by field so older email cannot overwrite a corrected
+value and a later clear email can update it. These behaviors are covered by
+synthetic offline tests. Milestone 7 has not been deployed or checked with a
+live Gmail sync run.
 
 ## Deploying the development app
 
