@@ -233,17 +233,8 @@ def _match_application(
     ]
     if by_thread and by_req:
         matches = [item for item in by_thread if item in by_req]
-    elif by_thread or by_req:
-        matches = by_thread or by_req
     else:
-        matches = [
-            item
-            for item in applications
-            if item.application.company
-            and item.application.role
-            and _mentions(content, item.application.company)
-            and item.application.role.casefold() in roles
-        ]
+        matches = by_thread or by_req
     matches = [
         item
         for item in matches

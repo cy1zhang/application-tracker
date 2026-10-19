@@ -4,7 +4,7 @@
 
 **Goal:** Turn a synthetic Gmail `format=full` message into a safe, owner-scoped, idempotent rules outcome without AI or live inbox synchronization.
 
-**Architecture:** Decode bounded inline MIME text, then classify only explicit recruiting events. Match an existing application only with a unique thread or requisition link, or a unique exact company-and-role mention with no cycle conflict. Save a deterministic message outcome in the existing Events table; a rule-applied status change and its outcome are one DynamoDB transaction. A later sync worker will supply messages and candidate applications; this milestone adds no Gmail fetch, queue, schedule, UI, or model hosting.
+**Architecture:** Decode bounded inline MIME text, then classify only explicit recruiting events. Match an existing application only with a unique existing thread or requisition link, plus exact company-and-role evidence with no cycle conflict. Save a deterministic message outcome in the existing Events table; a rule-applied status change and its outcome are one DynamoDB transaction. A later sync worker will supply messages and candidate applications; this milestone adds no Gmail fetch, queue, schedule, UI, or model hosting.
 
 **Tech Stack:** Python 3.12 standard library, FastAPI backend domain models, boto3/DynamoDB, pytest/moto.
 
@@ -47,7 +47,7 @@
 **Interfaces:** `classify_message(message: ParsedGmailMessage, applications: list[ApplicationCandidate]) -> RuleDecision`. `ApplicationCandidate` carries an existing application plus known Gmail thread IDs and requisition IDs. `RuleDecision` has `outcome` (`ignored`, `review_required`, or `applied`), a nullable application ID/status, and a short reason. “Applied” means eligible for the repository's guarded mutation, not yet persisted.
 
 - [x] Write tests for explicit Applied, OA, Interviewing, Offer, and Rejected messages; newsletters, job ads, hypothetical text, unknown status, and conflicting stages.
-- [x] Write tests for unique thread/requisition match, unique company-and-role match, company-only, two roles/cycles at one company, and cycle extraction only when explicit.
+- [x] Write tests for unique thread/requisition match with company-and-role evidence, unlinked and company-only messages, two roles/cycles at one company, and cycle extraction only when explicit.
 - [x] Write tests for older evidence and terminal-state reopening going to review.
 - [x] Run `uv run pytest tests/test_email_rules.py -q`; confirm failure for the absent rules.
 - [x] Implement the minimum evidence phrases, matching rules, and decision types; do not infer a date, cycle, or stage.
@@ -78,7 +78,7 @@
 
 ## Open decisions
 
-- Read-only review found misleading quoted or forwarded text, inline attachments, competing roles and cycles, unrelated cycle promotions, negated or future event wording, and company names outside the event. Focused regression tests now require an affirmative body event that names the exact role and directly identifies the company; a cycle is recorded only for `for <role> in <season year>`. Forwarded and subject-only events go to review. The final correction is awaiting read-only recheck.
+- Read-only review found misleading quoted or forwarded text, inline attachments, competing roles and cycles, unrelated cycle promotions, negated or future event wording, company names outside the event, and unlinked messages claiming a status. Focused regression tests now require an affirmative body event that names the exact role and directly identifies the company, plus a unique existing thread or requisition link; a cycle is recorded only for `for <role> in <season year>`. Forwarded, subject-only, and unlinked events go to review. The final correction is awaiting read-only recheck.
 - No live Gmail read or deployment is part of this milestone. The user asked to reduce manual live testing; synthetic offline tests are the verification gate here.
 - Until Milestone 7 adds field-specific correction timestamps, the processor conservatively sends evidence older than the application's last edit to review, even when that edit changed an unrelated field. This can reduce automatic coverage but prevents an older email from undoing a manual correction.
 - The future AI provider choice will be revisited around Milestone 9 for the user's open-weight preference. No model infrastructure is added now.

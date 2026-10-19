@@ -54,7 +54,9 @@ def test_processing_is_owner_scoped_idempotent_and_reviewable() -> None:
             event_id="create-1",
             occurred_at=NOW - timedelta(days=1),
         )
-        candidates = [ApplicationCandidate(application=application)]
+        candidates = [
+            ApplicationCandidate(application=application, thread_ids=frozenset({"thread-1"}))
+        ]
         clear = _gmail(
             "msg-1", "Acme invites you to interview for Software Engineer Intern."
         )

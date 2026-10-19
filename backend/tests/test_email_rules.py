@@ -83,7 +83,7 @@ def _candidate(
     ],
 )
 def test_explicit_status_rules_require_no_ai(text, status) -> None:
-    candidate = _candidate(status=None)
+    candidate = _candidate(status=None, threads={"thread-1"})
 
     decision = classify_message(_message(text), [candidate])
 
@@ -116,13 +116,15 @@ def test_later_if_you_have_questions_does_not_hide_an_event() -> None:
         "If you have questions, contact us."
     )
 
-    assert classify_message(_message(text), [_candidate()]).outcome == "applied"
+    assert classify_message(
+        _message(text), [_candidate(threads={"thread-1"})]
+    ).outcome == "applied"
 
 
 def test_unknown_stage_goes_to_review_without_inventing_applied() -> None:
     decision = classify_message(
         _message("We have an update about Software Engineer Intern at Acme."),
-        [_candidate()],
+        [_candidate(threads={"thread-1"})],
     )
 
     assert decision.outcome == "review_required"
@@ -147,7 +149,7 @@ def test_new_body_event_takes_precedence_over_old_thread_subject() -> None:
             "Acme invites you to interview for Software Engineer Intern.",
             subject="Re: Thank you for applying",
         ),
-        [_candidate()],
+        [_candidate(threads={"thread-1"})],
     )
 
     assert decision.outcome == "applied"
@@ -287,6 +289,20 @@ def test_company_elsewhere_in_message_cannot_select_application() -> None:
     assert decision.application_id is None
 
 
+def test_unlinked_offer_cannot_update_application() -> None:
+    message = ParsedGmailMessage(
+        **{
+            **_message("Acme is pleased to offer you the Software Engineer Intern role.").__dict__,
+            "sender": "Unknown <random@unrelated.test>",
+            "thread_id": "unrelated-thread",
+        }
+    )
+    decision = classify_message(message, [_candidate()])
+
+    assert decision.outcome == "review_required"
+    assert decision.application_id is None
+
+
 def test_referral_company_in_event_cannot_replace_employer() -> None:
     decision = classify_message(
         _message(
@@ -343,8 +359,8 @@ def test_shorter_role_is_not_matched_inside_longer_role() -> None:
 
 def test_multiple_cycles_require_explicit_cycle() -> None:
     candidates = [
-        _candidate("summer", season=Season.SUMMER, year=2027),
-        _candidate("fall", season=Season.FALL, year=2027),
+        _candidate("summer", season=Season.SUMMER, year=2027, threads={"thread-1"}),
+        _candidate("fall", season=Season.FALL, year=2027, threads={"thread-1"}),
     ]
     no_cycle = classify_message(
         _message(
@@ -374,7 +390,7 @@ def test_conflicting_subject_and_body_cycles_require_review() -> None:
             "Browse our Fall 2028 openings.",
             subject="Summer 2027 interview invitation",
         ),
-        [_candidate()],
+        [_candidate(threads={"thread-1"})],
     )
 
     assert decision.outcome == "review_required"
@@ -387,7 +403,7 @@ def test_unrelated_promotion_does_not_set_application_cycle() -> None:
             "Browse our Fall 2028 openings.",
             subject="Interview invitation",
         ),
-        [_candidate()],
+        [_candidate(threads={"thread-1"})],
     )
 
     assert decision.outcome == "applied"
@@ -402,7 +418,7 @@ def test_unrelated_cycle_in_same_sentence_does_not_set_application_cycle() -> No
             "browse our Fall 2028 openings.",
             subject="Interview invitation",
         ),
-        [_candidate()],
+        [_candidate(threads={"thread-1"})],
     )
 
     assert decision.outcome == "applied"
@@ -415,7 +431,7 @@ def test_unsupported_cycle_remains_unknown() -> None:
         _message(
             "Acme invites you to interview for Software Engineer Intern."
         ),
-        [_candidate()],
+        [_candidate(threads={"thread-1"})],
     )
 
     assert decision.season is None
@@ -425,10 +441,10 @@ def test_unsupported_cycle_remains_unknown() -> None:
 def test_older_evidence_and_terminal_reopening_require_review() -> None:
     text = "Acme invites you to interview for Software Engineer Intern."
     old = classify_message(
-        _message(text), [_candidate(updated_at=NOW + timedelta(days=1))]
+        _message(text), [_candidate(updated_at=NOW + timedelta(days=1), threads={"thread-1"})]
     )
     terminal = classify_message(
-        _message(text), [_candidate(status=ApplicationStatus.REJECTED)]
+        _message(text), [_candidate(status=ApplicationStatus.REJECTED, threads={"thread-1"})]
     )
 
     assert old.outcome == "review_required"
@@ -438,7 +454,7 @@ def test_older_evidence_and_terminal_reopening_require_review() -> None:
 def test_known_stage_cannot_regress_to_applied() -> None:
     decision = classify_message(
         _message("Thank you for applying for Software Engineer Intern at Acme."),
-        [_candidate(status=ApplicationStatus.INTERVIEWING)],
+        [_candidate(status=ApplicationStatus.INTERVIEWING, threads={"thread-1"})],
     )
 
     assert decision.outcome == "review_required"

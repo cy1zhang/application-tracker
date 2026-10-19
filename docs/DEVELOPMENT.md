@@ -96,7 +96,8 @@ table. Clear evidence changes an existing application and writes its history
 event in one DynamoDB transaction. Ambiguous messages become review-required
 records; duplicates return their first terminal outcome. An automatic change
 requires an affirmative event that names both the company and the exact role
-in the event sentence. A season and year are added only when tied directly to
+in the event sentence, plus an existing unique thread or requisition link.
+Unlinked messages go to review. A season and year are added only when tied directly to
 that role; unsupported wording stays for review. The code does not
 fetch Gmail messages or run automatically yet. A later sync worker will supply
 the owner and candidate applications from trusted records.
