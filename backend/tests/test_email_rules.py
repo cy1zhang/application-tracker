@@ -227,13 +227,35 @@ def test_unique_requisition_link_still_needs_event_role() -> None:
 
     named_role = classify_message(
         _message(
-            "Req ID: REQ-123. Acme invites you to interview for Software Engineer Intern."
+            "Acme invites you to interview for Software Engineer Intern, "
+            "Req ID: REQ-123."
         ),
         [_candidate(reqs={"REQ-123"}), _candidate("app-2", role="Analyst")],
     )
     assert named_role.outcome == "applied"
     assert named_role.application_id == "app-1"
     assert named_role.requisition_id == "REQ-123"
+
+
+def test_previous_requisition_cannot_link_new_interview() -> None:
+    decision = classify_message(
+        _message(
+            "Acme invites you to interview for Software Engineer Intern. "
+            "The previous Req ID OLD-123 is closed.",
+            thread="unlinked-thread",
+        ),
+        [
+            _candidate(
+                "old", season=Season.SUMMER, year=2026, reqs={"OLD-123"}
+            ),
+            _candidate(
+                "new", season=Season.SUMMER, year=2027, reqs={"NEW-456"}
+            ),
+        ],
+    )
+
+    assert decision.outcome == "review_required"
+    assert decision.application_id is None
 
 
 @pytest.mark.parametrize(

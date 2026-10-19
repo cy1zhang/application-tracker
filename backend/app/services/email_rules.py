@@ -134,6 +134,7 @@ def classify_message(
     status = found[0][0] if found else None
     evidence = found[0][1].group(0) if found else ""
     event_sentence = _sentence_at(stage_content, found[0][1].start()) if found else ""
+    event_requisitions = _REQUISITION.findall(event_sentence)
     if status is not None and (
         _UNCERTAIN.search(event_sentence)
         or (status != ApplicationStatus.REJECTED and _FUTURE_OR_NEGATED.search(event_sentence))
@@ -147,7 +148,7 @@ def classify_message(
         if len(event_roles) == 1
         else (None, None)
     )
-    candidate = _match_application(message, applications, content, season, year)
+    candidate = _match_application(message, applications, event_sentence, season, year)
 
     if status is None:
         names_mentioned = any(
@@ -171,7 +172,7 @@ def classify_message(
             status=status,
             season=season,
             year=year,
-            requisition_id=requisitions[0] if requisitions else None,
+            requisition_id=event_requisitions[0] if event_requisitions else None,
             evidence=evidence,
         )
     if (
@@ -194,7 +195,7 @@ def classify_message(
         "status": status,
         "season": season,
         "year": year,
-        "requisition_id": requisitions[0] if requisitions else None,
+        "requisition_id": event_requisitions[0] if event_requisitions else None,
         "evidence": evidence,
     }
     if message.received_at < application.updated_at:
@@ -217,11 +218,11 @@ def classify_message(
 def _match_application(
     message: ParsedGmailMessage,
     applications: list[ApplicationCandidate],
-    content: str,
+    event_sentence: str,
     season: Season | None,
     year: int | None,
 ) -> ApplicationCandidate | None:
-    requisitions = {value.casefold() for value in _REQUISITION.findall(content)}
+    requisitions = {value.casefold() for value in _REQUISITION.findall(event_sentence)}
     roles = _explicit_roles(message.text)
     if not roles:
         roles = _explicit_roles(message.subject)
