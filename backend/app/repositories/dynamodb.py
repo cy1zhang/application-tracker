@@ -330,6 +330,11 @@ class DynamoApplicationRepository:
             for field, value in values.items()
             if keep[field] != value
         }
+        decided_fields = changes.keys() | conflicts
+        merged_times = _latest_times(field_times_for(keep), field_times_for(duplicate))
+        merged_corrections = _latest_times(
+            keep.get("field_corrections", {}), duplicate.get("field_corrections", {})
+        )
         retained = {
             **keep,
             **values,
@@ -339,12 +344,12 @@ class DynamoApplicationRepository:
                 *keep.get("merged_from", []), duplicate_id, *duplicate.get("merged_from", [])
             ])),
             "field_updated_at": {
-                **field_times_for(keep),
-                **{field: occurred_at.isoformat() for field in changes},
+                **merged_times,
+                **{field: occurred_at.isoformat() for field in decided_fields},
             },
             "field_corrections": {
-                **keep.get("field_corrections", {}),
-                **{field: occurred_at.isoformat() for field in changes},
+                **merged_corrections,
+                **{field: occurred_at.isoformat() for field in decided_fields},
             },
         }
         tombstone = {
@@ -362,6 +367,7 @@ class DynamoApplicationRepository:
             changes=changes,
         )
         event["merged_application_id"] = duplicate_id
+        event["merge_resolutions"] = payload.resolutions
 
         try:
             self._client.transact_write_items(TransactItems=[
@@ -576,3 +582,11 @@ def field_times_for(item: dict[str, Any]) -> dict[str, str]:
         for field in APPLICATION_FIELDS
         if item.get(field) is not None
     }
+
+
+def _latest_times(left: dict[str, str], right: dict[str, str]) -> dict[str, str]:
+    merged = dict(left)
+    for field, timestamp in right.items():
+        if field not in merged or datetime.fromisoformat(timestamp) > datetime.fromisoformat(merged[field]):
+            merged[field] = timestamp
+    return merged

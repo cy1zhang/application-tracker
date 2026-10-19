@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { ApiError, resolveReview } from "../api/client";
+import { ApiError, getApplication, resolveReview } from "../api/client";
 import type {
   Application,
   ApplicationValues,
@@ -19,6 +19,8 @@ const REASONS: Record<string, string> = {
   status_regression: "The proposed stage conflicts with the current status.",
   cycle_conflict: "The proposed hiring cycle conflicts with this application.",
   forwarded_message: "This message forwards an older email.",
+  unparseable_message: "The email could not be read automatically. Open it to review the details.",
+  missing_application: "The linked application is unavailable or was merged.",
 };
 
 type ActiveAction = { messageId: string; kind: "edit" | "attach" | "create" };
@@ -36,6 +38,24 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [linkedApplications, setLinkedApplications] = useState<Record<string, Application>>({});
+
+  useEffect(() => {
+    const missingIds = [...new Set(reviews.map((review) => review.application_id).filter(
+      (id): id is string => id !== null && !applications.some((item) => item.application_id === id),
+    ))];
+    let current = true;
+    void Promise.all(missingIds.map(async (id) => {
+      try {
+        return [id, await getApplication(id)] as const;
+      } catch {
+        return null;
+      }
+    })).then((resolved) => {
+      if (current) setLinkedApplications(Object.fromEntries(resolved.filter((item) => item !== null)));
+    });
+    return () => { current = false; };
+  }, [reviews, applications]);
 
   async function resolve(messageId: string, payload: ReviewResolution) {
     setBusy(true);
@@ -49,6 +69,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         await onResolved();
+        setActive(null);
         setError("The review or application changed. The latest data is loaded.");
       } else {
         setError(caught instanceof ApiError ? caught.message : "Could not save review.");
@@ -97,7 +118,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
         {reviews.map((review) => {
           const application = applications.find(
             (item) => item.application_id === review.application_id,
-          );
+          ) ?? linkedApplications[review.application_id ?? ""];
           const selected = applications.find((item) => item.application_id === attachId);
           const action = active?.messageId === review.message_id ? active.kind : null;
           return (

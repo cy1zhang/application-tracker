@@ -25,6 +25,9 @@ export function MergeForm({ retained, candidates, onMerged, onReload, onCancel }
   const conflicts = duplicate
     ? FIELDS.filter((field) => retained[field] !== null && duplicate[field] !== null && retained[field] !== duplicate[field])
     : [];
+  const additions = duplicate
+    ? FIELDS.filter((field) => retained[field] === null && duplicate[field] !== null)
+    : [];
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -79,6 +82,10 @@ export function MergeForm({ retained, candidates, onMerged, onReload, onCancel }
       {duplicate && (
         <>
           {conflicts.length === 0 ? <p>No conflicting fields. Known values will be combined.</p> : <p>Choose which value to keep for each conflict.</p>}
+          {additions.length > 0 && <div>
+            <p>The following values will be added:</p>
+            <ul>{additions.map((field) => <li key={field}>{FIELD_LABELS[field]}: {formatFieldValue(field, null)} → {formatFieldValue(field, duplicate[field])}</li>)}</ul>
+          </div>}
           <div className="merge-conflicts">
             {conflicts.map((field) => (
               <div className="field" key={field}>

@@ -1,14 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { ApiError, resolveReview } from "../api/client";
+import { ApiError, getApplication, resolveReview } from "../api/client";
 import type { ReviewItem } from "../api/types";
 import { makeApplication } from "../test/fixtures";
 import { ReviewQueue } from "./ReviewQueue";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, resolveReview: vi.fn() };
+  return { ...actual, getApplication: vi.fn(), resolveReview: vi.fn() };
 });
 
 afterEach(() => vi.resetAllMocks());
@@ -99,5 +99,30 @@ test("reloads after a stale resolution", async () => {
 
   fireEvent.click(screen.getByRole("button", { name: "Accept proposal" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("latest data is loaded");
+  expect(onResolved).toHaveBeenCalledOnce();
+});
+
+test("retains actions for a review linked to a merged application ID", async () => {
+  const retained = makeApplication({ application_id: "retained", version: 4 });
+  vi.mocked(getApplication).mockResolvedValue(retained);
+  vi.mocked(resolveReview).mockResolvedValue({ message_id: "msg-1", action: "accept", application_id: "retained" });
+  render(<ReviewQueue reviews={[{ ...review, application_id: "merged-old" }]} applications={[retained]} onResolved={vi.fn().mockResolvedValue(undefined)} onBack={() => {}} />);
+
+  expect(await screen.findByRole("button", { name: "Accept proposal" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Accept proposal" }));
+  expect(resolveReview).toHaveBeenCalledWith("msg-1", { action: "accept", expected_version: 4 });
+});
+
+test("closes a stale edit form so it cannot resubmit an old version", async () => {
+  vi.mocked(resolveReview).mockRejectedValue(new ApiError(409, "Stale version"));
+  const onResolved = vi.fn().mockResolvedValue(undefined);
+  render(<ReviewQueue reviews={[review]} applications={[makeApplication({ application_id: "app-1" })]} onResolved={onResolved} onBack={() => {}} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "Edit and apply" }));
+  fireEvent.change(screen.getByLabelText("Status"), { target: { value: "offer" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save review changes" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("latest data is loaded");
+  expect(screen.queryByRole("button", { name: "Save review changes" })).not.toBeInTheDocument();
   expect(onResolved).toHaveBeenCalledOnce();
 });

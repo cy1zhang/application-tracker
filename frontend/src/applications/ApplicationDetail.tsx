@@ -212,6 +212,9 @@ function HistoryEntry({ event }: { event: ApplicationEvent }) {
             </li>
           );
         })}
+        {Object.entries(event.merge_resolutions ?? {}).map(([field, choice]) => (
+          <li key={`choice-${field}`}>{FIELD_LABELS[field] ?? field}: chose {choice === "keep" ? "retained application" : "duplicate application"}</li>
+        ))}
       </ul>
       {event.thread_id ? (
         <a className="history-source" href={`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(event.thread_id)}`} target="_blank" rel="noopener noreferrer">Open source email</a>

@@ -4,7 +4,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_application_repository, get_current_subject
-from app.domain.applications import ApplicationCreate, ApplicationStatus, MergeRequest
+from app.domain.applications import (
+    ApplicationCreate,
+    ApplicationPatch,
+    ApplicationStatus,
+    MergeRequest,
+)
 from app.main import app
 from app.repositories.applications import (
     ApplicationNotFound,
@@ -77,6 +82,61 @@ def test_merge_requires_explicit_choices_for_conflicting_fields(repository) -> N
     )
 
     assert retained.status == ApplicationStatus.OFFER
+
+
+def test_merge_carries_equal_field_corrections_into_replay_guard(repository) -> None:
+    _create(repository, "keep")
+    _create(repository, "duplicate", status="interviewing")
+    repository.update(
+        owner_id="user-a", application_id="duplicate",
+        patch=ApplicationPatch(expected_version=1, status="applied"),
+        event_id="correction", occurred_at=NOW,
+    )
+    repository.merge(
+        owner_id="user-a", keep_id="keep",
+        payload=MergeRequest(duplicate_id="duplicate", expected_keep_version=1, expected_duplicate_version=2),
+        event_id="merge", occurred_at=NOW + timedelta(hours=1),
+    )
+    emails = DynamoEmailRepository(client=repository._client, applications_table="Applications", events_table="Events")
+    outcome = emails.record(
+        owner_id="user-a",
+        message=ParsedGmailMessage(
+            message_id="old", thread_id="thread", received_at=NOW - timedelta(days=1),
+            subject="", sender="", text="synthetic",
+        ),
+        decision=RuleDecision(outcome="applied", reason="explicit_event", application_id="keep", status=ApplicationStatus.INTERVIEWING, evidence="synthetic"),
+        application_version=2,
+    )
+    assert outcome.outcome == "review_required"
+    assert outcome.reason == "older_evidence"
+    assert repository.get(owner_id="user-a", application_id="keep").status == ApplicationStatus.APPLIED
+
+
+def test_merge_keep_choice_is_audited_and_blocks_older_replay(repository) -> None:
+    _create(repository, "keep")
+    _create(repository, "duplicate", status="offer")
+    repository.merge(
+        owner_id="user-a", keep_id="keep",
+        payload=MergeRequest(
+            duplicate_id="duplicate", expected_keep_version=1, expected_duplicate_version=1,
+            resolutions={"status": "keep"},
+        ),
+        event_id="merge", occurred_at=NOW,
+    )
+    merge_event = repository.list_events(owner_id="user-a", application_id="keep")[-1]
+    assert merge_event.merge_resolutions == {"status": "keep"}
+    emails = DynamoEmailRepository(client=repository._client, applications_table="Applications", events_table="Events")
+    outcome = emails.record(
+        owner_id="user-a",
+        message=ParsedGmailMessage(
+            message_id="old", thread_id="thread", received_at=NOW - timedelta(days=1),
+            subject="", sender="", text="synthetic",
+        ),
+        decision=RuleDecision(outcome="applied", reason="explicit_event", application_id="keep", status=ApplicationStatus.INTERVIEWING, evidence="synthetic"),
+        application_version=2,
+    )
+    assert outcome.outcome == "review_required"
+    assert outcome.reason == "older_evidence"
 
 
 def test_merge_rejects_self_cross_owner_and_stale_versions(repository) -> None:

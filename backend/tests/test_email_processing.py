@@ -7,6 +7,7 @@ from moto import mock_aws
 from app.domain.applications import ApplicationCreate
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_email import DynamoEmailRepository
+from app.repositories.dynamodb_reviews import DynamoReviewRepository
 from app.repositories.dynamodb_tables import create_tables
 from app.services.email_processing import process_message
 from app.services.email_rules import ApplicationCandidate
@@ -69,11 +70,22 @@ def test_processing_is_owner_scoped_idempotent_and_reviewable() -> None:
         malformed = process_message(
             "user-a", {**_gmail("bad-1", "text"), "payload": {}}, candidates, emails
         )
+        process_message(
+            "user-a", {**_gmail("bad-2", "text"), "threadId": "../outside", "payload": {}},
+            candidates, emails,
+        )
+        reviews = DynamoReviewRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        ).list_pending(owner_id="user-a", limit=100, cursor=None).items
+        malformed_review = next(item for item in reviews if item.message_id == "bad-1")
 
         assert first.outcome == "applied"
         assert repeated == first
         assert ambiguous.outcome == "review_required"
         assert foreign.outcome == "review_required"
         assert malformed.outcome == "review_required"
+        assert malformed_review.source_url == "https://mail.google.com/mail/u/0/#all/thread-1"
+        assert malformed_review.received_at == NOW
+        assert next(item for item in reviews if item.message_id == "bad-2").source_url is None
         assert applications.get(owner_id="user-a", application_id="app-1").version == 2
         assert len(applications.list_events(owner_id="user-a", application_id="app-1")) == 2

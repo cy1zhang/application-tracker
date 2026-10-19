@@ -44,6 +44,7 @@ export interface ApplicationEvent {
   source_message_id?: string | null;
   thread_id?: string | null;
   merged_application_id?: string | null;
+  merge_resolutions?: Record<string, "keep" | "duplicate"> | null;
 }
 
 export interface ApplicationCreate {

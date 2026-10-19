@@ -52,3 +52,12 @@ test("previews conflicting values and reloads after a stale version", async () =
   expect(onReload).toHaveBeenCalledOnce();
   expect(screen.getByLabelText("Status")).toHaveValue("");
 });
+
+test("previews known values copied into empty fields", () => {
+  const kept = makeApplication({ application_id: "keep", season: null });
+  const duplicate = makeApplication({ application_id: "duplicate", season: "summer" });
+  render(<MergeForm retained={kept} candidates={[duplicate]} onMerged={vi.fn()} onCancel={() => {}} />);
+
+  fireEvent.change(screen.getByLabelText("Duplicate application"), { target: { value: "duplicate" } });
+  expect(screen.getByText("Season: Unknown → Summer")).toBeInTheDocument();
+});

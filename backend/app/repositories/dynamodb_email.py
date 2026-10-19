@@ -169,7 +169,10 @@ class DynamoEmailRepository:
             application_id=decision.application_id,
         )
 
-    def record_unparseable(self, *, owner_id: str, message_id: str) -> StoredOutcome:
+    def record_unparseable(
+        self, *, owner_id: str, message_id: str,
+        thread_id: str | None = None, received_at: datetime | None = None,
+    ) -> StoredOutcome:
         prior = self._get_outcome(owner_id, message_id)
         if prior is not None and prior.outcome in _TERMINAL:
             return prior
@@ -180,6 +183,10 @@ class DynamoEmailRepository:
             "outcome": "review_required",
             "reason": "unparseable_message",
         }
+        if thread_id is not None:
+            item["thread_id"] = thread_id
+        if received_at is not None:
+            item["received_at"] = received_at.isoformat()
         return self._put_outcome(item)
 
     def _save_outcome(

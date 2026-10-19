@@ -72,6 +72,18 @@ test("shows fields, unknown values, and history", async () => {
   expect(screen.getByText(/^Created by you/)).toBeInTheDocument();
 });
 
+test("shows explicit merge choices in history", async () => {
+  vi.mocked(getApplication).mockResolvedValue(makeApplication());
+  vi.mocked(listApplicationEvents).mockResolvedValue([{
+    event_id: "merge-1", application_id: "app-1", event_type: "merged", origin: "user",
+    occurred_at: "2026-09-22T12:00:00+00:00", changes: {},
+    merged_application_id: "app-2", merge_resolutions: { status: "keep" },
+  }]);
+  renderDetail();
+
+  expect(await screen.findByText("Status: chose retained application")).toBeInTheDocument();
+});
+
 test("saves only changed fields and shows the new history", async () => {
   vi.mocked(getApplication)
     .mockResolvedValueOnce(makeApplication())
