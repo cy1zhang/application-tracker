@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-import { ApiError, createApplication, listAllApplications } from "./api/client";
+import { ApiError, createApplication, listAllApplications, listAllReviews } from "./api/client";
 import type {
   Application,
   ApplicationCreate,
   ApplicationValues,
+  ReviewItem,
 } from "./api/types";
 import { ApplicationDetail } from "./applications/ApplicationDetail";
 import { ApplicationForm } from "./applications/ApplicationForm";
@@ -15,22 +16,27 @@ import {
   type SortKey,
 } from "./applications/filtering";
 import { GmailConnection } from "./gmail/GmailConnection";
+import { ReviewQueue } from "./reviews/ReviewQueue";
 import "./styles.css";
 
 type View =
   | { kind: "list" }
   | { kind: "create" }
+  | { kind: "reviews" }
   | { kind: "detail"; applicationId: string };
 
 function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => void }) {
   const [view, setView] = useState<View>({ kind: "list" });
   const [applications, setApplications] = useState<Application[] | null>(null);
+  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("updated");
   // Loads can overlap; only the most recently started one may update state.
   const latestLoad = useRef(0);
+  const latestReviewLoad = useRef(0);
 
   async function loadApplications() {
     const load = ++latestLoad.current;
@@ -53,13 +59,35 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
     }
   }
 
+  async function loadReviews() {
+    const load = ++latestReviewLoad.current;
+    try {
+      const loaded = await listAllReviews();
+      if (load === latestReviewLoad.current) {
+        setReviews(loaded);
+        setReviewError(null);
+      }
+    } catch (error) {
+      if (load === latestReviewLoad.current) {
+        if (error instanceof ApiError && error.status === 403) setAccessDenied(true);
+        else setReviewError(error instanceof ApiError ? error.message : "Could not load reviews.");
+      }
+    }
+  }
+
+  async function refreshAfterReview() {
+    await Promise.all([loadApplications(), loadReviews()]);
+  }
+
   useEffect(() => {
     void loadApplications();
+    void loadReviews();
   }, []);
 
   function showList() {
     setView({ kind: "list" });
     void loadApplications();
+    void loadReviews();
   }
 
   async function handleCreate(values: ApplicationValues) {
@@ -87,6 +115,12 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
         {!accessDenied && applications !== null && email && onSignOut && (
           <GmailConnection />
         )}
+        {!accessDenied && applications !== null && (
+          <nav className="tracker-nav" aria-label="Tracker views">
+            <button type="button" onClick={showList}>Applications</button>
+            <button type="button" onClick={() => setView({ kind: "reviews" })}>Needs review ({reviews.length})</button>
+          </nav>
+        )}
         {accessDenied && (
           <section className="page" aria-labelledby="access-denied-title">
             <h1 id="access-denied-title">Access denied</h1>
@@ -104,7 +138,12 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
           </section>
         )}
         {!accessDenied && view.kind === "detail" && (
-          <ApplicationDetail applicationId={view.applicationId} onBack={showList} />
+          <ApplicationDetail applicationId={view.applicationId} otherApplications={(applications ?? []).filter((item) => item.application_id !== view.applicationId)} onMerged={loadApplications} onBack={showList} />
+        )}
+        {!accessDenied && view.kind === "reviews" && applications !== null && (
+          reviewError ? (
+            <div role="alert" className="error"><p>Could not load reviews: {reviewError}</p><button type="button" onClick={() => void loadReviews()}>Retry reviews</button></div>
+          ) : <ReviewQueue reviews={reviews} applications={applications} onResolved={refreshAfterReview} onBack={showList} />
         )}
         {!accessDenied && view.kind === "list" &&
           (loadError !== null ? (

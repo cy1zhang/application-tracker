@@ -110,6 +110,83 @@ select {
   gap: 8px;
 }
 
+.tracker-nav,
+.detail-actions,
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tracker-nav {
+  margin-bottom: 28px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #d4ddd7;
+}
+
+.review-count {
+  color: #52625a;
+  font-size: 0.9rem;
+}
+
+.review-list {
+  display: grid;
+  gap: 16px;
+}
+
+.review-item,
+.merge-form {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  background: #fff;
+  border: 1px solid #d4ddd7;
+  border-radius: 4px;
+}
+
+.review-item h2,
+.merge-form h2,
+.review-item p,
+.merge-form p {
+  margin: 0;
+}
+
+.review-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.review-heading time,
+.history-source {
+  color: #5e6b64;
+  font-size: 0.85rem;
+}
+
+.review-item blockquote {
+  margin: 0;
+  padding: 10px 14px;
+  border-left: 3px solid #82a993;
+  background: #f3f6f3;
+}
+
+.review-proposal {
+  font-weight: 600;
+}
+
+.review-attach,
+.merge-conflicts {
+  display: grid;
+  gap: 10px;
+}
+
+.review-error {
+  margin: 0;
+  color: #7a1f1f;
+}
+
 .page {
   display: grid;
   gap: 24px;

@@ -4,6 +4,11 @@ import type {
   ApplicationEvent,
   ApplicationPage,
   ApplicationPatch,
+  MergeRequest,
+  ReviewItem,
+  ReviewPage,
+  ReviewResolution,
+  ReviewResolutionResult,
 } from "./types";
 import { authConfig, authConfigError } from "../auth/config";
 import { getAccessToken } from "../auth/session";
@@ -105,6 +110,36 @@ export function updateApplication(
     method: "PATCH",
     body: JSON.stringify(patch),
   });
+}
+
+export function mergeApplication(id: string, payload: MergeRequest): Promise<Application> {
+  return request<Application>(`/applications/${encodeURIComponent(id)}/merge`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listAllReviews(): Promise<ReviewItem[]> {
+  const reviews: ReviewItem[] = [];
+  let cursor: string | null = null;
+  do {
+    const query = new URLSearchParams({ limit: "100" });
+    if (cursor !== null) query.set("cursor", cursor);
+    const page = await request<ReviewPage>(`/reviews?${query}`);
+    reviews.push(...page.items);
+    cursor = page.next_cursor;
+  } while (cursor !== null);
+  return reviews;
+}
+
+export function resolveReview(
+  messageId: string,
+  resolution: ReviewResolution,
+): Promise<ReviewResolutionResult> {
+  return request<ReviewResolutionResult>(
+    `/reviews/${encodeURIComponent(messageId)}/resolve`,
+    { method: "POST", body: JSON.stringify(resolution) },
+  );
 }
 
 export interface GmailConnectionStatus {

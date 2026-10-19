@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import App from "./App";
 import {
@@ -7,6 +7,7 @@ import {
   createApplication,
   getApplication,
   listAllApplications,
+  listAllReviews,
   listApplicationEvents,
 } from "./api/client";
 import type { Application } from "./api/types";
@@ -17,6 +18,7 @@ vi.mock("./api/client", async (importOriginal) => {
   return {
     ...actual,
     listAllApplications: vi.fn(),
+    listAllReviews: vi.fn(),
     createApplication: vi.fn(),
     getApplication: vi.fn(),
     listApplicationEvents: vi.fn(),
@@ -35,6 +37,10 @@ const coop = makeApplication({
 
 afterEach(() => {
   vi.resetAllMocks();
+});
+
+beforeEach(() => {
+  vi.mocked(listAllReviews).mockResolvedValue([]);
 });
 
 test("shows internships by default with a status summary", async () => {
@@ -76,6 +82,27 @@ test("shows an empty state before any applications exist", async () => {
   render(<App />);
 
   expect(await screen.findByText("No applications yet.")).toBeInTheDocument();
+});
+
+test("shows a pending review count and opens the review queue", async () => {
+  vi.mocked(listAllApplications).mockResolvedValue([internship]);
+  vi.mocked(listAllReviews).mockResolvedValue([{
+    message_id: "message-1",
+    reason: "ambiguous_application",
+    evidence: "Interview invitation",
+    received_at: null,
+    thread_id: null,
+    source_url: null,
+    application_id: "app-1",
+    proposed_status: "interviewing",
+    proposed_season: null,
+    proposed_year: null,
+  }]);
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Needs review (1)" }));
+  expect(screen.getByRole("heading", { name: "Needs review" })).toBeInTheDocument();
+  expect(screen.getByText("Interview invitation")).toBeInTheDocument();
 });
 
 test("shows a load error and retries", async () => {

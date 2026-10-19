@@ -58,6 +58,7 @@ function valuesFromApplication(application: Application): FormState {
 function parseForm(
   state: FormState,
   initial: Application | undefined,
+  allowUnknownStatus: boolean,
 ): ApplicationValues | string {
   const company = state.company.trim() || null;
   const role = state.role.trim() || null;
@@ -68,7 +69,7 @@ function parseForm(
   if (role === null && (initial === undefined || initial.role !== null)) {
     return "Enter a role.";
   }
-  if (status === null && (initial === undefined || initial.status !== null)) {
+  if (status === null && !allowUnknownStatus && (initial === undefined || initial.status !== null)) {
     return "Choose a status.";
   }
   const year = state.year.trim() === "" ? null : Number(state.year);
@@ -107,6 +108,7 @@ interface ApplicationFormProps {
   submitLabel: string;
   onSubmit: (values: ApplicationValues) => Promise<void>;
   onCancel: () => void;
+  allowUnknownStatus?: boolean;
 }
 
 export function ApplicationForm({
@@ -114,6 +116,7 @@ export function ApplicationForm({
   submitLabel,
   onSubmit,
   onCancel,
+  allowUnknownStatus = false,
 }: ApplicationFormProps) {
   const [state, setState] = useState<FormState>(() =>
     initial ? valuesFromApplication(initial) : EMPTY_FORM,
@@ -127,7 +130,7 @@ export function ApplicationForm({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const parsed = parseForm(state, initial);
+    const parsed = parseForm(state, initial, allowUnknownStatus);
     if (typeof parsed === "string") {
       setError(parsed);
       return;
@@ -219,7 +222,7 @@ export function ApplicationForm({
               update("status", event.target.value as ApplicationStatus | "")
             }
           >
-            <option value="">Select a status</option>
+            <option value="">{allowUnknownStatus ? "Unknown status" : "Select a status"}</option>
             {(Object.keys(STATUS_LABELS) as ApplicationStatus[]).map((status) => (
               <option key={status} value={status}>
                 {STATUS_LABELS[status]}

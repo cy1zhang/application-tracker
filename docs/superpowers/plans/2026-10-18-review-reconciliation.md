@@ -64,9 +64,9 @@
 
 **Interface:** Show pending review count and list with reason, proposal, and source link. Each review offers accept, edit, reject, attach, and create actions with version-conflict reload. Application detail offers a manual merge form that previews field differences and requires a choice for every conflict. Refresh application/review lists after successful actions.
 
-- [ ] Write failing UI tests for list/action states, validation, stale conflict, and merge preview.
-- [ ] Implement the smallest controls that satisfy the tests and current visual style.
-- [ ] Run frontend lint, tests, typecheck, build, and audit; commit the verified UI step.
+- [x] Write failing UI tests for list/action states, validation, stale conflict, and merge preview.
+- [x] Implement the smallest controls that satisfy the tests and current visual style.
+- [x] Run frontend lint, tests, typecheck, build, and audit; commit the verified UI step.
 
 ### Task 5: Verification and handoff
 

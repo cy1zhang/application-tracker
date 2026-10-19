@@ -11,7 +11,7 @@ export type ApplicationStatus =
   | "offer"
   | "rejected"
   | "withdrawn";
-export type EventType = "created" | "updated" | "deleted";
+export type EventType = "created" | "updated" | "deleted" | "attached" | "merged";
 export type EventOrigin = "user" | "rules" | "ai";
 export type FieldValue = string | number | null;
 
@@ -41,6 +41,9 @@ export interface ApplicationEvent {
   origin: EventOrigin;
   occurred_at: string;
   changes: Record<string, { before: FieldValue; after: FieldValue }>;
+  source_message_id?: string | null;
+  thread_id?: string | null;
+  merged_application_id?: string | null;
 }
 
 export interface ApplicationCreate {
@@ -68,3 +71,45 @@ export interface ApplicationValues {
 export type ApplicationPatch = Partial<ApplicationValues> & {
   expected_version: number;
 };
+
+export interface ReviewItem {
+  message_id: string;
+  reason: string;
+  evidence: string;
+  received_at: string | null;
+  thread_id: string | null;
+  source_url: string | null;
+  application_id: string | null;
+  proposed_status: ApplicationStatus | null;
+  proposed_season: Season | null;
+  proposed_year: number | null;
+}
+
+export interface ReviewPage {
+  items: ReviewItem[];
+  next_cursor: string | null;
+}
+
+export interface ReviewApplicationCreate extends Omit<ApplicationCreate, "status"> {
+  status: ApplicationStatus | null;
+}
+
+export type ReviewResolution =
+  | { action: "accept"; expected_version: number }
+  | { action: "edit"; application_id: string; patch: ApplicationPatch }
+  | { action: "reject" }
+  | { action: "attach"; application_id: string; expected_version: number }
+  | { action: "create"; application: ReviewApplicationCreate };
+
+export interface ReviewResolutionResult {
+  message_id: string;
+  action: ReviewResolution["action"];
+  application_id: string | null;
+}
+
+export interface MergeRequest {
+  duplicate_id: string;
+  expected_keep_version: number;
+  expected_duplicate_version: number;
+  resolutions: Record<string, "keep" | "duplicate">;
+}

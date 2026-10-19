@@ -14,6 +14,7 @@ import type {
   EventType,
 } from "../api/types";
 import { ApplicationForm, buildPatch } from "./ApplicationForm";
+import { MergeForm } from "./MergeForm";
 import {
   FIELD_LABELS,
   ROLE_TYPE_LABELS,
@@ -28,6 +29,8 @@ const EVENT_LABELS: Record<EventType, string> = {
   created: "Created",
   updated: "Updated",
   deleted: "Deleted",
+  attached: "Attached email",
+  merged: "Merged",
 };
 
 const ORIGIN_LABELS: Record<EventOrigin, string> = {
@@ -46,13 +49,16 @@ interface Loaded {
 interface ApplicationDetailProps {
   applicationId: string;
   onBack: () => void;
+  otherApplications?: Application[];
+  onMerged?: () => Promise<void>;
 }
 
-export function ApplicationDetail({ applicationId, onBack }: ApplicationDetailProps) {
+export function ApplicationDetail({ applicationId, onBack, otherApplications = [], onMerged }: ApplicationDetailProps) {
   const [data, setData] = useState<Loaded | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [stale, setStale] = useState(false);
+  const [merging, setMerging] = useState(false);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -81,7 +87,7 @@ export function ApplicationDetail({ applicationId, onBack }: ApplicationDetailPr
       return;
     }
     try {
-      await updateApplication(applicationId, patch);
+      await updateApplication(data.application.application_id, patch);
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
         setStale(true);
@@ -119,11 +125,10 @@ export function ApplicationDetail({ applicationId, onBack }: ApplicationDetailPr
             <h1 id="detail-title">
               {data.application.company ?? UNKNOWN} · {data.application.role ?? UNKNOWN}
             </h1>
-            {!editing && (
-              <button type="button" className="primary" onClick={() => setEditing(true)}>
-                Edit
-              </button>
-            )}
+            {!editing && !merging && <div className="detail-actions">
+              <button type="button" className="primary" onClick={() => setEditing(true)}>Edit</button>
+              {otherApplications.length > 0 && <button type="button" onClick={() => setMerging(true)}>Merge duplicate</button>}
+            </div>}
           </div>
           {stale && (
             <div role="alert" className="error">
@@ -136,7 +141,9 @@ export function ApplicationDetail({ applicationId, onBack }: ApplicationDetailPr
               </button>
             </div>
           )}
-          {editing ? (
+          {merging ? (
+            <MergeForm retained={data.application} candidates={otherApplications.filter((item) => item.application_id !== data.application.application_id)} onMerged={async () => { setMerging(false); await Promise.all([load(), onMerged?.()]); }} onReload={async () => { await Promise.all([load(), onMerged?.()]); }} onCancel={() => setMerging(false)} />
+          ) : editing ? (
             <ApplicationForm
               initial={data.application}
               submitLabel="Save changes"
@@ -206,6 +213,10 @@ function HistoryEntry({ event }: { event: ApplicationEvent }) {
           );
         })}
       </ul>
+      {event.thread_id ? (
+        <a className="history-source" href={`https://mail.google.com/mail/u/0/#all/${encodeURIComponent(event.thread_id)}`} target="_blank" rel="noopener noreferrer">Open source email</a>
+      ) : event.source_message_id ? <p className="history-source">Linked to email</p> : null}
+      {event.merged_application_id && <p className="history-source">Includes the duplicate application’s history.</p>}
     </li>
   );
 }
