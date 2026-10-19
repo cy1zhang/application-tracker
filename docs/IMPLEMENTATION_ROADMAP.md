@@ -100,6 +100,8 @@ credentials appearing in logs, URLs, or API responses.
 
 ### 6. Add deterministic email processing
 
+**Status: complete (offline; awaiting branch integration)**
+
 - Create synthetic recruiting-email fixtures.
 - Parse safe text from Gmail messages.
 - Add deterministic event rules and strong application matching.
