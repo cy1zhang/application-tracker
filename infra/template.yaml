@@ -116,7 +116,15 @@ Resources:
   SyncQueue:
     Type: AWS::SQS::Queue
     Properties:
-      VisibilityTimeout: 180
+      VisibilityTimeout: 720
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt SyncDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  SyncDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
 
   GmailKmsKey:
     Type: AWS::KMS::Key
@@ -333,6 +341,64 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/aws/lambda/${ApiFunction}'
+      RetentionInDays: 14
+
+  SyncWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-sync-worker'
+      CodeUri: ../backend
+      Handler: app.sync_handler.handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      Timeout: 120
+      MemorySize: 256
+      Environment:
+        Variables:
+          APPLICATIONS_TABLE: !Ref ApplicationsTable
+          EVENTS_TABLE: !Ref EventsTable
+          USERS_TABLE: !Ref UsersTable
+          OAUTH_STATES_TABLE: !Ref OAuthStatesTable
+          SYNC_RUNS_TABLE: !Ref SyncRunsTable
+          SYNC_QUEUE_URL: !Ref SyncQueue
+          GMAIL_KMS_KEY_ARN: !GetAtt GmailKmsKey.Arn
+          GMAIL_OAUTH_SECRET_NAME: !Ref GmailOAuthSecretName
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:Query, dynamodb:PutItem]
+              Resource:
+                - !GetAtt ApplicationsTable.Arn
+                - !GetAtt EventsTable.Arn
+                - !Sub '${EventsTable.Arn}/index/application-events-index'
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+              Resource: !GetAtt UsersTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+              Resource: !GetAtt SyncRunsTable.Arn
+            - Effect: Allow
+              Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:SendMessage]
+              Resource: !GetAtt SyncQueue.Arn
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt GmailKmsKey.Arn
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GmailOAuthSecretName}-*'
+      Events:
+        SyncJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt SyncQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes: [ReportBatchItemFailures]
+
+  SyncWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${SyncWorkerFunction}'
       RetentionInDays: 14
 
   MonthlyBudget:

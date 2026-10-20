@@ -139,7 +139,7 @@ def test_expired_lease_can_be_reclaimed_and_old_holder_cannot_checkpoint(reposit
     sync.claim("owner-a", "run-1", 1, "lease-1", STARTED_AT)
 
     reclaimed = sync.claim(
-        "owner-a", "run-1", 1, "lease-2", STARTED_AT + timedelta(minutes=3)
+        "owner-a", "run-1", 1, "lease-2", STARTED_AT + timedelta(minutes=4)
     )
 
     assert reclaimed is not None
@@ -159,3 +159,54 @@ def test_disconnect_prevents_checkpoint_and_completion(repositories) -> None:
         sync.checkpoint("owner-a", "run-1", 1, "lease-1", "page-2", 1, STARTED_AT)
     with pytest.raises(StaleSyncRun):
         sync.complete("owner-a", "run-1", 1, "lease-1", 1, STARTED_AT)
+
+
+def test_import_snapshot_becomes_next_incremental_start(repositories) -> None:
+    gmail, sync, client = repositories
+    gmail.save_connection("owner-a", 0, "a@example.test", TOKEN, CONNECTED_AT)
+    sync.start("owner-a", "run-1", STARTED_AT)
+    sync.claim("owner-a", "run-1", 1, "lease-1", STARTED_AT)
+
+    sync.set_history_snapshot("owner-a", "run-1", 1, "lease-1", "100")
+    sync.complete("owner-a", "run-1", 1, "lease-1", 2, STARTED_AT, history_id="100")
+    next_run = sync.start("owner-a", "run-2", STARTED_AT + timedelta(days=1))
+
+    assert next_run.mode == "incremental"
+    assert next_run.history_id == "100"
+    assert client.get_item(TableName="Users", Key={"owner_id": {"S": "owner-a"}})[
+        "Item"
+    ]["history_id"]["S"] == "100"
+
+
+def test_stale_history_switches_to_last_success_overlap(repositories) -> None:
+    gmail, sync, _ = repositories
+    gmail.save_connection("owner-a", 0, "a@example.test", TOKEN, CONNECTED_AT)
+    sync.start("owner-a", "run-1", STARTED_AT)
+    sync.claim("owner-a", "run-1", 1, "lease-1", STARTED_AT)
+    sync.set_history_snapshot("owner-a", "run-1", 1, "lease-1", "100")
+    sync.complete("owner-a", "run-1", 1, "lease-1", 0, STARTED_AT, history_id="100")
+    sync.start("owner-a", "run-2", STARTED_AT + timedelta(days=14))
+    sync.claim("owner-a", "run-2", 1, "lease-2", STARTED_AT + timedelta(days=14))
+
+    rescan = sync.switch_to_rescan(
+        "owner-a", "run-2", 1, "lease-2", STARTED_AT + timedelta(days=14)
+    )
+
+    assert rescan.mode == "rescan"
+    assert rescan.import_after == STARTED_AT - timedelta(days=1)
+    assert rescan.status == "pending"
+
+
+def test_terminal_failure_is_visible_and_releases_active_slot(repositories) -> None:
+    gmail, sync, _ = repositories
+    gmail.save_connection("owner-a", 0, "a@example.test", TOKEN, CONNECTED_AT)
+    sync.start("owner-a", "run-1", STARTED_AT)
+    sync.claim("owner-a", "run-1", 1, "lease-1", STARTED_AT)
+
+    failed = sync.fail("owner-a", "run-1", 1, "lease-1", "partial", STARTED_AT)
+
+    assert failed.status == "partial"
+    assert sync.get_latest("owner-a") == failed
+    assert sync.start("owner-a", "run-2", STARTED_AT).run_id == "run-2"
+    with pytest.raises(StaleSyncRun):
+        sync.fail("owner-a", "run-1", 1, "lease-1", "partial", STARTED_AT)
