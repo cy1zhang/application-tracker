@@ -15,6 +15,7 @@ from app.services.gmail_fetch import (
     HistoryExpired,
     HistoryPage,
     MessagePage,
+    MessageUnavailable,
 )
 from app.services.sync_worker import process_sync_page
 
@@ -238,3 +239,53 @@ def test_stale_history_rescans_from_last_success_with_overlap(setup) -> None:
     assert result.mode == "rescan" and result.status == "pending"
     assert result.import_after == NOW + timedelta(seconds=1) - timedelta(days=1)
     assert len(publisher.messages) == 2
+
+
+def test_incremental_history_checkpoint_waits_for_final_page(setup) -> None:
+    client, _, syncs, _, _, fetch, _ = setup
+    fetch.fail_second_once = False
+    invoke(setup)
+    invoke(setup, lease_id="lease-2", now=NOW + timedelta(seconds=1))
+    syncs.start("owner-a", "run-2", NOW + timedelta(days=1))
+
+    def history_page(access_token, history_id, page_token):
+        assert history_id == "100"
+        if page_token is None:
+            return HistoryPage(["msg-4"], "page-2", "110")
+        assert page_token == "page-2"
+        return HistoryPage(["msg-5"], None, "120")
+
+    fetch.list_history_page = history_page
+    first = invoke(setup, run_id="run-2", now=NOW + timedelta(days=1))
+    user = client.get_item(TableName="Users", Key={"owner_id": {"S": "owner-a"}})["Item"]
+
+    assert first.status == "pending" and first.processed_count == 1
+    assert user["history_id"]["S"] == "100"
+
+    second = invoke(
+        setup, run_id="run-2", lease_id="lease-3",
+        now=NOW + timedelta(days=1, seconds=1),
+    )
+    user = client.get_item(TableName="Users", Key={"owner_id": {"S": "owner-a"}})["Item"]
+    assert second.status == "completed" and second.processed_count == 2
+    assert user["history_id"]["S"] == "120"
+
+
+def test_message_removed_after_listing_is_ignored_durably(setup) -> None:
+    client, _, _, _, _, fetch, _ = setup
+    fetch.fail_second_once = False
+
+    def missing(access_token, message_id):
+        if message_id == "msg-2":
+            raise MessageUnavailable("removed")
+        return message(message_id)
+
+    fetch.get_message = missing
+    result = invoke(setup)
+
+    assert result.status == "pending" and result.processed_count == 2
+    event = client.get_item(TableName="Events", Key={
+        "owner_id": {"S": "owner-a"}, "event_id": {"S": "gmail#msg-2"},
+    })["Item"]
+    assert event["outcome"]["S"] == "ignored"
+    assert event["reason"]["S"] == "message_unavailable"

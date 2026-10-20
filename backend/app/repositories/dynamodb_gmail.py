@@ -89,7 +89,8 @@ class DynamoGmailRepository:
                 Key=self._encode({"owner_id": owner_id}),
                 UpdateExpression=(
                     "SET generation = :new, email = :email, encrypted_token = :token, "
-                    "connected_at = if_not_exists(connected_at, :connected_at)"
+                    "connected_at = :connected_at "
+                    "REMOVE history_id, last_success_at, active_run_id, latest_run_id"
                 ),
                 ConditionExpression=(
                     "attribute_not_exists(owner_id) OR generation = :expected"
@@ -113,7 +114,8 @@ class DynamoGmailRepository:
             Key=self._encode({"owner_id": owner_id}),
             UpdateExpression=(
                 "SET generation = if_not_exists(generation, :zero) + :one "
-                "REMOVE email, encrypted_token, connected_at, history_id, active_run_id"
+                "REMOVE email, encrypted_token, connected_at, history_id, "
+                "last_success_at, active_run_id, latest_run_id"
             ),
             ExpressionAttributeValues={
                 ":zero": self._serializer.serialize(0),

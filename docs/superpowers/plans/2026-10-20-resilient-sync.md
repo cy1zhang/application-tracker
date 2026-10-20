@@ -71,9 +71,9 @@
 
 **Interfaces:** A completed initial import records Gmail's history checkpoint. Later runs page Gmail history and advance the checkpoint only after all listed messages have durable outcomes. A stale history ID triggers a paginated rescan from the last successful sync time with overlap. A daily 09:00 UTC dispatcher pages connected accounts and starts/enqueues runs; a recovery pass finds pending or expired runs and re-enqueues them idempotently.
 
-- [ ] Test history pagination, stale-history recovery, dispatcher pagination, duplicate dispatch, and expired-lease recovery.
-- [ ] Confirm the tests fail for missing behavior.
-- [ ] Implement history/dispatch/recovery, verify backend and infrastructure checks, and commit.
+- [x] Test history pagination, stale-history recovery, dispatcher pagination, duplicate dispatch, and expired-lease recovery.
+- [x] Confirm the tests fail for missing behavior.
+- [x] Implement history/dispatch/recovery, verify backend and infrastructure checks, and commit.
 
 ### Task 5: Dashboard status and handoff
 
@@ -90,3 +90,4 @@
 
 - The current Users record has no connection timestamp. New connections will record one; for a connection created before this schema, the first run's start time anchors its fixed 90-day import window, which must be visible in the run record.
 - The candidate search terms and history response handling should be checked against current official Gmail API documentation before Task 3 implementation.
+- The dispatcher uses a paginated Users scan so Gmail connections created before Milestone 8 are included without a migration. A connected-account index remains a scaling improvement if account volume grows.

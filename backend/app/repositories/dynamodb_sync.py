@@ -51,6 +51,10 @@ class DynamoSyncRepository:
             started_at=now,
             import_after=anchor - timedelta(days=90) if mode == "import" else None,
             history_id=user.get("history_id"),
+            last_success_at=(
+                datetime.fromisoformat(user["last_success_at"])
+                if user.get("last_success_at") else None
+            ),
         )
         item = {
             "owner_id": owner_id,
@@ -199,6 +203,7 @@ class DynamoSyncRepository:
                         "Key": self._encode({"owner_id": owner_id, "run_id": run_id}),
                         "UpdateExpression": (
                             "SET #state = :completed, completed_at = :now, "
+                            "last_success_at = :now, "
                             "processed_count = processed_count + :count "
                             "REMOVE lease_id, lease_expires_at, page_token"
                         ),
@@ -421,6 +426,14 @@ class DynamoSyncRepository:
             processed_count=int(item.get("processed_count", 0)),
             history_id=item.get("history_id"),
             history_snapshot_id=item.get("history_snapshot_id"),
+            completed_at=(
+                datetime.fromisoformat(item["completed_at"])
+                if "completed_at" in item else None
+            ),
+            last_success_at=(
+                datetime.fromisoformat(item["last_success_at"])
+                if "last_success_at" in item else None
+            ),
         )
 
     def _encode(self, item: dict) -> dict:

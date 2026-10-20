@@ -210,3 +210,25 @@ def test_terminal_failure_is_visible_and_releases_active_slot(repositories) -> N
     assert sync.start("owner-a", "run-2", STARTED_AT).run_id == "run-2"
     with pytest.raises(StaleSyncRun):
         sync.fail("owner-a", "run-1", 1, "lease-1", "partial", STARTED_AT)
+
+
+def test_reconnecting_clears_previous_accounts_run_and_history(repositories) -> None:
+    gmail, sync, client = repositories
+    gmail.save_connection("owner-a", 0, "first@example.test", TOKEN, CONNECTED_AT)
+    sync.start("owner-a", "run-1", STARTED_AT)
+    sync.claim("owner-a", "run-1", 1, "lease-1", STARTED_AT)
+    sync.set_history_snapshot("owner-a", "run-1", 1, "lease-1", "100")
+    sync.complete("owner-a", "run-1", 1, "lease-1", 0, STARTED_AT, history_id="100")
+    sync.start("owner-a", "run-2", STARTED_AT + timedelta(days=1))
+
+    gmail.save_connection(
+        "owner-a", 1, "second@example.test", TOKEN, STARTED_AT + timedelta(days=2)
+    )
+    replacement = sync.start("owner-a", "run-3", STARTED_AT + timedelta(days=2))
+
+    assert replacement.mode == "import"
+    assert replacement.generation == 2
+    assert replacement.import_after == STARTED_AT + timedelta(days=2) - timedelta(days=90)
+    user = client.get_item(TableName="Users", Key={"owner_id": {"S": "owner-a"}})["Item"]
+    assert "history_id" not in user
+    assert user["active_run_id"]["S"] == "run-3"

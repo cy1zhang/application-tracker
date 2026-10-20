@@ -204,6 +204,18 @@ class DynamoEmailRepository:
             item["received_at"] = received_at.isoformat()
         return self._put_outcome(item)
 
+    def record_unavailable(self, *, owner_id: str, message_id: str) -> StoredOutcome:
+        prior = self._get_outcome(owner_id, message_id)
+        if prior is not None and prior.outcome in _TERMINAL:
+            return prior
+        return self._put_outcome({
+            "owner_id": owner_id,
+            "event_id": f"gmail#{message_id}",
+            "source_message_id": message_id,
+            "outcome": "ignored",
+            "reason": "message_unavailable",
+        })
+
     def _save_outcome(
         self,
         owner_id: str,

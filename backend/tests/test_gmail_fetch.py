@@ -5,7 +5,12 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from app.services.gmail_fetch import GmailApiError, GmailFetchClient, HistoryExpired
+from app.services.gmail_fetch import (
+    GmailApiError,
+    GmailFetchClient,
+    HistoryExpired,
+    MessageUnavailable,
+)
 
 BOUNDARY = datetime(2026, 7, 20, 12, tzinfo=UTC)
 
@@ -115,3 +120,13 @@ def test_profile_history_id_is_validated() -> None:
         return BytesIO(b'{"historyId":"120"}')
 
     assert GmailFetchClient(urlopen=open_request).profile_history_id("access") == "120"
+
+
+def test_message_removed_after_listing_is_distinguished() -> None:
+    from urllib.error import HTTPError
+
+    def open_request(request, *, timeout):
+        raise HTTPError(request.full_url, 404, "private detail", {}, BytesIO(b"private"))
+
+    with pytest.raises(MessageUnavailable):
+        GmailFetchClient(urlopen=open_request).get_message("access", "msg-1")

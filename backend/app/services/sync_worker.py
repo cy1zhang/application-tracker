@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from app.repositories.dynamodb_sync import StaleSyncRun
 from app.services.email_processing import process_message
-from app.services.gmail_fetch import HistoryExpired
+from app.services.gmail_fetch import HistoryExpired, MessageUnavailable
 from app.services.sync_candidates import load_candidates
 
 
@@ -53,7 +53,12 @@ def process_sync_page(
     processed = 0
     for message_id in page.message_ids:
         active_token()
-        message = fetch.get_message(access_token, message_id)
+        try:
+            message = fetch.get_message(access_token, message_id)
+        except MessageUnavailable:
+            emails.record_unavailable(owner_id=owner_id, message_id=message_id)
+            processed += 1
+            continue
         try:
             received_at = datetime.fromtimestamp(int(message["internalDate"]) / 1000, tz=UTC)
         except (KeyError, TypeError, ValueError, OverflowError):

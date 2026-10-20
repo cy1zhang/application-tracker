@@ -15,3 +15,5 @@ class SyncRun:
     processed_count: int = 0
     history_id: str | None = None
     history_snapshot_id: str | None = None
+    completed_at: datetime | None = None
+    last_success_at: datetime | None = None

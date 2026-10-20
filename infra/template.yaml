@@ -401,6 +401,72 @@ Resources:
       LogGroupName: !Sub '/aws/lambda/${SyncWorkerFunction}'
       RetentionInDays: 14
 
+  SyncDispatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-sync-dispatcher'
+      CodeUri: ../backend
+      Handler: app.dispatch_handler.handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      Timeout: 120
+      MemorySize: 256
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          SYNC_RUNS_TABLE: !Ref SyncRunsTable
+          SYNC_QUEUE_URL: !Ref SyncQueue
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: [dynamodb:Scan, dynamodb:GetItem, dynamodb:UpdateItem]
+              Resource: !GetAtt UsersTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:Scan, dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
+              Resource: !GetAtt SyncRunsTable.Arn
+            - Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt SyncQueue.Arn
+      Events:
+        DailySync:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: 'cron(0 9 * * ? *)'
+            ScheduleExpressionTimezone: UTC
+            FlexibleTimeWindow:
+              Mode: 'OFF'
+            Input: '{"mode":"daily"}'
+        RecoverSync:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: 'rate(15 minutes)'
+            FlexibleTimeWindow:
+              Mode: 'OFF'
+            Input: '{"mode":"recover"}'
+
+  SyncDispatcherLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${SyncDispatcherFunction}'
+      RetentionInDays: 14
+
+  SyncDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Sync jobs exhausted SQS retries
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt SyncDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
   MonthlyBudget:
     Type: AWS::Budgets::Budget
     Properties:

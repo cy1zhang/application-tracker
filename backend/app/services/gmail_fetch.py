@@ -16,6 +16,10 @@ class HistoryExpired(GmailApiError):
     pass
 
 
+class MessageUnavailable(GmailApiError):
+    pass
+
+
 @dataclass(frozen=True)
 class MessagePage:
     message_ids: list[str]
@@ -79,6 +83,7 @@ class GmailFetchClient:
         response = self._fetch_json(
             f"{self.BASE_URL}/messages/{quote(message_id, safe='')}?format=full",
             access_token,
+            missing_message=True,
         )
         if response.get("id") != message_id:
             raise GmailApiError("Invalid Gmail response")
@@ -126,7 +131,9 @@ class GmailFetchClient:
                     message_ids.append(message_id)
         return HistoryPage(message_ids, next_token, history_id)
 
-    def _fetch_json(self, url: str, access_token: str, *, stale_history=False) -> dict:
+    def _fetch_json(
+        self, url: str, access_token: str, *, stale_history=False, missing_message=False
+    ) -> dict:
         request = Request(url, headers={"Authorization": f"Bearer {access_token}"})
         try:
             with self._urlopen(request, timeout=10) as response:
@@ -140,6 +147,8 @@ class GmailFetchClient:
         except HTTPError as error:
             if stale_history and error.code == 404:
                 raise HistoryExpired("Gmail history expired") from None
+            if missing_message and error.code == 404:
+                raise MessageUnavailable("Gmail message unavailable") from None
             raise GmailApiError("Gmail request failed") from None
         except (OSError, ValueError, TypeError):
             raise GmailApiError("Gmail request failed") from None
