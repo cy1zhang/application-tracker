@@ -2,11 +2,16 @@ import json
 from collections.abc import Callable
 from http.client import HTTPException
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
 class OAuthError(Exception):
+    pass
+
+
+class OAuthReconnectRequired(OAuthError):
     pass
 
 
@@ -75,6 +80,36 @@ class GoogleOAuthClient:
         if not isinstance(email, str) or not email.strip():
             raise OAuthError("Google OAuth request failed")
         return email
+
+    def refresh_access_token(self, refresh_token: str) -> str:
+        client_id, client_secret = self._credentials()
+        request = Request(
+            self.TOKEN_URL,
+            data=urlencode({
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token",
+            }).encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        try:
+            with self._urlopen(request, timeout=5) as response:
+                value = json.loads(response.read(16_384))
+        except HTTPError as error:
+            try:
+                failure = json.loads(error.read(16_384))
+            except (ValueError, TypeError):
+                failure = {}
+            if error.code == 400 and isinstance(failure, dict) and failure.get("error") == "invalid_grant":
+                raise OAuthReconnectRequired("Gmail reconnect required") from None
+            raise OAuthError("Google OAuth request failed") from None
+        except (OSError, HTTPException, ValueError, TypeError):
+            raise OAuthError("Google OAuth request failed") from None
+        token = value.get("access_token") if isinstance(value, dict) else None
+        if not isinstance(token, str) or not token:
+            raise OAuthError("Google OAuth request failed")
+        return token
 
     def _credentials(self) -> tuple[str, str]:
         try:

@@ -1,10 +1,15 @@
 import json
 from io import BytesIO
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from app.services.google_oauth import GoogleOAuthClient, OAuthError
+from app.services.google_oauth import (
+    GoogleOAuthClient,
+    OAuthError,
+    OAuthReconnectRequired,
+)
 
 
 class FakeSecrets:
@@ -85,3 +90,43 @@ def test_invalid_provider_response_is_sanitized() -> None:
         client.exchange_code("synthetic-code")
 
     assert "synthetic-secret" not in str(error.value)
+
+
+def test_refresh_token_requests_access_without_exposing_refresh_token() -> None:
+    requests = []
+
+    def open_request(request, *, timeout):
+        requests.append(request)
+        return BytesIO(json.dumps({"access_token": "synthetic-access"}).encode())
+
+    client = GoogleOAuthClient(
+        FakeSecrets(), "gmail-test-secret", "", urlopen=open_request
+    )
+
+    assert client.refresh_access_token("synthetic-refresh") == "synthetic-access"
+    request = requests[0]
+    assert request.full_url == "https://oauth2.googleapis.com/token"
+    assert "synthetic-refresh" not in request.full_url
+    assert parse_qs(request.data.decode()) == {
+        "client_id": ["test-client-id"],
+        "client_secret": ["test-client-secret"],
+        "refresh_token": ["synthetic-refresh"],
+        "grant_type": ["refresh_token"],
+    }
+
+
+def test_revoked_refresh_token_requires_reconnect_without_provider_body() -> None:
+    def open_request(request, *, timeout):
+        raise HTTPError(
+            request.full_url, 400, "Bad Request", {},
+            BytesIO(b'{"error":"invalid_grant","private":"sensitive"}'),
+        )
+
+    client = GoogleOAuthClient(
+        FakeSecrets(), "gmail-test-secret", "", urlopen=open_request
+    )
+
+    with pytest.raises(OAuthReconnectRequired) as error:
+        client.refresh_access_token("synthetic-refresh")
+
+    assert "sensitive" not in str(error.value)

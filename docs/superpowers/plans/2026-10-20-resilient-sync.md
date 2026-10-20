@@ -58,6 +58,7 @@
 
 - [x] Guard every worker-origin email outcome transaction by the current connection generation and active run ID; test that disconnect blocks both applied and review/ignore writes.
 - [x] Add a bounded Gmail message-list/full-fetch client with fixed epoch boundary, paging, and sanitized response tests.
+- [x] Refresh a stored Gmail token server-side and distinguish revoked consent from transient OAuth failure without exposing provider data.
 - [ ] Test page interruption, duplicate delivery, stale generation, lease contention, and checkpoint ordering with provider stubs.
 - [ ] Confirm focused tests fail for missing worker behavior.
 - [ ] Add the smallest fetch/worker path, SQS trigger, visibility/redrive settings, and IAM; verify tests, lint, SAM, and commit.
