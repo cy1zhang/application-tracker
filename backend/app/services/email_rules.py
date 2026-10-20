@@ -117,13 +117,32 @@ def classify_message(
     ]
     if raw_matches and not found:
         return RuleDecision(outcome="ignored", reason="hypothetical_event")
-    if len(_explicit_roles(message.text)) > 1:
+    roles = _explicit_roles(message.text)
+    requisitions = list(dict.fromkeys(_REQUISITION.findall(content)))
+    if not found and len(roles) > 1:
+        linked = any(
+            message.thread_id in item.thread_ids
+            or bool({value.casefold() for value in requisitions} & {
+                value.casefold() for value in item.requisition_ids
+            })
+            or (
+                item.application.company
+                and item.application.role
+                and _mentions(content, item.application.company)
+                and _mentions(content, item.application.role)
+            )
+            for item in applications
+        )
+        return RuleDecision(
+            outcome="review_required" if linked else "ignored",
+            reason="unknown_stage" if linked else "no_event",
+        )
+    if len(roles) > 1:
         return RuleDecision(outcome="review_required", reason="conflicting_roles")
     cycles = {
         (Season(season.lower()), int(year))
         for season, year in _CYCLE.findall(content)
     }
-    requisitions = list(dict.fromkeys(_REQUISITION.findall(content)))
     if len(found) > 1 and len({status for status, _ in found}) > 1:
         return RuleDecision(outcome="review_required", reason="conflicting_stages")
     if len(cycles) > 1:

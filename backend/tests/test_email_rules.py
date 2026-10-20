@@ -98,6 +98,45 @@ def test_newsletter_or_job_ad_is_ignored() -> None:
     assert classify_message(
         _message(text, subject="Career newsletter"), [_candidate()]
     ).outcome == "ignored"
+
+
+def test_multiple_job_roles_without_application_event_are_ignored() -> None:
+    decision = classify_message(
+        _message(
+            "Explore openings for Data Analyst at Beta. "
+            "Browse roles for Software Engineer Intern at Acme."
+        ),
+        [],
+    )
+
+    assert decision.outcome == "ignored"
+    assert decision.reason == "no_event"
+
+
+def test_application_event_with_multiple_roles_stays_reviewable() -> None:
+    decision = classify_message(
+        _message(
+            "Acme invites you to interview for Data Analyst. "
+            "Please see the profile for Software Engineer Intern."
+        ),
+        [],
+    )
+
+    assert decision.outcome == "review_required"
+    assert decision.reason == "conflicting_roles"
+
+
+def test_known_application_without_stage_stays_reviewable_with_multiple_roles() -> None:
+    decision = classify_message(
+        _message(
+            "An update for Software Engineer Intern at Acme. "
+            "Browse roles for Data Analyst at Beta."
+        ),
+        [_candidate(threads={"thread-1"})],
+    )
+
+    assert decision.outcome == "review_required"
+    assert decision.reason == "unknown_stage"
     assert classify_message(
         _message("Apply now for Software Engineer Intern at Acme."), [_candidate()]
     ).outcome == "ignored"
