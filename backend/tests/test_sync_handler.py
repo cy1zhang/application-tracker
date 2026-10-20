@@ -34,11 +34,11 @@ def delivery(count="1"):
     }]}
 
 
-def test_transient_failure_returns_batch_failure_without_releasing_run(setup) -> None:
+def test_transient_failure_returns_batch_failure_without_releasing_run(setup, caplog) -> None:
     syncs, monkeypatch = setup
 
     def fail(**kwargs):
-        raise RuntimeError("synthetic transient error")
+        raise RuntimeError("private provider detail")
 
     monkeypatch.setattr(sync_handler, "process_sync_page", fail)
 
@@ -46,6 +46,8 @@ def test_transient_failure_returns_batch_failure_without_releasing_run(setup) ->
         "batchItemFailures": [{"itemIdentifier": "sqs-1"}]
     }
     assert syncs.failures == []
+    assert "RuntimeError" in caplog.text
+    assert "private provider detail" not in caplog.text
 
 
 def test_exhausted_delivery_marks_partial_and_retries_to_dead_letter(setup) -> None:

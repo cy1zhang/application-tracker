@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -13,6 +14,8 @@ from app.services.credential_crypto import CredentialCipher
 from app.services.gmail_fetch import GmailFetchClient
 from app.services.google_oauth import GoogleOAuthClient, OAuthReconnectRequired
 from app.services.sync_worker import process_sync_page
+
+logger = logging.getLogger(__name__)
 
 
 def _dependencies():
@@ -77,7 +80,8 @@ def handler(event, context):
                 )
             except StaleSyncRun:
                 pass
-        except Exception:  # noqa: BLE001 - every worker failure must signal SQS to retry
+        except Exception as error:  # noqa: BLE001 - every worker failure must signal SQS to retry
+            logger.warning("Sync worker retryable failure: %s", type(error).__name__)
             if (
                 int(record.get("attributes", {}).get("ApproximateReceiveCount", "1")) >= 5
                 and owner_id is not None and run_id is not None and generation is not None
