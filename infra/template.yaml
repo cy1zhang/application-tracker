@@ -96,6 +96,23 @@ Resources:
         AttributeName: expires_at
         Enabled: true
 
+  SyncRunsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: owner_id
+          AttributeType: S
+        - AttributeName: run_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: owner_id
+          KeyType: HASH
+        - AttributeName: run_id
+          KeyType: RANGE
+
   GmailKmsKey:
     Type: AWS::KMS::Key
     DeletionPolicy: Delete
@@ -232,6 +249,7 @@ Resources:
           EVENTS_TABLE: !Ref EventsTable
           USERS_TABLE: !Ref UsersTable
           OAUTH_STATES_TABLE: !Ref OAuthStatesTable
+          SYNC_RUNS_TABLE: !Ref SyncRunsTable
           COGNITO_USER_POOL_ID: !Ref UserPool
           GMAIL_KMS_KEY_ARN: !GetAtt GmailKmsKey.Arn
           GMAIL_OAUTH_SECRET_NAME: !Ref GmailOAuthSecretName

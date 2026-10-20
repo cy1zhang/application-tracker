@@ -8,6 +8,7 @@ def create_tables(
     events_table: str,
     users_table: str | None = None,
     oauth_states_table: str | None = None,
+    sync_runs_table: str | None = None,
 ) -> None:
     _create_if_missing(
         client,
@@ -61,6 +62,20 @@ def create_tables(
             TableName=oauth_states_table,
             KeySchema=[{"AttributeName": "state_hash", "KeyType": "HASH"}],
             AttributeDefinitions=[{"AttributeName": "state_hash", "AttributeType": "S"}],
+            BillingMode="PAY_PER_REQUEST",
+        )
+    if sync_runs_table is not None:
+        _create_if_missing(
+            client,
+            TableName=sync_runs_table,
+            KeySchema=[
+                {"AttributeName": "owner_id", "KeyType": "HASH"},
+                {"AttributeName": "run_id", "KeyType": "RANGE"},
+            ],
+            AttributeDefinitions=[
+                {"AttributeName": "owner_id", "AttributeType": "S"},
+                {"AttributeName": "run_id", "AttributeType": "S"},
+            ],
             BillingMode="PAY_PER_REQUEST",
         )
 

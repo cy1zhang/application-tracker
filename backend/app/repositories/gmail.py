@@ -44,6 +44,7 @@ class GmailRepository(Protocol):
         expected_generation: int,
         email: str,
         encrypted_token: EncryptedCredential,
+        connected_at: datetime,
     ) -> None: ...
 
     def disconnect(self, owner_id: str) -> None: ...

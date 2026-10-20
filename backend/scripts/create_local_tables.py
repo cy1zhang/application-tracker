@@ -26,6 +26,7 @@ def main() -> None:
         events_table=os.environ["EVENTS_TABLE"],
         users_table=os.getenv("USERS_TABLE"),
         oauth_states_table=os.getenv("OAUTH_STATES_TABLE"),
+        sync_runs_table=os.getenv("SYNC_RUNS_TABLE"),
     )
     print("Local DynamoDB tables are ready.")
 

@@ -81,13 +81,15 @@ class DynamoGmailRepository:
         expected_generation: int,
         email: str,
         encrypted_token: EncryptedCredential,
+        connected_at: datetime,
     ) -> None:
         try:
             self._client.update_item(
                 TableName=self._users_table,
                 Key=self._encode({"owner_id": owner_id}),
                 UpdateExpression=(
-                    "SET generation = :new, email = :email, encrypted_token = :token"
+                    "SET generation = :new, email = :email, encrypted_token = :token, "
+                    "connected_at = if_not_exists(connected_at, :connected_at)"
                 ),
                 ConditionExpression=(
                     "attribute_not_exists(owner_id) OR generation = :expected"
@@ -97,6 +99,7 @@ class DynamoGmailRepository:
                     ":new": self._serializer.serialize(expected_generation + 1),
                     ":email": self._serializer.serialize(email),
                     ":token": self._serializer.serialize(encrypted_token),
+                    ":connected_at": self._serializer.serialize(connected_at.isoformat()),
                 },
             )
         except ClientError as error:
@@ -110,7 +113,7 @@ class DynamoGmailRepository:
             Key=self._encode({"owner_id": owner_id}),
             UpdateExpression=(
                 "SET generation = if_not_exists(generation, :zero) + :one "
-                "REMOVE email, encrypted_token"
+                "REMOVE email, encrypted_token, connected_at, history_id, active_run_id"
             ),
             ExpressionAttributeValues={
                 ":zero": self._serializer.serialize(0),

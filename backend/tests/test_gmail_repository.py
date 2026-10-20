@@ -66,7 +66,7 @@ def test_expired_state_rejected_before_ttl_cleanup(repository) -> None:
 
 
 def test_connection_is_owner_scoped(repository) -> None:
-    repository.save_connection("owner-a", 0, "a@example.test", TOKEN)
+    repository.save_connection("owner-a", 0, "a@example.test", TOKEN, NOW)
 
     assert repository.get_connection("owner-a").email == "a@example.test"
     assert repository.get_connection("owner-b").email is None
@@ -74,7 +74,7 @@ def test_connection_is_owner_scoped(repository) -> None:
 
 
 def test_disconnect_advances_generation(repository) -> None:
-    repository.save_connection("owner-a", 0, "a@example.test", TOKEN)
+    repository.save_connection("owner-a", 0, "a@example.test", TOKEN, NOW)
 
     repository.disconnect("owner-a")
 
@@ -85,7 +85,7 @@ def test_disconnect_advances_generation(repository) -> None:
 
 
 def test_stale_generation_has_no_active_credential(repository) -> None:
-    repository.save_connection("owner-a", 0, "a@example.test", TOKEN)
+    repository.save_connection("owner-a", 0, "a@example.test", TOKEN, NOW)
     assert repository.get_active("owner-a", 1) == TOKEN
 
     repository.disconnect("owner-a")
@@ -104,6 +104,6 @@ def test_disconnect_invalidates_in_flight_consent(repository) -> None:
     repository.disconnect("owner-a")
 
     with pytest.raises(StaleGeneration):
-        repository.save_connection("owner-a", 0, "a@example.test", TOKEN)
+        repository.save_connection("owner-a", 0, "a@example.test", TOKEN, NOW)
 
     assert repository.get_connection("owner-a").email is None

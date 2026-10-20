@@ -35,10 +35,10 @@
 
 **Interfaces:** `DynamoSyncRepository.start(owner_id, run_id, now) -> SyncRun` conditionally claims the connected owner's active-run slot and creates one `SyncRuns` item. It returns the existing active run on an overlapping request. The run stores its owner, connection generation, mode, immutable import boundary, progress, and state; it stores no email content. `get_latest(owner_id) -> SyncRun | None` never crosses owners. Track connection time for new Gmail connections; for preexisting connections with no timestamp, use first-run time as the documented fallback boundary anchor.
 
-- [ ] Write moto tests for a connected owner's first run, overlapping requests, owner isolation, and disconnected/stale generation rejection.
-- [ ] Run `uv run pytest tests/test_dynamodb_sync.py -q` and confirm the missing repository fails.
-- [ ] Add the table, domain model, connection timestamp, and conditional run admission.
-- [ ] Run focused tests, full backend tests, backend lint, SAM lint, offline deploy tests, and `git diff --check`; commit the verified step.
+- [x] Write moto tests for a connected owner's first run, overlapping requests, owner isolation, and disconnected-owner rejection.
+- [x] Run `uv run pytest tests/test_dynamodb_sync.py -q` and confirm the missing repository fails.
+- [x] Add the table, domain model, connection timestamp, and conditional run admission.
+- [x] Run focused tests, full backend tests, backend lint, SAM lint, offline deploy tests, and `git diff --check`; commit the verified step.
 
 ### Task 2: Manual run and status API
 

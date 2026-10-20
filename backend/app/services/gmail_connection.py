@@ -74,7 +74,8 @@ class GmailConnectionService:
             if encrypted is None:
                 return False
             self._repository.save_connection(
-                stored.owner_id, stored.expected_generation, email, encrypted
+                stored.owner_id, stored.expected_generation, email, encrypted,
+                datetime.now(UTC),
             )
             return True
         except (OAuthError, CredentialError, StaleGeneration, ClientError):
