@@ -124,7 +124,7 @@ duplicates.
 
 ### 8. Add resilient synchronization
 
-**Status: implemented on `codex/milestone-8-resilient-sync` and deployed in development; live Gmail verification pending**
+**Status: implemented on `codex/milestone-8-resilient-sync` and deployed in development; initial import, empty incremental repeat, and recovery verified live; other live checks pending**
 
 - Add SQS workers and durable sync runs.
 - Implement the fixed-boundary 90-day import.

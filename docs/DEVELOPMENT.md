@@ -8,7 +8,8 @@ connection. Milestone 6 adds offline, deterministic processing of synthetic
 Gmail messages. Milestone 7 adds an owner-scoped review queue and duplicate
 merge. Milestone 8 adds resumable Gmail import, incremental history, scheduled
 dispatch, and sync status controls. Milestones 7 and 8 were deployed to the
-development stack on 2026-10-20; live Gmail and review-flow verification remain.
+development stack on 2026-10-20. The initial Gmail import and empty
+incremental repeat were verified live; other Gmail and review-flow checks remain.
 AI providers are a later milestone.
 
 ## Prerequisites
@@ -144,8 +145,8 @@ retained application gets the combined history, while the duplicate ID points
 to the retained record and cannot be recreated by replaying old evidence.
 Manual changes are tracked by field so older email cannot overwrite a corrected
 value and a later clear email can update it. These behaviors are covered by
-synthetic offline tests. Milestone 7 has not been deployed or checked with a
-live Gmail sync run.
+synthetic offline tests. Milestone 7 is deployed, but its live review controls
+have not yet been checked.
 
 ## Deploying the development app
 
@@ -347,12 +348,14 @@ under their own Cognito subject.
 The Milestone 8 CloudFormation change set was reviewed and deployed on
 2026-10-20. The stack, hosted frontend, health route, unauthenticated access
 controls, browser preflight, schedules, SQS trigger, and dead-letter alarm
-passed deployment checks. With a designated test account, verify a real 90-day
-import, repeat-sync deduplication, incremental history, the 09:00 UTC schedule without
-an open browser, revoked authorization and reconnect, interrupted-job recovery,
-and the dead-letter alarm. Inspect Lambda logs for identifiers and counts only;
-do not log email bodies or credentials. Passing offline tests and SAM lint does
-not establish those live results.
+passed deployment checks. A designated test mailbox completed a 90-day import
+of 1,092 candidate messages; a repeat incremental run completed with 0 new
+messages and unchanged stored counts. Scheduled recovery resumed a paused
+import once, while later pauses needed operator-triggered recovery. The queue
+handoff cause remains unresolved. The 09:00 UTC daily start, new-message
+incremental update, revoked authorization and reconnect, and dead-letter alarm
+activation still need controlled live checks. Inspect Lambda logs for
+identifiers and counts only; do not log email bodies or credentials.
 
 For a repeat deploy, run the same script after making code changes. Lambda
 logs are in CloudWatch Logs. To remove the stack, run `sam delete --stack-name

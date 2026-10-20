@@ -12,8 +12,10 @@ connection) were implemented and verified in the development deployment.
 Milestone 6 deterministic email processing is complete offline and integrated
 locally. Milestone 7 review and reconciliation and Milestone 8 Gmail import,
 SQS sync, incremental history, daily dispatch, and recovery are deployed in
-development from `codex/milestone-8-resilient-sync`. Live Gmail and review-flow
-verification remain. AI providers do not exist yet. The dashboard offers
+development from `codex/milestone-8-resilient-sync`. The initial live Gmail
+import, empty incremental repeat, and scheduled recovery were verified;
+remaining Gmail and review-flow checks are pending. AI providers do not exist
+yet. The dashboard offers
 review, merge, and sync controls.
 
 Key docs: `docs/PRD.md` (product behavior), `docs/TECHNICAL_DESIGN.md` (target AWS

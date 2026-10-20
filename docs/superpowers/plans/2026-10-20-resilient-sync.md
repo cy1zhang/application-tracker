@@ -96,4 +96,23 @@
 
 - [x] Review the CloudFormation change set: no replacements or deletions; adds SyncRuns, SQS worker and dispatcher, schedules, and alarm.
 - [x] Deploy the stack and frontend; verify `UPDATE_COMPLETE`, active Lambda functions, enabled schedules and SQS mapping, health 200, protected routes 401 without a token, CORS preflight 204, and hosted frontend 200.
-- [ ] Verify a real import and repeat/incremental sync with the designated test mailbox; inspect sanitized progress and recovery evidence.
+- [x] Verify a real import and repeat/incremental sync with the designated test mailbox; inspect sanitized progress and recovery evidence.
+
+The designated test mailbox's first run used a fixed 90-day boundary of
+`2026-07-22T23:09:25.393041+00:00` and completed at
+`2026-10-20T23:32:48.126644+00:00` after 1,092 candidate messages. The
+history checkpoint was saved and the active-run slot cleared. The immediately
+repeated run selected incremental mode, completed with 0 new messages, and
+left the stored counts unchanged: 1 application, 809 review-required email
+outcomes, 283 ignored email outcomes, and 3 other audit events. The dead-letter
+queue remained empty. Both runs were started through the repository and SQS
+from an AWS-authenticated operator shell; the browser/API start flow was not part
+of this check.
+
+The first run paused in `pending` several times despite an enabled SQS mapping
+and no worker errors or throttles in the inspected metrics. The scheduled
+15-minute recovery invocation resumed it once; operator-triggered recovery
+invocations resumed later pauses. The cause of the queue handoff pauses is not
+established. A new-message incremental update, the 09:00 UTC daily start,
+revocation/reconnect, dead-letter alarm activation, and live review actions
+still need controlled verification.
