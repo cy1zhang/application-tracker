@@ -12,3 +12,4 @@ class SyncRun:
     status: Literal["pending", "running", "completed", "partial", "failed"]
     started_at: datetime
     import_after: datetime | None
+    processed_count: int = 0

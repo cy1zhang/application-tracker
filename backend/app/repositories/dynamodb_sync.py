@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
@@ -12,6 +13,12 @@ class SyncUnavailable(Exception):
 
 class StaleSyncRun(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class SyncLease:
+    run: SyncRun
+    page_token: str | None
 
 
 class DynamoSyncRepository:
@@ -51,6 +58,7 @@ class DynamoSyncRepository:
             "mode": run.mode,
             "status": run.status,
             "started_at": now.isoformat(),
+            "processed_count": 0,
         }
         if run.import_after is not None:
             item["import_after"] = run.import_after.isoformat()
@@ -99,6 +107,156 @@ class DynamoSyncRepository:
         latest_id = (self._get_user(owner_id) or {}).get("latest_run_id")
         return self._get_run(owner_id, latest_id) if latest_id else None
 
+    def claim(
+        self, owner_id: str, run_id: str, generation: int,
+        lease_id: str, now: datetime,
+    ) -> SyncLease | None:
+        try:
+            self._client.transact_write_items(TransactItems=[
+                {
+                    "Update": {
+                        "TableName": self._sync_runs_table,
+                        "Key": self._encode({"owner_id": owner_id, "run_id": run_id}),
+                        "UpdateExpression": (
+                            "SET #state = :running, lease_id = :lease, "
+                            "lease_expires_at = :expiry"
+                        ),
+                        "ConditionExpression": (
+                            "#state = :pending OR "
+                            "(#state = :running AND lease_expires_at < :now)"
+                        ),
+                        "ExpressionAttributeNames": {"#state": "status"},
+                        "ExpressionAttributeValues": {
+                            ":running": self._serializer.serialize("running"),
+                            ":pending": self._serializer.serialize("pending"),
+                            ":lease": self._serializer.serialize(lease_id),
+                            ":expiry": self._serializer.serialize(
+                                (now + timedelta(minutes=2)).isoformat()
+                            ),
+                            ":now": self._serializer.serialize(now.isoformat()),
+                        },
+                    }
+                },
+                self._run_guard(owner_id, run_id, generation),
+            ])
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            if not self._valid_run(owner_id, run_id, generation):
+                raise StaleSyncRun from None
+            return None
+        item = self._get_run_item(owner_id, run_id)
+        return SyncLease(run=self._as_run(item), page_token=item.get("page_token"))
+
+    def checkpoint(
+        self, owner_id: str, run_id: str, generation: int, lease_id: str,
+        next_page_token: str, processed_count: int, now: datetime,
+    ) -> SyncRun:
+        try:
+            self._client.transact_write_items(TransactItems=[
+                {
+                    "Update": {
+                        "TableName": self._sync_runs_table,
+                        "Key": self._encode({"owner_id": owner_id, "run_id": run_id}),
+                        "UpdateExpression": (
+                            "SET #state = :pending, page_token = :cursor, "
+                            "processed_count = processed_count + :count "
+                            "REMOVE lease_id, lease_expires_at"
+                        ),
+                        "ConditionExpression": "#state = :running AND lease_id = :lease",
+                        "ExpressionAttributeNames": {"#state": "status"},
+                        "ExpressionAttributeValues": {
+                            ":pending": self._serializer.serialize("pending"),
+                            ":running": self._serializer.serialize("running"),
+                            ":cursor": self._serializer.serialize(next_page_token),
+                            ":count": self._serializer.serialize(processed_count),
+                            ":lease": self._serializer.serialize(lease_id),
+                        },
+                    }
+                },
+                self._run_guard(owner_id, run_id, generation),
+            ])
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            raise StaleSyncRun from None
+        return self._get_run(owner_id, run_id)
+
+    def complete(
+        self, owner_id: str, run_id: str, generation: int, lease_id: str,
+        processed_count: int, now: datetime,
+    ) -> SyncRun:
+        try:
+            self._client.transact_write_items(TransactItems=[
+                {
+                    "Update": {
+                        "TableName": self._sync_runs_table,
+                        "Key": self._encode({"owner_id": owner_id, "run_id": run_id}),
+                        "UpdateExpression": (
+                            "SET #state = :completed, completed_at = :now, "
+                            "processed_count = processed_count + :count "
+                            "REMOVE lease_id, lease_expires_at, page_token"
+                        ),
+                        "ConditionExpression": "#state = :running AND lease_id = :lease",
+                        "ExpressionAttributeNames": {"#state": "status"},
+                        "ExpressionAttributeValues": {
+                            ":completed": self._serializer.serialize("completed"),
+                            ":running": self._serializer.serialize("running"),
+                            ":now": self._serializer.serialize(now.isoformat()),
+                            ":count": self._serializer.serialize(processed_count),
+                            ":lease": self._serializer.serialize(lease_id),
+                        },
+                    }
+                },
+                {
+                    "Update": {
+                        "TableName": self._users_table,
+                        "Key": self._encode({"owner_id": owner_id}),
+                        "UpdateExpression": (
+                            "SET last_success_at = :now REMOVE active_run_id"
+                        ),
+                        "ConditionExpression": (
+                            "generation = :generation AND active_run_id = :run "
+                            "AND attribute_exists(encrypted_token)"
+                        ),
+                        "ExpressionAttributeValues": {
+                            ":now": self._serializer.serialize(now.isoformat()),
+                            ":generation": self._serializer.serialize(generation),
+                            ":run": self._serializer.serialize(run_id),
+                        },
+                    }
+                },
+            ])
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            raise StaleSyncRun from None
+        return self._get_run(owner_id, run_id)
+
+    def _run_guard(self, owner_id: str, run_id: str, generation: int) -> dict:
+        return {
+            "ConditionCheck": {
+                "TableName": self._users_table,
+                "Key": self._encode({"owner_id": owner_id}),
+                "ConditionExpression": (
+                    "generation = :generation AND active_run_id = :run "
+                    "AND attribute_exists(encrypted_token)"
+                ),
+                "ExpressionAttributeValues": {
+                    ":generation": self._serializer.serialize(generation),
+                    ":run": self._serializer.serialize(run_id),
+                },
+            }
+        }
+
+    def _valid_run(self, owner_id: str, run_id: str, generation: int) -> bool:
+        user = self._get_user(owner_id) or {}
+        return (
+            user.get("generation") == generation
+            and user.get("active_run_id") == run_id
+            and "encrypted_token" in user
+        )
+
     def _get_user(self, owner_id: str) -> dict | None:
         response = self._client.get_item(
             TableName=self._users_table,
@@ -108,6 +266,10 @@ class DynamoSyncRepository:
         return self._decode(response["Item"]) if "Item" in response else None
 
     def _get_run(self, owner_id: str, run_id: str) -> SyncRun | None:
+        item = self._get_run_item(owner_id, run_id)
+        return self._as_run(item) if item else None
+
+    def _get_run_item(self, owner_id: str, run_id: str) -> dict | None:
         response = self._client.get_item(
             TableName=self._sync_runs_table,
             Key=self._encode({"owner_id": owner_id, "run_id": run_id}),
@@ -115,7 +277,10 @@ class DynamoSyncRepository:
         )
         if "Item" not in response:
             return None
-        item = self._decode(response["Item"])
+        return self._decode(response["Item"])
+
+    @staticmethod
+    def _as_run(item: dict) -> SyncRun:
         return SyncRun(
             owner_id=item["owner_id"],
             run_id=item["run_id"],
@@ -127,6 +292,7 @@ class DynamoSyncRepository:
                 datetime.fromisoformat(item["import_after"])
                 if "import_after" in item else None
             ),
+            processed_count=int(item.get("processed_count", 0)),
         )
 
     def _encode(self, item: dict) -> dict:
