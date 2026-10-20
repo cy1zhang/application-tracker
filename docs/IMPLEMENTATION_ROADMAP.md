@@ -112,7 +112,7 @@ ambiguous messages cannot silently mutate an application.
 
 ### 7. Add review and reconciliation
 
-**Status: complete (offline; live deployment pending)**
+**Status: implemented and deployed in development; live review-flow verification pending**
 
 - Build review queue endpoints and UI.
 - Support accept, edit, reject, attach, and create-new actions.
@@ -124,7 +124,7 @@ duplicates.
 
 ### 8. Add resilient synchronization
 
-**Status: complete offline on `codex/milestone-8-resilient-sync`; development deployment and live Gmail verification pending**
+**Status: implemented on `codex/milestone-8-resilient-sync` and deployed in development; live Gmail verification pending**
 
 - Add SQS workers and durable sync runs.
 - Implement the fixed-boundary 90-day import.

@@ -91,3 +91,9 @@
 - The current Users record has no connection timestamp. New connections will record one; for a connection created before this schema, the first run's start time anchors its fixed 90-day import window, which must be visible in the run record.
 - The candidate search terms and history response handling should be checked against current official Gmail API documentation before Task 3 implementation.
 - The dispatcher uses a paginated Users scan so Gmail connections created before Milestone 8 are included without a migration. A connected-account index remains a scaling improvement if account volume grows.
+
+## Development deployment (2026-10-20)
+
+- [x] Review the CloudFormation change set: no replacements or deletions; adds SyncRuns, SQS worker and dispatcher, schedules, and alarm.
+- [x] Deploy the stack and frontend; verify `UPDATE_COMPLETE`, active Lambda functions, enabled schedules and SQS mapping, health 200, protected routes 401 without a token, CORS preflight 204, and hosted frontend 200.
+- [ ] Verify a real import and repeat/incremental sync with the designated test mailbox; inspect sanitized progress and recovery evidence.

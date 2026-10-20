@@ -7,8 +7,9 @@ verified in the development deployment. Milestone 5 adds a separate Gmail
 connection. Milestone 6 adds offline, deterministic processing of synthetic
 Gmail messages. Milestone 7 adds an owner-scoped review queue and duplicate
 merge. Milestone 8 adds resumable Gmail import, incremental history, scheduled
-dispatch, and sync status controls. Milestones 7 and 8 are verified offline but
-have not been deployed for live Gmail testing. AI providers are a later milestone.
+dispatch, and sync status controls. Milestones 7 and 8 were deployed to the
+development stack on 2026-10-20; live Gmail and review-flow verification remain.
+AI providers are a later milestone.
 
 ## Prerequisites
 
@@ -343,9 +344,11 @@ under their own Cognito subject.
   The deployed sync worker reads messages only after a connected owner starts a
   run or the daily schedule starts one.
 
-Milestone 8 still needs a reviewed CloudFormation change set and controlled
-deployment. With a designated test account, verify a real 90-day import,
-repeat-sync deduplication, incremental history, the 09:00 UTC schedule without
+The Milestone 8 CloudFormation change set was reviewed and deployed on
+2026-10-20. The stack, hosted frontend, health route, unauthenticated access
+controls, browser preflight, schedules, SQS trigger, and dead-letter alarm
+passed deployment checks. With a designated test account, verify a real 90-day
+import, repeat-sync deduplication, incremental history, the 09:00 UTC schedule without
 an open browser, revoked authorization and reconnect, interrupted-job recovery,
 and the dead-letter alarm. Inspect Lambda logs for identifiers and counts only;
 do not log email bodies or credentials. Passing offline tests and SAM lint does
