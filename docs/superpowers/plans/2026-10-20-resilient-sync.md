@@ -52,10 +52,11 @@
 
 ### Task 3: Bounded Gmail import worker and checkpoints
 
-**Files:** Create `backend/app/services/gmail_fetch.py`, `backend/app/services/sync_worker.py`, `backend/app/sync_handler.py`, and focused tests; extend `backend/app/repositories/dynamodb_sync.py` and `infra/template.yaml`.
+**Files:** Create `backend/app/services/gmail_fetch.py`, `backend/app/services/sync_worker.py`, `backend/app/sync_handler.py`, and focused tests; extend `backend/app/repositories/dynamodb_sync.py`, `backend/app/repositories/dynamodb_email.py`, and `infra/template.yaml`.
 
 **Interfaces:** The worker consumes `{owner_id, run_id, generation}` from SQS, obtains a conditional lease, refreshes the connected credential, and pages a fixed-boundary Gmail query. It fetches candidates and passes synthetic-compatible Gmail payloads to `process_message`. It persists a page cursor only after each preceding message has a durable terminal or explicit retryable outcome. A continuation is represented durably before queue send; exhausted attempts use SQS redrive.
 
+- [x] Guard every worker-origin email outcome transaction by the current connection generation and active run ID; test that disconnect blocks both applied and review/ignore writes.
 - [ ] Test page interruption, duplicate delivery, stale generation, lease contention, and checkpoint ordering with provider stubs.
 - [ ] Confirm focused tests fail for missing worker behavior.
 - [ ] Add the smallest fetch/worker path, SQS trigger, visibility/redrive settings, and IAM; verify tests, lint, SAM, and commit.

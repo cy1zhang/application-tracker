@@ -10,6 +10,10 @@ class SyncUnavailable(Exception):
     pass
 
 
+class StaleSyncRun(Exception):
+    pass
+
+
 class DynamoSyncRepository:
     def __init__(self, *, client, users_table: str, sync_runs_table: str) -> None:
         self._client = client

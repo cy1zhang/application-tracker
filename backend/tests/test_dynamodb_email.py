@@ -12,6 +12,8 @@ from app.domain.applications import (
 )
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_email import DynamoEmailRepository
+from app.repositories.dynamodb_gmail import DynamoGmailRepository
+from app.repositories.dynamodb_sync import DynamoSyncRepository, StaleSyncRun
 from app.repositories.dynamodb_tables import create_tables
 from app.services.email_rules import RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
@@ -286,3 +288,64 @@ def test_older_email_can_fill_unknown_cycle_after_unrelated_role_edit(storage) -
     assert application.season.value == "summer"
     assert application.year == 2027
     assert application.updated_at == NOW + timedelta(hours=1)
+
+
+@pytest.mark.parametrize("outcome", ["applied", "ignored"])
+def test_disconnected_run_cannot_commit_email_outcome(outcome) -> None:
+    with mock_aws():
+        client = boto3.client("dynamodb", region_name="us-east-1")
+        create_tables(
+            client, applications_table="Applications", events_table="Events",
+            users_table="Users", sync_runs_table="SyncRuns",
+        )
+        gmail = DynamoGmailRepository(
+            client=client, users_table="Users", oauth_states_table="OAuthStates"
+        )
+        gmail.save_connection(
+            "user-a", 0, "a@example.test",
+            {"ciphertext": "opaque", "nonce": "opaque", "encrypted_data_key": "opaque"},
+            NOW - timedelta(days=1),
+        )
+        sync = DynamoSyncRepository(
+            client=client, users_table="Users", sync_runs_table="SyncRuns"
+        )
+        run = sync.start("user-a", "run-1", NOW)
+        applications = DynamoApplicationRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        )
+        if outcome == "applied":
+            _create(applications)
+        emails = DynamoEmailRepository(
+            client=client,
+            applications_table="Applications",
+            events_table="Events",
+            users_table="Users",
+            guard_generation=run.generation,
+            guard_run_id=run.run_id,
+        )
+        first = emails.record(
+            owner_id="user-a",
+            message=_message(message_id="before-disconnect"),
+            decision=_decision(outcome=outcome),
+            application_version=1 if outcome == "applied" else None,
+        )
+        assert first.outcome == outcome
+        gmail.disconnect("user-a")
+
+        with pytest.raises(StaleSyncRun):
+            emails.record(
+                owner_id="user-a",
+                message=_message(received_at=NOW + timedelta(hours=1)),
+                decision=_decision(
+                    outcome=outcome,
+                    status=ApplicationStatus.REJECTED if outcome == "applied" else None,
+                ),
+                application_version=2 if outcome == "applied" else None,
+            )
+
+        assert "Item" not in client.get_item(
+            TableName="Events",
+            Key={"owner_id": {"S": "user-a"}, "event_id": {"S": "gmail#msg-1"}},
+        )
+        if outcome == "applied":
+            assert applications.get(owner_id="user-a", application_id="app-1").version == 2

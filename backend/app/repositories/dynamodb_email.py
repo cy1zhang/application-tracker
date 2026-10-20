@@ -7,6 +7,7 @@ from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
 
 from app.repositories.dynamodb import field_times_for
+from app.repositories.dynamodb_sync import StaleSyncRun
 from app.services.email_rules import RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
 
@@ -23,10 +24,22 @@ class StoredOutcome:
 
 
 class DynamoEmailRepository:
-    def __init__(self, *, client, applications_table: str, events_table: str) -> None:
+    def __init__(
+        self, *, client, applications_table: str, events_table: str,
+        users_table: str | None = None, guard_generation: int | None = None,
+        guard_run_id: str | None = None,
+    ) -> None:
+        guard_parts = (users_table, guard_generation, guard_run_id)
+        if any(part is not None for part in guard_parts) and not all(
+            part is not None for part in guard_parts
+        ):
+            raise ValueError("Sync guard requires a users table, generation, and run ID")
         self._client = client
         self._applications_table = applications_table
         self._events_table = events_table
+        self._users_table = users_table
+        self._guard_generation = guard_generation
+        self._guard_run_id = guard_run_id
         self._serializer = TypeSerializer()
         self._deserializer = TypeDeserializer()
 
@@ -144,11 +157,13 @@ class DynamoEmailRepository:
                             },
                         }
                     },
-                ]
+                ] + self._guard(owner_id)
             )
         except ClientError as error:
             if error.response["Error"]["Code"] != "TransactionCanceledException":
                 raise
+            if not self._guard_valid(owner_id):
+                raise StaleSyncRun from None
             prior = self._get_outcome(owner_id, message.message_id)
             if prior is not None and prior.outcome in _TERMINAL:
                 return prior
@@ -201,25 +216,71 @@ class DynamoEmailRepository:
         return self._put_outcome(item)
 
     def _put_outcome(self, item: dict[str, Any]) -> StoredOutcome:
+        put = {
+            "TableName": self._events_table,
+            "Item": self._encode(item),
+            "ConditionExpression": (
+                "attribute_not_exists(event_id) OR outcome = :retryable"
+            ),
+            "ExpressionAttributeValues": {
+                ":retryable": self._serializer.serialize("retryable")
+            },
+        }
         try:
-            self._client.put_item(
-                TableName=self._events_table,
-                Item=self._encode(item),
-                ConditionExpression=(
-                    "attribute_not_exists(event_id) OR outcome = :retryable"
-                ),
-                ExpressionAttributeValues={
-                    ":retryable": self._serializer.serialize("retryable")
-                },
-            )
+            if self._users_table is None:
+                self._client.put_item(**put)
+            else:
+                self._client.transact_write_items(
+                    TransactItems=[{"Put": put}, *self._guard(item["owner_id"])]
+                )
         except ClientError as error:
-            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            code = error.response["Error"]["Code"]
+            expected_code = (
+                "ConditionalCheckFailedException"
+                if self._users_table is None else "TransactionCanceledException"
+            )
+            if code != expected_code:
                 raise
+            if not self._guard_valid(item["owner_id"]):
+                raise StaleSyncRun from None
             prior = self._get_outcome(item["owner_id"], item["source_message_id"])
             if prior is None:
                 raise
             return prior
         return self._as_outcome(item)
+
+    def _guard(self, owner_id: str) -> list[dict]:
+        if self._users_table is None:
+            return []
+        return [{
+            "ConditionCheck": {
+                "TableName": self._users_table,
+                "Key": self._encode({"owner_id": owner_id}),
+                "ConditionExpression": (
+                    "generation = :generation AND active_run_id = :run "
+                    "AND attribute_exists(encrypted_token)"
+                ),
+                "ExpressionAttributeValues": {
+                    ":generation": self._serializer.serialize(self._guard_generation),
+                    ":run": self._serializer.serialize(self._guard_run_id),
+                },
+            }
+        }]
+
+    def _guard_valid(self, owner_id: str) -> bool:
+        if self._users_table is None:
+            return True
+        response = self._client.get_item(
+            TableName=self._users_table,
+            Key=self._encode({"owner_id": owner_id}),
+            ConsistentRead=True,
+        )
+        user = self._decode(response["Item"]) if "Item" in response else {}
+        return (
+            user.get("generation") == self._guard_generation
+            and user.get("active_run_id") == self._guard_run_id
+            and "encrypted_token" in user
+        )
 
     def _get_outcome(self, owner_id: str, message_id: str) -> StoredOutcome | None:
         response = self._client.get_item(
