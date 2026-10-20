@@ -60,6 +60,7 @@
 - [x] Add a bounded Gmail message-list/full-fetch client with fixed epoch boundary, paging, and sanitized response tests.
 - [x] Refresh a stored Gmail token server-side and distinguish revoked consent from transient OAuth failure without exposing provider data.
 - [x] Add conditional run leases, durable page checkpoints, and completion that releases the active slot; test expiry and disconnect races.
+- [x] Load current owner-scoped application candidates with persisted thread and requisition links for deterministic matching.
 - [ ] Test page interruption, duplicate delivery, stale generation, lease contention, and checkpoint ordering with provider stubs.
 - [ ] Confirm focused tests fail for missing worker behavior.
 - [ ] Add the smallest fetch/worker path, SQS trigger, visibility/redrive settings, and IAM; verify tests, lint, SAM, and commit.

@@ -128,5 +128,6 @@ class ApplicationEvent(BaseModel):
     changes: dict[str, FieldChange]
     source_message_id: str | None = None
     thread_id: str | None = None
+    requisition_id: str | None = None
     merged_application_id: str | None = None
     merge_resolutions: dict[str, Literal["keep", "duplicate"]] | None = None
