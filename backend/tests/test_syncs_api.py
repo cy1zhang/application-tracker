@@ -133,3 +133,18 @@ def test_disconnected_owner_cannot_start_sync(setup) -> None:
     response = api.post("/syncs")
 
     assert response.status_code == 409
+
+
+def test_local_run_without_queue_reports_unavailable(setup, monkeypatch) -> None:
+    api, gmail, sync, publisher = setup
+    gmail.save_connection(
+        "owner-a", 0, "a@example.test", TOKEN, datetime(2026, 10, 18, tzinfo=UTC)
+    )
+    app.dependency_overrides[get_current_subject] = lambda: "owner-a"
+    monkeypatch.delenv("SYNC_QUEUE_URL")
+
+    response = api.post("/syncs")
+
+    assert response.status_code == 503
+    assert sync.get_latest("owner-a") is None
+    assert publisher.messages == []

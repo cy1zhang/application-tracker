@@ -10,10 +10,12 @@ and classify recruiting email. It is built in milestones defined in
 scaffold later subsystems early.** Milestones 0–5 (foundation through Gmail
 connection) were implemented and verified in the development deployment.
 Milestone 6 deterministic email processing is complete offline and integrated
-locally. Milestone 7 review and reconciliation is complete offline on its
-feature branch; live deployment remains. Gmail import, SQS sync, and AI
-providers do not exist yet. The dashboard loads and filters the owner's
-applications and offers review and merge controls.
+locally. Milestone 7 review and reconciliation is complete offline; live
+deployment remains. Milestone 8 Gmail import, SQS sync, incremental history,
+daily dispatch, and recovery are complete offline on
+`codex/milestone-8-resilient-sync`; live deployment and Gmail verification
+remain. AI providers do not exist yet. The dashboard offers review, merge,
+and sync controls.
 
 Key docs: `docs/PRD.md` (product behavior), `docs/TECHNICAL_DESIGN.md` (target AWS
 architecture, tables, API surface, sync/classification rules),

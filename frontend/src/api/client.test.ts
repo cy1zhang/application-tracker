@@ -6,8 +6,10 @@ import {
   createApplication,
   disconnectGmail,
   getGmailConnection,
+  getLatestSync,
   listAllApplications,
   startGmailConnection,
+  startSync,
   updateApplication,
 } from "./client";
 
@@ -131,4 +133,16 @@ test("Gmail disconnect accepts an empty 204 response", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 204 }));
 
   await expect(disconnectGmail()).resolves.toBeUndefined();
+});
+
+test("sync API starts work and reads the latest status", async () => {
+  const run = { run_id: "run-1", status: "pending", processed_count: 0 };
+  const fetchMock = vi.fn().mockResolvedValue(fakeResponse(run));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(startSync()).resolves.toMatchObject(run);
+  await expect(getLatestSync()).resolves.toMatchObject(run);
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
+    ["/api/syncs", "POST"], ["/api/syncs/latest", undefined],
+  ]);
 });

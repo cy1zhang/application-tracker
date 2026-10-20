@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import uuid4
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.dependencies import (
@@ -23,19 +23,22 @@ Publisher = Annotated[Any, Depends(get_sync_publisher)]
 
 @router.post("", response_model=SyncRun, status_code=status.HTTP_202_ACCEPTED)
 def start_sync(owner_id: Owner, repository: Repository, publisher: Publisher) -> SyncRun:
+    queue_url = os.getenv("SYNC_QUEUE_URL")
+    if not queue_url:
+        raise HTTPException(status_code=503, detail="Sync worker is unavailable")
     try:
         run = repository.start(owner_id, uuid4().hex, datetime.now(UTC))
     except SyncUnavailable as error:
         raise HTTPException(status_code=409, detail=str(error)) from None
     try:
         publisher.send_message(
-            QueueUrl=os.environ["SYNC_QUEUE_URL"],
+            QueueUrl=queue_url,
             MessageBody=json.dumps(
                 {"owner_id": owner_id, "run_id": run.run_id, "generation": run.generation}
             ),
         )
-    except ClientError:
-        # The pending run is durable; the recovery pass will enqueue it again.
+    except (BotoCoreError, ClientError):
+        # The pending run is durable; the deployed recovery pass will enqueue it.
         pass
     return run
 

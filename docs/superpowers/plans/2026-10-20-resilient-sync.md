@@ -81,8 +81,8 @@
 
 **Interfaces:** The owner can start a sync and see the latest run's progress, completion, partial failure, or reconnect-required state. The UI does not claim completion when work was merely queued.
 
-- [ ] Write failing UI tests for start, overlap, progress, and failure states; implement the compact controls.
-- [ ] Run frontend lint, tests, typecheck, build, and audit.
+- [x] Write failing UI tests for start, overlap, progress, and failure states; implement the compact controls.
+- [x] Run frontend lint, tests, typecheck, build, and audit.
 - [ ] Run all backend and infrastructure CI checks, request read-only branch review, resolve material findings, and document the exact offline/live verification boundary.
 - [ ] Commit the clean Milestone 8 handoff; keep deployment and live Gmail tests explicitly pending until performed.
 

@@ -114,3 +114,14 @@ export interface MergeRequest {
   expected_duplicate_version: number;
   resolutions: Record<string, "keep" | "duplicate">;
 }
+
+export interface SyncRun {
+  run_id: string;
+  mode: "import" | "incremental" | "rescan";
+  status: "pending" | "running" | "completed" | "partial" | "failed" | "reconnect_required";
+  started_at: string;
+  import_after: string | null;
+  processed_count: number;
+  completed_at?: string | null;
+  last_success_at: string | null;
+}

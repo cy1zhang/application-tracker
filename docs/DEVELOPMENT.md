@@ -6,8 +6,9 @@ and inspecting applications. Hosted Google sign-in and the manual tracker were
 verified in the development deployment. Milestone 5 adds a separate Gmail
 connection. Milestone 6 adds offline, deterministic processing of synthetic
 Gmail messages. Milestone 7 adds an owner-scoped review queue and duplicate
-merge. Live import, scheduling, and AI providers are later milestones; review
-items appear only when trusted processing records them.
+merge. Milestone 8 adds resumable Gmail import, incremental history, scheduled
+dispatch, and sync status controls. Milestones 7 and 8 are verified offline but
+have not been deployed for live Gmail testing. AI providers are a later milestone.
 
 ## Prerequisites
 
@@ -102,9 +103,9 @@ in the event sentence, plus an existing unique thread or requisition link.
 Requisition IDs count only when directly attached to the named role at the end
 of that event clause.
 Unlinked messages go to review. A season and year are added only when tied directly to
-that role; unsupported wording stays for review. The code does not
-fetch Gmail messages or run automatically yet. A later sync worker will supply
-the owner and candidate applications from trusted records.
+that role; unsupported wording stays for review. The SQS sync worker supplies
+the owner and candidate applications from trusted records; offline tests use
+synthetic Gmail responses.
 Forwarded messages and messages whose only event evidence is in the subject
 also go to review, so old thread text cannot create a new status change.
 
@@ -112,6 +113,19 @@ Use `uv run pytest tests/test_gmail_message.py tests/test_email_rules.py
 tests/test_dynamodb_email.py tests/test_email_processing.py -q` from `backend/`
 to run the synthetic processing checks. No Gmail account or AWS credentials are
 needed.
+
+## Offline synchronization
+
+`POST /syncs` creates one durable run for the authenticated owner and sends its
+ID to SQS in the deployed stack. `GET /syncs/latest` returns status and progress.
+The first import keeps the 90-day boundary anchored to Gmail connection time;
+later runs use Gmail history, with a rescan from the last successful sync after
+a stale history cursor. A daily 09:00 UTC dispatcher and a 15-minute recovery
+pass run independently of the browser. Worker commits and checkpoints are guarded
+by the current connection generation so disconnect or reconnection invalidates
+old work. The local `.env.example` has no SQS queue, so `POST /syncs` returns
+503 there. Run `uv run pytest tests/test_sync_worker.py tests/test_sync_dispatch.py
+tests/test_sync_handler.py -q` from `backend/` for the synthetic worker checks.
 
 ## Review and reconciliation
 
@@ -135,9 +149,10 @@ live Gmail sync run.
 ## Deploying the development app
 
 The manual deploy targets one SAM stack, `app-tracker-dev`, in `us-east-1`.
-It creates four DynamoDB tables, a FastAPI Lambda and HTTP API, a Cognito user
+It creates five DynamoDB tables, API/worker/dispatcher Lambdas, an HTTP API, a Cognito user
 pool with Google sign-in, an Amplify Hosting app, a 14-day Lambda log group,
-a customer-managed KMS key for Gmail credentials, and a $5 monthly budget.
+SQS sync and dead-letter queues, two EventBridge schedules, a customer-managed
+KMS key for Gmail credentials, and a $5 monthly budget.
 The [KMS key currently costs $1 per month](https://aws.amazon.com/kms/pricing/) while active; the budget sends alerts
 and does not cap spending. The existing separate $1 budget remains in place.
 The two Google OAuth secrets are separate Secrets Manager resources and have
@@ -325,7 +340,16 @@ under their own Cognito subject.
   and Lambda logs must not contain authorization codes, access tokens, refresh
   tokens, or client secrets. The Google callback URL necessarily receives a
   short-lived authorization code before redirecting to the clean Amplify URL.
-  This milestone does not read messages or run a scheduler.
+  The deployed sync worker reads messages only after a connected owner starts a
+  run or the daily schedule starts one.
+
+Milestone 8 still needs a reviewed CloudFormation change set and controlled
+deployment. With a designated test account, verify a real 90-day import,
+repeat-sync deduplication, incremental history, the 09:00 UTC schedule without
+an open browser, revoked authorization and reconnect, interrupted-job recovery,
+and the dead-letter alarm. Inspect Lambda logs for identifiers and counts only;
+do not log email bodies or credentials. Passing offline tests and SAM lint does
+not establish those live results.
 
 For a repeat deploy, run the same script after making code changes. Lambda
 logs are in CloudWatch Logs. To remove the stack, run `sam delete --stack-name

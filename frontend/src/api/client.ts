@@ -9,6 +9,7 @@ import type {
   ReviewPage,
   ReviewResolution,
   ReviewResolutionResult,
+  SyncRun,
 } from "./types";
 import { authConfig, authConfigError } from "../auth/config";
 import { getAccessToken } from "../auth/session";
@@ -159,4 +160,12 @@ export function startGmailConnection(): Promise<{ authorization_url: string }> {
 
 export function disconnectGmail(): Promise<void> {
   return request<void>("/gmail/connection", { method: "DELETE" });
+}
+
+export function getLatestSync(): Promise<SyncRun> {
+  return request<SyncRun>("/syncs/latest");
+}
+
+export function startSync(): Promise<SyncRun> {
+  return request<SyncRun>("/syncs", { method: "POST" });
 }
