@@ -46,9 +46,9 @@
 
 **Interfaces:** `POST /syncs` returns `202` with a run ID or the active run, and enqueues a job only after the run is durable. `GET /syncs/latest` returns the owner's latest state and counts. Queue-send failure leaves a recoverable pending run. Neither endpoint accepts an owner ID.
 
-- [ ] Write API tests for authentication, owner isolation, overlap, and queue-send failure.
-- [ ] Confirm the tests fail for the absent routes.
-- [ ] Add the routes and small queue publisher; verify focused/full backend checks and commit.
+- [x] Write API tests for authentication, owner isolation, overlap, and queue-send failure.
+- [x] Confirm the tests fail for the absent routes.
+- [x] Add the routes and small queue publisher; verify focused/full backend checks and commit.
 
 ### Task 3: Bounded Gmail import worker and checkpoints
 

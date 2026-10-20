@@ -10,6 +10,7 @@ from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_reviews import DynamoReviewRepository
+from app.repositories.dynamodb_sync import DynamoSyncRepository
 from app.services.credential_crypto import CredentialCipher
 from app.services.google_oauth import GoogleOAuthClient
 
@@ -65,6 +66,21 @@ def get_review_repository() -> DynamoReviewRepository:
         applications_table=os.environ["APPLICATIONS_TABLE"],
         events_table=os.environ["EVENTS_TABLE"],
     )
+
+
+def get_sync_repository() -> DynamoSyncRepository:
+    client_options = {}
+    if region := os.getenv("AWS_REGION"):
+        client_options["region_name"] = region
+    return DynamoSyncRepository(
+        client=boto3.client("dynamodb", **client_options),
+        users_table=os.environ["USERS_TABLE"],
+        sync_runs_table=os.environ["SYNC_RUNS_TABLE"],
+    )
+
+
+def get_sync_publisher() -> Any:
+    return boto3.client("sqs")
 
 
 def get_cognito_client() -> Any:

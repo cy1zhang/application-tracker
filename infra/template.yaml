@@ -113,6 +113,11 @@ Resources:
         - AttributeName: run_id
           KeyType: RANGE
 
+  SyncQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 180
+
   GmailKmsKey:
     Type: AWS::KMS::Key
     DeletionPolicy: Delete
@@ -250,6 +255,7 @@ Resources:
           USERS_TABLE: !Ref UsersTable
           OAUTH_STATES_TABLE: !Ref OAuthStatesTable
           SYNC_RUNS_TABLE: !Ref SyncRunsTable
+          SYNC_QUEUE_URL: !Ref SyncQueue
           COGNITO_USER_POOL_ID: !Ref UserPool
           GMAIL_KMS_KEY_ARN: !GetAtt GmailKmsKey.Arn
           GMAIL_OAUTH_SECRET_NAME: !Ref GmailOAuthSecretName
@@ -269,6 +275,12 @@ Resources:
             - Effect: Allow
               Action: [dynamodb:GetItem, dynamodb:UpdateItem]
               Resource: !GetAtt UsersTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:PutItem]
+              Resource: !GetAtt SyncRunsTable.Arn
+            - Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt SyncQueue.Arn
             - Effect: Allow
               Action: [dynamodb:PutItem, dynamodb:DeleteItem]
               Resource: !GetAtt OAuthStatesTable.Arn
