@@ -24,8 +24,10 @@ class FakeGoogle:
         self.email = "alex@example.test"
         self.refresh_token: str | None = "synthetic-refresh"
         self.exchanges = 0
+        self.last_prompt_consent = None
 
     def authorization_url(self, state: str, *, prompt_consent: bool) -> str:
+        self.last_prompt_consent = prompt_consent
         return f"https://accounts.google.test/consent?state={state}"
 
     def exchange_code(self, code: str) -> dict:
@@ -231,6 +233,33 @@ def test_same_mailbox_reconnect_preserves_refresh_token(setup) -> None:
 
     assert response.headers["location"].endswith("gmail=connected")
     assert repository.get_active("owner-a", 2) == original
+
+
+def test_revoked_connection_requires_fresh_refresh_token(setup) -> None:
+    api, repository, google, _identity = setup
+    callback(api, start_consent(api), code="synthetic-code")
+    repository._client.update_item(
+        TableName="Users", Key={"owner_id": {"S": "owner-a"}},
+        UpdateExpression="SET reconnect_required = :yes",
+        ExpressionAttributeValues={":yes": {"BOOL": True}},
+    )
+    google.refresh_token = None
+
+    failed = callback(api, start_consent(api), code="synthetic-code")
+
+    assert google.last_prompt_consent is True
+    assert failed.headers["location"].endswith("gmail=failed")
+    assert repository.get_connection("owner-a").generation == 1
+
+    google.refresh_token = "synthetic-refresh"
+    succeeded = callback(api, start_consent(api), code="synthetic-code")
+
+    assert succeeded.headers["location"].endswith("gmail=connected")
+    assert repository.get_connection("owner-a").generation == 2
+    user = repository._client.get_item(
+        TableName="Users", Key={"owner_id": {"S": "owner-a"}}
+    )["Item"]
+    assert "reconnect_required" not in user
 
 
 def test_connection_is_owner_scoped(setup) -> None:

@@ -39,7 +39,7 @@ def dispatch_daily(
     for user in _scan_pages(
         client, users_table, page_size,
         FilterExpression="attribute_exists(email) AND attribute_exists(encrypted_token)",
-        ProjectionExpression="owner_id, email, encrypted_token",
+        ProjectionExpression="owner_id",
     ):
         try:
             run = syncs.start(user["owner_id"], uuid4().hex, now)

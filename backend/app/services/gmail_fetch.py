@@ -48,7 +48,7 @@ class GmailFetchClient:
         query = {
             "q": (
                 f"after:{int(boundary.timestamp()) - 1} "
-                "{application assessment interview offer rejection}"
+                "{application applying assessment interview offer rejection}"
             ),
             "maxResults": "10",
             "includeSpamTrash": "false",

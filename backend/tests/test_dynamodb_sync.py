@@ -212,6 +212,20 @@ def test_terminal_failure_is_visible_and_releases_active_slot(repositories) -> N
         sync.fail("owner-a", "run-1", 1, "lease-1", "partial", STARTED_AT)
 
 
+def test_revoked_token_marks_connection_for_fresh_consent(repositories) -> None:
+    gmail, sync, client = repositories
+    gmail.save_connection("owner-a", 0, "a@example.test", TOKEN, CONNECTED_AT)
+    sync.start("owner-a", "run-1", STARTED_AT)
+    sync.claim("owner-a", "run-1", 1, "lease-1", STARTED_AT)
+
+    sync.fail("owner-a", "run-1", 1, "lease-1", "reconnect_required", STARTED_AT)
+
+    user = client.get_item(TableName="Users", Key={"owner_id": {"S": "owner-a"}})["Item"]
+    assert user["reconnect_required"]["BOOL"] is True
+    with pytest.raises(SyncUnavailable):
+        sync.start("owner-a", "run-2", STARTED_AT + timedelta(days=1))
+
+
 def test_reconnecting_clears_previous_accounts_run_and_history(repositories) -> None:
     gmail, sync, client = repositories
     gmail.save_connection("owner-a", 0, "first@example.test", TOKEN, CONNECTED_AT)

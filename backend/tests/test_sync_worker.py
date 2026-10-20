@@ -289,3 +289,33 @@ def test_message_removed_after_listing_is_ignored_durably(setup) -> None:
     })["Item"]
     assert event["outcome"]["S"] == "ignored"
     assert event["reason"]["S"] == "message_unavailable"
+
+
+def test_large_history_record_checkpoints_ten_messages_at_a_time(setup) -> None:
+    client, _, syncs, _, _, fetch, _ = setup
+    fetch.fail_second_once = False
+    invoke(setup)
+    invoke(setup, lease_id="lease-2", now=NOW + timedelta(seconds=1))
+    syncs.start("owner-a", "run-2", NOW + timedelta(days=1))
+
+    def large_history(access_token, history_id, page_token):
+        assert history_id == "100" and page_token is None
+        return HistoryPage([f"bulk-{index}" for index in range(25)], None, "120")
+
+    fetch.list_history_page = large_history
+    first = invoke(setup, run_id="run-2", now=NOW + timedelta(days=1))
+    second = invoke(
+        setup, run_id="run-2", lease_id="lease-3",
+        now=NOW + timedelta(days=1, seconds=1),
+    )
+    third = invoke(
+        setup, run_id="run-2", lease_id="lease-4",
+        now=NOW + timedelta(days=1, seconds=2),
+    )
+
+    assert (first.status, first.processed_count) == ("pending", 10)
+    assert (second.status, second.processed_count) == ("pending", 20)
+    assert (third.status, third.processed_count) == ("completed", 25)
+    assert client.get_item(TableName="Users", Key={
+        "owner_id": {"S": "owner-a"},
+    })["Item"]["history_id"]["S"] == "120"

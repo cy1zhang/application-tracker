@@ -354,7 +354,7 @@ not establish those live results.
 For a repeat deploy, run the same script after making code changes. Lambda
 logs are in CloudWatch Logs. To remove the stack, run `sam delete --stack-name
 app-tracker-dev --region us-east-1 --profile application-tracker-bootstrap`.
-The Applications and Events tables have `DeletionPolicy: Retain`; deleting the
+The Applications, Events, and SyncRuns tables have `DeletionPolicy: Retain`; deleting the
 stack does not delete their data. The Gmail `Users` and `OAuthStates` tables are
 deleted with the stack. The KMS key enters a seven-day pending-deletion period
 and cannot decrypt credentials during that period. Both separate Secrets

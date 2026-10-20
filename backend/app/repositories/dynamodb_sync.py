@@ -19,6 +19,7 @@ class StaleSyncRun(Exception):
 class SyncLease:
     run: SyncRun
     page_token: str | None
+    message_offset: int
 
 
 class DynamoSyncRepository:
@@ -33,6 +34,8 @@ class DynamoSyncRepository:
         user = self._get_user(owner_id)
         if not user or not user.get("email") or not user.get("encrypted_token"):
             raise SyncUnavailable("Gmail is not connected")
+        if user.get("reconnect_required"):
+            raise SyncUnavailable("Gmail reconnect required")
         active_id = user.get("active_run_id")
         if active_id:
             active = self._get_run(owner_id, active_id)
@@ -82,6 +85,7 @@ class DynamoSyncRepository:
                             "ConditionExpression": (
                                 "generation = :generation AND attribute_exists(email) "
                                 "AND attribute_exists(encrypted_token) "
+                                "AND attribute_not_exists(reconnect_required) "
                                 "AND attribute_not_exists(active_run_id)"
                             ),
                             "ExpressionAttributeValues": {
@@ -155,12 +159,18 @@ class DynamoSyncRepository:
                 raise StaleSyncRun from None
             return None
         item = self._get_run_item(owner_id, run_id)
-        return SyncLease(run=self._as_run(item), page_token=item.get("page_token"))
+        return SyncLease(
+            run=self._as_run(item), page_token=item.get("page_token"),
+            message_offset=int(item.get("message_offset", 0)),
+        )
 
     def checkpoint(
         self, owner_id: str, run_id: str, generation: int, lease_id: str,
-        next_page_token: str, processed_count: int, now: datetime,
+        next_page_token: str | None, processed_count: int, now: datetime,
+        message_offset: int = 0,
     ) -> SyncRun:
+        if message_offset < 0:
+            raise ValueError("Invalid message offset")
         try:
             self._client.transact_write_items(TransactItems=[
                 {
@@ -168,16 +178,20 @@ class DynamoSyncRepository:
                         "TableName": self._sync_runs_table,
                         "Key": self._encode({"owner_id": owner_id, "run_id": run_id}),
                         "UpdateExpression": (
-                            "SET #state = :pending, page_token = :cursor, "
-                            "processed_count = processed_count + :count "
-                            "REMOVE lease_id, lease_expires_at"
+                            "SET #state = :pending, message_offset = :offset, "
+                            "processed_count = processed_count + :count"
+                            + (", page_token = :cursor" if next_page_token is not None else "")
+                            + " REMOVE lease_id, lease_expires_at"
+                            + (", page_token" if next_page_token is None else "")
                         ),
                         "ConditionExpression": "#state = :running AND lease_id = :lease",
                         "ExpressionAttributeNames": {"#state": "status"},
                         "ExpressionAttributeValues": {
                             ":pending": self._serializer.serialize("pending"),
                             ":running": self._serializer.serialize("running"),
-                            ":cursor": self._serializer.serialize(next_page_token),
+                            **({":cursor": self._serializer.serialize(next_page_token)}
+                               if next_page_token is not None else {}),
+                            ":offset": self._serializer.serialize(message_offset),
                             ":count": self._serializer.serialize(processed_count),
                             ":lease": self._serializer.serialize(lease_id),
                         },
@@ -205,7 +219,7 @@ class DynamoSyncRepository:
                             "SET #state = :completed, completed_at = :now, "
                             "last_success_at = :now, "
                             "processed_count = processed_count + :count "
-                            "REMOVE lease_id, lease_expires_at, page_token"
+                            "REMOVE lease_id, lease_expires_at, page_token, message_offset"
                         ),
                         "ConditionExpression": "#state = :running AND lease_id = :lease",
                         "ExpressionAttributeNames": {"#state": "status"},
@@ -295,7 +309,7 @@ class DynamoSyncRepository:
                         "UpdateExpression": (
                             "SET #state = :pending, #mode = :rescan, "
                             "import_after = :boundary "
-                            "REMOVE lease_id, lease_expires_at, page_token"
+                            "REMOVE lease_id, lease_expires_at, page_token, message_offset"
                         ),
                         "ConditionExpression": "#state = :running AND lease_id = :lease",
                         "ExpressionAttributeNames": {"#state": "status", "#mode": "mode"},
@@ -346,7 +360,11 @@ class DynamoSyncRepository:
                     "Update": {
                         "TableName": self._users_table,
                         "Key": self._encode({"owner_id": owner_id}),
-                        "UpdateExpression": "REMOVE active_run_id",
+                        "UpdateExpression": (
+                            ("SET reconnect_required = :yes "
+                             if status == "reconnect_required" else "")
+                            + "REMOVE active_run_id"
+                        ),
                         "ConditionExpression": (
                             "generation = :generation AND active_run_id = :run "
                             "AND attribute_exists(encrypted_token)"
@@ -354,6 +372,8 @@ class DynamoSyncRepository:
                         "ExpressionAttributeValues": {
                             ":generation": self._serializer.serialize(generation),
                             ":run": self._serializer.serialize(run_id),
+                            **({":yes": self._serializer.serialize(True)}
+                               if status == "reconnect_required" else {}),
                         },
                     }
                 },

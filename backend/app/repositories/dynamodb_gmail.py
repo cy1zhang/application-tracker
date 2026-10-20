@@ -73,6 +73,7 @@ class DynamoGmailRepository:
             generation=int(item["generation"]),
             email=item.get("email"),
             encrypted_token=item.get("encrypted_token"),
+            reconnect_required=bool(item.get("reconnect_required", False)),
         )
 
     def save_connection(
@@ -90,7 +91,8 @@ class DynamoGmailRepository:
                 UpdateExpression=(
                     "SET generation = :new, email = :email, encrypted_token = :token, "
                     "connected_at = :connected_at "
-                    "REMOVE history_id, last_success_at, active_run_id, latest_run_id"
+                    "REMOVE history_id, last_success_at, active_run_id, "
+                    "latest_run_id, reconnect_required"
                 ),
                 ConditionExpression=(
                     "attribute_not_exists(owner_id) OR generation = :expected"
@@ -115,7 +117,7 @@ class DynamoGmailRepository:
             UpdateExpression=(
                 "SET generation = if_not_exists(generation, :zero) + :one "
                 "REMOVE email, encrypted_token, connected_at, history_id, "
-                "last_success_at, active_run_id, latest_run_id"
+                "last_success_at, active_run_id, latest_run_id, reconnect_required"
             ),
             ExpressionAttributeValues={
                 ":zero": self._serializer.serialize(0),

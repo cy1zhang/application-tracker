@@ -45,7 +45,9 @@ class GmailConnectionService:
             datetime.now(UTC) + timedelta(minutes=10),
         )
         return self._google.authorization_url(
-            state, prompt_consent=connection.encrypted_token is None
+            state, prompt_consent=(
+                connection.encrypted_token is None or connection.reconnect_required
+            )
         )
 
     def callback(self, state: str | None, code: str | None, error: str | None) -> bool:
@@ -67,7 +69,10 @@ class GmailConnectionService:
                 encrypted = self._cipher.encrypt_refresh_token(
                     stored.owner_id, refresh_token
                 )
-            elif connection.email and connection.email.casefold() == email.casefold():
+            elif (
+                not connection.reconnect_required
+                and connection.email and connection.email.casefold() == email.casefold()
+            ):
                 encrypted = connection.encrypted_token
             else:
                 return False

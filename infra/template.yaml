@@ -276,6 +276,7 @@ Resources:
                 - dynamodb:GetItem
                 - dynamodb:Query
                 - dynamodb:PutItem
+                - dynamodb:ConditionCheckItem
               Resource:
                 - !GetAtt ApplicationsTable.Arn
                 - !GetAtt EventsTable.Arn
@@ -373,7 +374,7 @@ Resources:
                 - !GetAtt EventsTable.Arn
                 - !Sub '${EventsTable.Arn}/index/application-events-index'
             - Effect: Allow
-              Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+              Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:ConditionCheckItem]
               Resource: !GetAtt UsersTable.Arn
             - Effect: Allow
               Action: [dynamodb:GetItem, dynamodb:UpdateItem]

@@ -39,7 +39,7 @@ def test_import_page_has_fixed_epoch_boundary_and_pagination() -> None:
     assert query["maxResults"] == ["10"]
     assert query["includeSpamTrash"] == ["false"]
     assert query["q"] == [
-        "after:1784548799 {application assessment interview offer rejection}"
+        "after:1784548799 {application applying assessment interview offer rejection}"
     ]
     assert "synthetic-access" not in request.full_url
     assert request.headers["Authorization"] == "Bearer synthetic-access"

@@ -22,6 +22,7 @@ class GmailConnection:
     generation: int
     email: str | None
     encrypted_token: EncryptedCredential | None
+    reconnect_required: bool = False
 
 
 class GmailRepository(Protocol):

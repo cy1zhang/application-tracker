@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from app.repositories.dynamodb_sync import StaleSyncRun
 from app.services.email_processing import process_message
-from app.services.gmail_fetch import HistoryExpired, MessageUnavailable
+from app.services.gmail_fetch import GmailApiError, HistoryExpired, MessageUnavailable
 from app.services.sync_candidates import load_candidates
 
 
@@ -51,7 +51,11 @@ def process_sync_page(
         final_history_id = page.history_id
     candidates = load_candidates(owner_id, applications)
     processed = 0
-    for message_id in page.message_ids:
+    offset = lease.message_offset if run.mode == "incremental" else 0
+    if offset > len(page.message_ids):
+        raise GmailApiError("Gmail history page changed during sync")
+    end = min(offset + 10, len(page.message_ids))
+    for message_id in page.message_ids[offset:end]:
         active_token()
         try:
             message = fetch.get_message(access_token, message_id)
@@ -70,6 +74,13 @@ def process_sync_page(
             raise RetryableSyncOutcome
         processed += 1
 
+    if end < len(page.message_ids):
+        run = syncs.checkpoint(
+            owner_id, run_id, generation, lease_id, lease.page_token,
+            processed, now, message_offset=end,
+        )
+        _enqueue(publisher, queue_url, owner_id, run_id, generation)
+        return run
     if page.next_page_token is None:
         return syncs.complete(
             owner_id, run_id, generation, lease_id, processed, now,
