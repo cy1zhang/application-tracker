@@ -420,3 +420,40 @@ def test_two_owner_companies_mentioned_goes_to_review():
     result = reconcile_extraction(_rule(), _named(), message, candidates)
     assert result.outcome == "review_required"
     assert result.application_id is None
+
+
+def test_linked_thread_contradicting_extracted_identity_goes_to_review_unmatched():
+    result = reconcile_extraction(
+        _rule(),
+        _globex_named(),
+        _message(thread="thread-1"),
+        [_candidate(threads={"thread-1"})],
+    )
+    assert result.outcome == "review_required"
+    assert result.application_id is None
+
+
+def test_linked_requisition_contradicting_extracted_role_goes_to_review_unmatched():
+    result = reconcile_extraction(
+        _rule(),
+        _extraction(
+            role="Data Intern",
+            requisition_id="REQ-1234",
+            evidence={"status": "x", "role": "Data Intern", "requisition_id": "REQ-1234"},
+        ),
+        _message(thread="other"),
+        [_candidate(reqs={"REQ-1234"})],
+    )
+    assert result.outcome == "review_required"
+    assert result.application_id is None
+
+
+def test_linked_thread_with_matching_extracted_identity_still_applies():
+    result = reconcile_extraction(
+        _rule(),
+        _named(company=" ACME ", role="software  engineer intern"),
+        _message(),
+        [_candidate(threads={"thread-1"})],
+    )
+    assert result.outcome == "applied"
+    assert result.application_id == "app-1"

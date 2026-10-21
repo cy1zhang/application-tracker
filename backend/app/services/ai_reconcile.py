@@ -108,7 +108,9 @@ def _match(message, applications, extraction, requisition_id, season, year):
         # Cycle-conflicting links are kept so the guard can record the match.
         linked = linked_matches(message, applications, requisitions, None, None)
     if linked:
-        return linked[0] if len(linked) == 1 else None
+        if len(linked) != 1 or not _agrees(linked[0], extraction):
+            return None
+        return linked[0]
     if not extraction.company or not extraction.role:
         return None
     company, role = _fold(extraction.company), _fold(extraction.role)
@@ -125,6 +127,18 @@ def _match(message, applications, extraction, requisition_id, season, year):
     if len(named) != 1:
         return None
     return named[0] if _name_anchored(message, applications, named[0]) else None
+
+
+def _agrees(item, extraction) -> bool:
+    """A linked application must not contradict the identity the email names."""
+    application = item.application
+    for extracted, actual in (
+        (extraction.company, application.company),
+        (extraction.role, application.role),
+    ):
+        if extracted and _fold(extracted) != _fold(actual or ""):
+            return False
+    return True
 
 
 def _name_anchored(message, applications, matched) -> bool:

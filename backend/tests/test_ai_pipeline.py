@@ -245,6 +245,29 @@ def test_body_named_other_application_is_not_mutated(env) -> None:
     assert env.event("m1").get("application_id") != "app-2"
 
 
+def test_linked_thread_with_other_company_extraction_is_not_mutated(env) -> None:
+    env.connect()
+    env.app()
+    text = UNKNOWN_STAGE_TEXT + " Globex Data Analyst applicants get a separate link."
+    globex = extraction(
+        company="Globex", role="Data Analyst", status="oa_received",
+        evidence={
+            "company": "Globex", "role": "Data Analyst",
+            "status": "complete the coding challenge",
+        },
+    )
+
+    outcome = process(
+        env, "m1", text, escalator_for(env, StubProvider(globex)),
+        threads={"app-1": {"thread-m1"}},
+    )
+
+    assert outcome.outcome == "review_required"
+    assert application(env).status.value == "applied"
+    assert application(env).version == 1
+    assert env.event("m1").get("application_id") is None
+
+
 def test_instruction_derived_status_is_nulled_and_never_applied(env) -> None:
     env.connect()
     env.app()
