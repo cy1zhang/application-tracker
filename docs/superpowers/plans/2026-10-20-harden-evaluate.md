@@ -291,3 +291,10 @@ The owner delegated execution while away. These resolutions are reversible defau
 - **Evaluation gates:** CI enforces the committed thresholds. If an honest first run misses the PRD 98%/90% targets, do not tune rules or lower targets silently. Commit the measured numbers, gate CI on "no regression below the measured baseline", and report the gap to the PRD target for the owner.
 - **Deletion design:** keep the separate deletion queue and function. This follows from the finding that API writes lack generation guards.
 - **Deploy:** deploy to development with `AlarmNotifications` disabled by default, so no SNS email subscription is created without the owner. Agents never run L7 (live deletion) or L6 (revocation).
+
+## Branch review (Codex)
+
+Read-only Codex review of this branch against `main`. Both P2 findings were accepted and fixed test-first.
+
+1. **[P2] Check the expected status in evaluation results.** `_update_correct` checked only fields that changed, so an `applied` result that updated the expected application's cycle but left its status unchanged counted as correct. It now also requires the final status to equal the labeled status; a stated cycle left unset still counts as incomplete, not wrong. Fixed in `50efca5`. The committed fixtures were unaffected: every measured number is identical before and after.
+2. **[P2] Keep account deletion available when applications fail to load.** A failed initial applications request left `applications` null and hid the Gmail, AI and Delete account controls. They now also show after a non-403 load error (still hidden while loading and on 403 access denied). Fixed in `0ec45cd`.
