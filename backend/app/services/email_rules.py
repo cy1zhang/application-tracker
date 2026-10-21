@@ -1,9 +1,12 @@
 import re
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from app.domain.applications import Application, ApplicationStatus, Season
 from app.services.gmail_message import ParsedGmailMessage
+
+if TYPE_CHECKING:
+    from app.services.ai_extraction import ValidatedExtraction
 
 Outcome = Literal["applied", "ignored", "review_required"]
 
@@ -94,6 +97,9 @@ class RuleDecision:
     year: int | None = None
     requisition_id: str | None = None
     evidence: str = ""
+    origin: Literal["rules", "ai"] = "rules"
+    rule_reason: str | None = None
+    ai_proposal: "ValidatedExtraction | None" = None
 
 
 def classify_message(
@@ -247,6 +253,27 @@ def _match_application(
     season: Season | None,
     year: int | None,
 ) -> ApplicationCandidate | None:
+    matches = _linked_matches(message, applications, event_requisitions, season, year)
+    return matches[0] if len(matches) == 1 else None
+
+
+def linked_matches(
+    message: ParsedGmailMessage,
+    applications: list[ApplicationCandidate],
+    event_requisitions: list[str],
+    season: Season | None,
+    year: int | None,
+) -> list[ApplicationCandidate]:
+    return _linked_matches(message, applications, event_requisitions, season, year)
+
+
+def _linked_matches(
+    message: ParsedGmailMessage,
+    applications: list[ApplicationCandidate],
+    event_requisitions: list[str],
+    season: Season | None,
+    year: int | None,
+) -> list[ApplicationCandidate]:
     requisitions = {value.casefold() for value in event_requisitions}
     roles = _explicit_roles(message.text)
     if not roles:
@@ -278,7 +305,7 @@ def _match_application(
     ]
     if mentioned_in_body:
         matches = [item for item in matches if item in mentioned_in_body]
-    return matches[0] if len(matches) == 1 else None
+    return matches
 
 
 def _mentions(content: str, value: str) -> bool:
@@ -345,6 +372,12 @@ def _company_matches_event(content: str, company: str, role: str) -> bool:
         content,
         re.IGNORECASE,
     ) is not None
+
+
+def would_regress(
+    current: ApplicationStatus | None, proposed: ApplicationStatus
+) -> bool:
+    return _would_regress(current, proposed)
 
 
 def _would_regress(
