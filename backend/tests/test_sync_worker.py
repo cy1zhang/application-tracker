@@ -319,3 +319,30 @@ def test_large_history_record_checkpoints_ten_messages_at_a_time(setup) -> None:
     assert client.get_item(TableName="Users", Key={
         "owner_id": {"S": "owner-a"},
     })["Item"]["history_id"]["S"] == "120"
+
+
+def test_message_older_than_the_import_boundary_is_not_processed(setup) -> None:
+    client, _, _, _, _, fetch, _ = setup
+    fetch.fail_second_once = False
+    original = fetch.get_message
+
+    def get_message(access_token, message_id):
+        item = original(access_token, message_id)
+        if message_id == "msg-1":
+            old = NOW - timedelta(days=100)
+            item["internalDate"] = str(int(old.timestamp() * 1000))
+        return item
+
+    fetch.get_message = get_message
+
+    invoke(setup)
+    invoke(setup, lease_id="lease-2", now=NOW + timedelta(seconds=1))
+
+    event_ids = {
+        item["event_id"]["S"]
+        for item in client.query(
+            TableName="Events", KeyConditionExpression="owner_id = :owner",
+            ExpressionAttributeValues={":owner": {"S": "owner-a"}},
+        )["Items"]
+    }
+    assert event_ids == {"gmail#msg-2", "gmail#msg-3"}
