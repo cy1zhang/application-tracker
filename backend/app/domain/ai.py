@@ -146,3 +146,11 @@ class StoredAiSettings:
     key_status: str
     version: int
     consent_at: datetime | None
+
+
+@dataclass(frozen=True)
+class AiRuntime:
+    provider: AiProvider
+    model: str
+    settings_version: int
+    encrypted_key: EncryptedCredential

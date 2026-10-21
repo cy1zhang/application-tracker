@@ -125,8 +125,8 @@ Never escalated, with the reason in the code that decides it:
 - `mark_key_invalid(owner_id, settings_version)` sets `ai_key_status = invalid` only if `ai_settings_version` still equals the version that was used, so a stale failure cannot invalidate a freshly replaced key.
 - `AiRuntime` loader: `load_runtime(owner_id) -> AiRuntime | None` returns provider, model ID (from env), settings version, and the encrypted key only when the owner has an enabled, `ok` key and the provider's model ID is configured.
 
-- [ ] Write moto tests: 50 reservations succeed and the 51st raises `AiBudgetExhausted`; the counter rolls over on the next UTC day; two owners have independent counters; a disabled, deleted, invalid, or version-mismatched key raises the right error without incrementing; a changed generation or run ID raises `StaleSyncRun` without incrementing; `mark_key_invalid` with a stale version is a no-op; a pre-seeded "other worker already started today" state takes the retry path.
-- [ ] Confirm the tests fail; implement; run focused and full backend tests, lint, and `git diff --check`; commit.
+- [x] Write moto tests: 50 reservations succeed and the 51st raises `AiBudgetExhausted`; the counter rolls over on the next UTC day; two owners have independent counters; a disabled, deleted, invalid, or version-mismatched key raises the right error without incrementing; a changed generation or run ID raises `StaleSyncRun` without incrementing; `mark_key_invalid` with a stale version is a no-op; a pre-seeded "other worker already started today" state takes the retry path.
+- [x] Confirm the tests fail; implement; run focused and full backend tests, lint, and `git diff --check`; commit.
 
 ---
 
