@@ -9,6 +9,7 @@ from app.services.google_oauth import (
     GoogleOAuthClient,
     OAuthError,
     OAuthReconnectRequired,
+    revoke_refresh_token,
 )
 
 
@@ -130,3 +131,81 @@ def test_revoked_refresh_token_requires_reconnect_without_provider_body() -> Non
         client.refresh_access_token("synthetic-refresh")
 
     assert "sensitive" not in str(error.value)
+
+
+# --- revoke_refresh_token ---------------------------------------------------
+
+REVOKE_TOKEN = "synthetic-refresh-token-canary"
+
+
+class _Response:
+    def __init__(self, status=200):
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, limit=-1):
+        return b"{}"
+
+
+def _revoke_error(code, body=b"{}"):
+    return HTTPError("https://oauth2.googleapis.com/revoke", code, "x", {}, BytesIO(body))
+
+
+def test_revoke_posts_token_only_in_form_body() -> None:
+    seen = []
+
+    def open_request(request, *, timeout):
+        seen.append((request, timeout))
+        return _Response()
+
+    revoke_refresh_token(REVOKE_TOKEN, urlopen=open_request)
+
+    request, timeout = seen[0]
+    assert request.get_method() == "POST"
+    assert request.full_url == "https://oauth2.googleapis.com/revoke"
+    assert REVOKE_TOKEN not in request.full_url
+    assert parse_qs(request.data.decode()) == {"token": [REVOKE_TOKEN]}
+    assert request.get_header("Content-type") == "application/x-www-form-urlencoded"
+    assert timeout == 5
+
+
+def test_revoke_treats_invalid_token_as_success() -> None:
+    def open_request(request, *, timeout):
+        raise _revoke_error(400, b'{"error": "invalid_token"}')
+
+    revoke_refresh_token(REVOKE_TOKEN, urlopen=open_request)
+
+
+@pytest.mark.parametrize("failure", [
+    _revoke_error(500),
+    _revoke_error(400, b'{"error": "invalid_request"}'),
+    _revoke_error(400, b"not json"),
+    _revoke_error(302),
+    TimeoutError("timed out"),
+    OSError(REVOKE_TOKEN),
+])
+def test_revoke_failures_raise_oauth_error_without_token(failure) -> None:
+    def open_request(request, *, timeout):
+        raise failure
+
+    with pytest.raises(OAuthError) as info:
+        revoke_refresh_token(REVOKE_TOKEN, urlopen=open_request)
+
+    assert REVOKE_TOKEN not in str(info.value)
+    assert info.value.__cause__ is None and info.value.__suppress_context__
+
+
+def test_revoke_default_opener_refuses_redirects() -> None:
+    from urllib.request import Request
+
+    from app.services.google_oauth import _NoRedirect
+
+    assert _NoRedirect().redirect_request(
+        Request("https://oauth2.googleapis.com/revoke", data=b"x"),
+        BytesIO(), 302, "Found", {}, "https://evil.invalid/",
+    ) is None

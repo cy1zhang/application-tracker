@@ -4,7 +4,7 @@ from http.client import HTTPException
 from typing import Any
 from urllib.error import HTTPError
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 
 class OAuthError(Exception):
@@ -13,6 +13,44 @@ class OAuthError(Exception):
 
 class OAuthReconnectRequired(OAuthError):
     pass
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_revoke_urlopen = build_opener(_NoRedirect).open
+REVOKE_URL = "https://oauth2.googleapis.com/revoke"
+
+
+def revoke_refresh_token(
+    refresh_token: str, *, urlopen: Callable[..., Any] = _revoke_urlopen
+) -> None:
+    """Revoke a Google grant. The token travels only in the POST body."""
+    request = Request(
+        REVOKE_URL,
+        data=urlencode({"token": refresh_token}).encode(),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=5) as response:
+            if response.status == 200:
+                return
+    except HTTPError as error:
+        try:
+            failure = json.loads(error.read(16_384))
+        except (ValueError, TypeError, OSError):
+            failure = {}
+        if (
+            error.code == 400 and isinstance(failure, dict)
+            and failure.get("error") == "invalid_token"
+        ):
+            return
+    except (OSError, HTTPException, ValueError, TypeError):
+        pass
+    raise OAuthError("Google token revocation failed") from None
 
 
 class GoogleOAuthClient:
