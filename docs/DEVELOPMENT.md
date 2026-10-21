@@ -60,6 +60,7 @@ cd backend
 uv sync --locked --dev
 uv run ruff check .
 uv run pytest -q
+uv run python -m evaluation.run --check
 ```
 
 Frontend:
@@ -260,6 +261,34 @@ The worker timeout is 600 seconds, the SQS visibility timeout is 3600 seconds,
 and the sync lease is 12 minutes, so a recovery pass cannot start a second
 worker while a slow page is still running. The recovery pass reads the stored
 `lease_expires_at`, so it follows the lease automatically.
+
+## Synthetic classification evaluation
+
+`uv run python -m evaluation.run --check` (from `backend/`) feeds the fixtures in
+`backend/evaluation/fixtures/` through the real `process_message` pipeline on
+moto, with recorded provider outputs replayed through the real escalator,
+validation, and reconciliation. Sockets are blocked, so any network attempt
+fails the run. It prints a Markdown report and writes `report.md` and
+`report.json` to `backend/evaluation/output/` (git-ignored), and appends to
+`$GITHUB_STEP_SUMMARY` in CI. `--check` exits non-zero when a gate in
+`backend/evaluation/thresholds.json` is breached and names the failing
+scenarios. The fixtures are agent-written synthetic data; the results validate
+intended behavior only and do not establish real-inbox accuracy. Gmail
+candidate-search recall is not modeled. AI rows use recorded synthetic outputs,
+not real provider behavior.
+
+Metrics: automatic-update precision (a wrong application or any wrong changed
+field is an error; zero updates prints `unmeasured`), coverage (handled without
+review), detection recall (relevant mail updated correctly or sent to review),
+and automatic-update recall, each with a 95% Wilson interval.
+
+First run, 2026-10-21 (97 rules and 32 AI scenarios): rules precision 96.3%
+(26/27, CI 81.7-99.3%), coverage 46.4%, detection recall 97.2% (69/71). AI
+precision (updates made by the AI tier): OpenAI 85.7% (6/7), Anthropic 100%
+(8/8), Gemini 87.5% (7/8); these samples are tiny. The PRD precision target
+(98%) was not met, so the committed gates hold this baseline instead; the gap
+and every disagreeing scenario are listed under Open Decisions in
+`docs/superpowers/plans/2026-10-20-harden-evaluate.md`.
 
 ## Deploying the development app
 
