@@ -72,3 +72,55 @@ def test_review_resolution_validates_action_fields(review_api) -> None:
     assert review_api.post("/reviews/msg-1/resolve", json={"action": "accept"}).status_code == 422
     assert review_api.post("/reviews/msg-1/resolve", json={"action": "attach", "application_id": "app-1"}).status_code == 422
     assert review_api.get("/reviews?cursor=bad!").status_code == 422
+
+
+def test_review_list_exposes_ai_fields_only_to_the_owner(review_api, repository) -> None:
+    from app.repositories.dynamodb_email import DynamoEmailRepository
+    from app.services.ai_extraction import ValidatedExtraction
+    from app.services.email_rules import AiCall
+
+    emails = DynamoEmailRepository(
+        client=repository._client, applications_table="Applications", events_table="Events"
+    )
+    rule = RuleDecision(outcome="review_required", reason="ambiguous_application")
+    for owner in ("user-a", "user-b"):
+        message = ParsedGmailMessage(
+            message_id=f"ai-{owner}",
+            thread_id="thread-ai",
+            received_at=NOW - timedelta(hours=1),
+            subject="AI",
+            sender="jobs@acme.test",
+            text="synthetic fixture",
+        )
+        decision = RuleDecision(
+            outcome="review_required",
+            reason="ai_proposal",
+            status=ApplicationStatus.INTERVIEWING,
+            evidence="interview invitation",
+            origin="ai",
+            rule_reason="ambiguous_application",
+            ai_proposal=ValidatedExtraction(
+                company="Acme", role=None, employment_type=None, season=None, year=None,
+                status=ApplicationStatus.INTERVIEWING, requisition_id=None,
+                evidence={"status": "interview invitation"}, status_in_subject_only=False,
+            ),
+            ai_note="ai_key_invalid",
+            ai_call=AiCall(provider="gemini", model="m", settings_version=1, rule_decision=rule),
+        )
+        item = emails._outcome_item(owner, message, "review_required", "ai_proposal", decision)
+        emails._client.put_item(TableName="Events", Item=emails._encode(item))
+
+    items = {item["message_id"]: item for item in review_api.get("/reviews").json()["items"]}
+    assert set(items) == {"msg-1", "ai-user-a"}
+    ai = items["ai-user-a"]
+    assert ai["reason"] == "ai_proposal"
+    assert ai["rule_reason"] == "ambiguous_application"
+    assert ai["ai_note"] == "ai_key_invalid"
+    assert ai["ai_provider"] == "gemini"
+    assert ai["ai_proposal"]["company"] == "Acme"
+    assert ai["ai_proposal"]["evidence"] == {"status": "interview invitation"}
+    assert "ai_model" not in ai
+    rule_item = items["msg-1"]
+    assert rule_item["reason"] == "ambiguous_application"
+    assert rule_item["ai_proposal"] is None
+    assert rule_item["ai_note"] is None

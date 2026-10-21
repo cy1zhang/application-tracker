@@ -333,6 +333,10 @@ class DynamoReviewRepository:
             proposed_status=item.get("proposed_status"),
             proposed_season=item.get("proposed_season"),
             proposed_year=item.get("proposed_year"),
+            ai_proposal=item.get("ai_proposal"),
+            rule_reason=item.get("rule_reason"),
+            ai_note=item.get("ai_note"),
+            ai_provider=item.get("ai_provider"),
         )
 
     def _encode(self, item: dict[str, Any]) -> dict[str, Any]:

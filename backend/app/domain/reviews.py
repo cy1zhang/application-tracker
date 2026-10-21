@@ -46,6 +46,17 @@ class ReviewResolution(BaseModel):
         return self
 
 
+class AiProposalView(BaseModel):
+    company: str | None = None
+    role: str | None = None
+    employment_type: RoleType | None = None
+    season: Season | None = None
+    year: int | None = None
+    status: ApplicationStatus | None = None
+    requisition_id: str | None = None
+    evidence: dict[str, str] = {}
+
+
 class ReviewItem(BaseModel):
     message_id: str
     reason: str
@@ -59,6 +70,10 @@ class ReviewItem(BaseModel):
     proposed_status: ApplicationStatus | None = None
     proposed_season: Season | None = None
     proposed_year: int | None = None
+    ai_proposal: AiProposalView | None = None
+    rule_reason: str | None = None
+    ai_note: str | None = None
+    ai_provider: str | None = None
 
 
 class ReviewPage(BaseModel):

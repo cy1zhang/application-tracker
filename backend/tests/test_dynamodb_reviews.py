@@ -20,7 +20,8 @@ from app.repositories.dynamodb_reviews import (
     ReviewVersionConflict,
 )
 from app.repositories.dynamodb_tables import create_tables
-from app.services.email_rules import RuleDecision
+from app.services.ai_extraction import ValidatedExtraction
+from app.services.email_rules import AiCall, RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
 
 NOW = datetime(2026, 10, 18, tzinfo=UTC)
@@ -224,3 +225,59 @@ def test_attach_to_merged_id_uses_retained_application(store) -> None:
 
     assert result.application_id == "keep"
     assert len(applications.list_events(owner_id="user-a", application_id="keep")) == 4
+
+
+def _ai_review(emails, owner="user-a", message_id="msg-ai"):
+    rule = RuleDecision(outcome="review_required", reason="ambiguous_application")
+    # record() needs a users table for AI decisions; store the item shape directly.
+    message = ParsedGmailMessage(
+        message_id=message_id,
+        thread_id=f"thread-{message_id}",
+        received_at=NOW - timedelta(days=1),
+        subject="Update",
+        sender="jobs@acme.test",
+        text="synthetic message",
+    )
+    decision = RuleDecision(
+        outcome="review_required",
+        reason="ai_proposal",
+        application_id="app-1",
+        status=ApplicationStatus.INTERVIEWING,
+        evidence="interview invitation",
+        origin="ai",
+        rule_reason="ambiguous_application",
+        ai_proposal=ValidatedExtraction(
+            company="Acme", role="Engineer", employment_type=None, season=None,
+            year=None, status=ApplicationStatus.INTERVIEWING, requisition_id=None,
+            evidence={"status": "interview invitation"}, status_in_subject_only=False,
+        ),
+        ai_note="ai_budget_exhausted",
+        ai_call=AiCall(provider="openai", model="m", settings_version=1, rule_decision=rule),
+    )
+    item = emails._outcome_item(owner, message, "review_required", decision.reason, decision)
+    emails._client.put_item(TableName="Events", Item=emails._encode(item))
+
+
+def test_pending_reviews_expose_ai_fields_to_the_owner_only(store) -> None:
+    _, emails, reviews = store
+    _ai_review(emails)
+    _review(emails, message_id="msg-rule")
+
+    items = {
+        item.message_id: item
+        for item in reviews.list_pending(owner_id="user-a", limit=10, cursor=None).items
+    }
+    ai = items["msg-ai"]
+    assert ai.reason == "ai_proposal"
+    assert ai.rule_reason == "ambiguous_application"
+    assert ai.ai_note == "ai_budget_exhausted"
+    assert ai.ai_provider == "openai"
+    assert ai.ai_proposal is not None
+    assert ai.ai_proposal.company == "Acme"
+    assert ai.ai_proposal.status == ApplicationStatus.INTERVIEWING
+    assert ai.ai_proposal.evidence == {"status": "interview invitation"}
+    rule = items["msg-rule"]
+    assert (rule.ai_proposal, rule.rule_reason, rule.ai_note, rule.ai_provider) == (
+        None, None, None, None,
+    )
+    assert reviews.list_pending(owner_id="user-b", limit=10, cursor=None).items == []
