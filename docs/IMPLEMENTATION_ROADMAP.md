@@ -137,6 +137,8 @@ and scheduled synchronization runs without a browser.
 
 ### 9. Add BYOK AI escalation
 
+**Status: in progress on `milestone-9-byok-ai`**
+
 - Define one validated extraction schema.
 - Store provider keys encrypted.
 - Add OpenAI, Anthropic, and Gemini adapters.
