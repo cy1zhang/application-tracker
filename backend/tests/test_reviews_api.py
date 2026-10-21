@@ -11,7 +11,16 @@ from app.repositories.dynamodb_email import DynamoEmailRepository
 from app.repositories.dynamodb_reviews import DynamoReviewRepository
 from app.services.email_rules import RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
-from app.services.local_review_ai import LocalAiInput, LocalAiNotFound, LocalAiResult
+from app.services.local_review_ai import (
+    LocalAiConnectionChanged,
+    LocalAiIneligible,
+    LocalAiInput,
+    LocalAiMessageUnavailable,
+    LocalAiNotFound,
+    LocalAiResult,
+    LocalAiStale,
+    LocalAiUnavailable,
+)
 
 NOW = datetime(2026, 10, 18, tzinfo=UTC)
 
@@ -172,3 +181,30 @@ def test_local_ai_route_hides_other_owner_and_redacts_invalid_input(review_api):
     })
     assert bad.status_code == 422
     assert "private-email-fragment" not in bad.text
+
+
+@pytest.mark.parametrize(("error", "status", "detail"), [
+    (LocalAiMessageUnavailable, 503, "message_unavailable"),
+    (LocalAiUnavailable, 503, "gmail_connection_unavailable"),
+    (LocalAiConnectionChanged, 409, "gmail_connection_changed"),
+    (LocalAiStale, 409, "review_changed"),
+    (LocalAiIneligible, 409, "review_changed"),
+])
+def test_local_ai_routes_return_stable_codes_for_each_failure_class(
+    review_api, error, status, detail,
+):
+    class FailingService:
+        def prepare(self, owner_id, message_id):
+            raise error
+
+        def suggest(self, owner_id, message_id, *, generation, model, raw):
+            raise error
+
+    app.dependency_overrides[get_local_review_ai_service] = FailingService
+    prepared = review_api.get("/reviews/msg-1/local-ai-input")
+    saved = review_api.post("/reviews/msg-1/local-ai-suggestion", json={
+        "generation": 1, "model": "gemma4:latest", "extraction": {},
+    })
+    for response in (prepared, saved):
+        assert response.status_code == status
+        assert response.json() == {"detail": detail}

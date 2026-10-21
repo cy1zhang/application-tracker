@@ -184,3 +184,41 @@ def test_service_rejects_malformed_model_json():
             model="gemma4:latest", raw={"status": "offer"},
         )
     assert reviews.saved is None
+
+
+def test_service_distinguishes_missing_message_from_connection_failures():
+    from app.services.gmail_fetch import GmailApiError, MessageUnavailable
+    from app.services.local_review_ai import (
+        LocalAiConnectionChanged,
+        LocalAiMessageUnavailable,
+        LocalAiUnavailable,
+    )
+
+    def failing(error):
+        service, _ = _service()
+
+        def get_message(token, message_id):
+            raise error("synthetic")
+
+        service._fetch = SimpleNamespace(get_message=get_message)
+        return service
+
+    with pytest.raises(LocalAiMessageUnavailable):
+        failing(MessageUnavailable).prepare("user-a", "synthetic-1")
+    with pytest.raises(LocalAiUnavailable) as caught:
+        failing(GmailApiError).prepare("user-a", "synthetic-1")
+    assert not isinstance(caught.value, LocalAiMessageUnavailable)
+
+    service, _ = _service(generation=2)
+    with pytest.raises(LocalAiConnectionChanged):
+        service.suggest("user-a", "synthetic-1", generation=1, model="m", raw=_output())
+
+
+def test_thread_mismatch_is_a_per_review_stale_not_a_connection_change():
+    from app.services.local_review_ai import LocalAiConnectionChanged
+
+    service, _ = _service()
+    service._reviews.get_pending = lambda **kwargs: {**_review(), "thread_id": "other-thread"}
+    with pytest.raises(LocalAiStale) as caught:
+        service.prepare("user-a", "synthetic-1")
+    assert not isinstance(caught.value, LocalAiConnectionChanged)

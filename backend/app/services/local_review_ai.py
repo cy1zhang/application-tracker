@@ -8,7 +8,7 @@ from app.services.ai_extraction import build_prompt, validate_extraction
 from app.services.ai_reconcile import ESCALATION_REASONS, reconcile_extraction
 from app.services.credential_crypto import CredentialError
 from app.services.email_rules import ApplicationCandidate, RuleDecision
-from app.services.gmail_fetch import GmailApiError
+from app.services.gmail_fetch import GmailApiError, MessageUnavailable
 from app.services.gmail_message import (
     MessageParseError,
     ParsedGmailMessage,
@@ -30,8 +30,16 @@ class LocalAiStale(Exception):
     pass
 
 
+class LocalAiConnectionChanged(LocalAiStale):
+    """The Gmail connection generation changed; every pending item is affected."""
+
+
 class LocalAiUnavailable(Exception):
-    pass
+    """The Gmail connection cannot be used; every pending item is affected."""
+
+
+class LocalAiMessageUnavailable(Exception):
+    """This one Gmail message is gone or unreadable."""
 
 
 @dataclass(frozen=True)
@@ -93,17 +101,19 @@ class LocalReviewAiService:
             raise LocalAiIneligible
         connection = self._connections.get_connection(owner_id)
         if expected_generation is not None and connection.generation != expected_generation:
-            raise LocalAiStale
+            raise LocalAiConnectionChanged
         if connection.encrypted_token is None or connection.reconnect_required:
             raise LocalAiUnavailable
         encrypted = self._connections.get_active(owner_id, connection.generation)
         if encrypted is None:
-            raise LocalAiStale
+            raise LocalAiConnectionChanged
         try:
             token = self._cipher.decrypt_refresh_token(owner_id, encrypted)
             access_token = self._oauth.refresh_access_token(token)
             message = parse_gmail_message(self._fetch.get_message(access_token, message_id))
-        except (CredentialError, OAuthError, GmailApiError, MessageParseError):
+        except (MessageUnavailable, MessageParseError):
+            raise LocalAiMessageUnavailable from None
+        except (CredentialError, OAuthError, GmailApiError):
             raise LocalAiUnavailable from None
         if message.thread_id != review.get("thread_id"):
             raise LocalAiStale

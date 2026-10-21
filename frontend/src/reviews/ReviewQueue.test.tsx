@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { ApiError, getApplication, getLocalAiInput, getSettings, resolveReview, submitLocalAiSuggestion } from "../api/client";
-import { listLocalModels, runLocalModel } from "./localOllama";
+import { OllamaUnreachableError, listLocalModels, runLocalModel } from "./localOllama";
 import type { ReviewItem } from "../api/types";
 import { makeApplication } from "../test/fixtures";
 import { ReviewQueue } from "./ReviewQueue";
@@ -11,7 +11,10 @@ vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return { ...actual, getApplication: vi.fn(), getLocalAiInput: vi.fn(), getSettings: vi.fn(), resolveReview: vi.fn(), submitLocalAiSuggestion: vi.fn() };
 });
-vi.mock("./localOllama", () => ({ listLocalModels: vi.fn(), runLocalModel: vi.fn() }));
+vi.mock("./localOllama", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./localOllama")>();
+  return { ...actual, listLocalModels: vi.fn(), runLocalModel: vi.fn() };
+});
 
 afterEach(() => vi.resetAllMocks());
 
@@ -275,7 +278,7 @@ test("stops after an Ollama failure and can retry only unsaved reviews", async (
   vi.mocked(listLocalModels).mockResolvedValue(["gemma4:latest"]);
   vi.mocked(getSettings).mockResolvedValue({ enabled: false } as Awaited<ReturnType<typeof getSettings>>);
   vi.mocked(getLocalAiInput).mockResolvedValue({ generation: 1, system_prompt: "system", user_prompt: "email", format: {} });
-  vi.mocked(runLocalModel).mockRejectedValueOnce(new Error("offline")).mockResolvedValue({ status: "interviewing" });
+  vi.mocked(runLocalModel).mockRejectedValueOnce(new OllamaUnreachableError()).mockResolvedValue({ status: "interviewing" });
   vi.mocked(submitLocalAiSuggestion).mockResolvedValue({ saved: false, review: null });
   render(<ReviewQueue reviews={[review, second]} applications={[]} onResolved={vi.fn()} onBack={() => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "Analyze with Ollama" }));
@@ -315,7 +318,7 @@ test("Gmail failure stops the batch with an explanation and refreshes the queue"
   const onResolved = vi.fn().mockResolvedValue(undefined);
   vi.mocked(listLocalModels).mockResolvedValue(["gemma4:latest"]);
   vi.mocked(getSettings).mockResolvedValue({ enabled: false } as Awaited<ReturnType<typeof getSettings>>);
-  vi.mocked(getLocalAiInput).mockRejectedValue(new ApiError(503, "Gmail message is unavailable"));
+  vi.mocked(getLocalAiInput).mockRejectedValue(new ApiError(503, "gmail_connection_unavailable"));
   render(<ReviewQueue reviews={[review, { ...review, message_id: "msg-2" }]} applications={[]} onResolved={onResolved} onBack={() => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "Analyze with Ollama" }));
   await screen.findByRole("option", { name: "gemma4:latest" });
@@ -324,4 +327,93 @@ test("Gmail failure stops the batch with an explanation and refreshes the queue"
   expect(await screen.findByRole("alert")).toHaveTextContent("Gmail is unavailable");
   expect(getLocalAiInput).toHaveBeenCalledTimes(1);
   expect(onResolved).toHaveBeenCalledOnce();
+});
+
+const input = { generation: 1, system_prompt: "system", user_prompt: "email", format: {} };
+
+async function openPanel(reviews: ReviewItem[]) {
+  vi.mocked(listLocalModels).mockResolvedValue(["gemma4:latest"]);
+  vi.mocked(getSettings).mockResolvedValue({ enabled: false } as Awaited<ReturnType<typeof getSettings>>);
+  vi.mocked(getLocalAiInput).mockResolvedValue(input);
+  vi.mocked(submitLocalAiSuggestion).mockImplementation(async (id) => ({
+    saved: true, review: { ...review, message_id: id, reason: "ai_proposal", ai_proposal: { status: "interviewing", evidence: { status: "invite you to interview" } } } as ReviewItem,
+  }));
+  render(<ReviewQueue reviews={reviews} applications={[]} onResolved={vi.fn().mockResolvedValue(undefined)} onBack={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Analyze with Ollama" }));
+  await screen.findByRole("option", { name: "gemma4:latest" });
+}
+
+const queue = (count: number) => Array.from({ length: count }, (_, index) => ({ ...review, message_id: `msg-${index + 1}` }));
+
+test("continues past a per-review missing Gmail message, 422 and invalid model JSON", async () => {
+  await openPanel(queue(4));
+  vi.mocked(getLocalAiInput).mockRejectedValueOnce(new ApiError(503, "message_unavailable")).mockResolvedValue(input);
+  vi.mocked(runLocalModel).mockResolvedValue({ status: "interviewing" });
+  vi.mocked(submitLocalAiSuggestion)
+    .mockRejectedValueOnce(new ApiError(422, "Invalid model output"))
+    .mockResolvedValueOnce({ saved: false, review: null })
+    .mockRejectedValueOnce(new ApiError(409, "review_changed"));
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+
+  expect(await screen.findByText(/0 suggested, 1 skipped, 3 failed/)).toBeInTheDocument();
+  expect(getLocalAiInput).toHaveBeenCalledTimes(4);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.queryByText(/Gmail/)).not.toBeInTheDocument();
+});
+
+test("continues past model output that is not valid JSON", async () => {
+  await openPanel(queue(2));
+  vi.mocked(runLocalModel).mockRejectedValueOnce(new Error("Ollama returned invalid JSON.")).mockResolvedValue({ status: "interviewing" });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+
+  expect(await screen.findByText(/1 suggested, 0 skipped, 1 failed/)).toBeInTheDocument();
+  expect(getLocalAiInput).toHaveBeenCalledTimes(2);
+});
+
+test.each([
+  ["Ollama is unreachable", () => new OllamaUnreachableError(), "runLocalModel"],
+  ["authentication is required", () => new ApiError(401, "Authentication required"), "getLocalAiInput"],
+  ["Gmail is disconnected", () => new ApiError(503, "gmail_connection_unavailable"), "getLocalAiInput"],
+  ["the Gmail connection changed", () => new ApiError(409, "gmail_connection_changed"), "getLocalAiInput"],
+])("stops the batch when %s", async (_name, makeError, where) => {
+  await openPanel(queue(3));
+  vi.mocked(runLocalModel).mockResolvedValue({ status: "interviewing" });
+  if (where === "runLocalModel") vi.mocked(runLocalModel).mockRejectedValueOnce(makeError());
+  else vi.mocked(getLocalAiInput).mockRejectedValueOnce(makeError());
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
+  expect(getLocalAiInput).toHaveBeenCalledTimes(1);
+});
+
+test("does not blame Gmail when Ollama is unreachable", async () => {
+  await openPanel(queue(2));
+  vi.mocked(runLocalModel).mockRejectedValue(new OllamaUnreachableError());
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Could not reach Ollama");
+  expect(screen.getByRole("alert")).not.toHaveTextContent("Gmail");
+});
+
+test("failed reviews are skipped by the next Start in the same session", async () => {
+  await openPanel(queue(3));
+  vi.mocked(runLocalModel).mockRejectedValueOnce(new Error("Ollama returned invalid JSON.")).mockResolvedValue({ status: "interviewing" });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  expect(await screen.findByText(/2 suggested, 0 skipped, 1 failed/)).toBeInTheDocument();
+  vi.mocked(getLocalAiInput).mockClear();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start analysis" })).toBeEnabled());
+  expect(getLocalAiInput).not.toHaveBeenCalledWith("msg-1", expect.anything());
+});
+
+test("a global stop does not remember the interrupted review as failed", async () => {
+  await openPanel(queue(2));
+  vi.mocked(runLocalModel).mockRejectedValueOnce(new OllamaUnreachableError()).mockResolvedValue({ status: "interviewing" });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await screen.findByRole("alert");
+  vi.mocked(getLocalAiInput).mockClear();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await waitFor(() => expect(vi.mocked(getLocalAiInput).mock.calls.map(([id]) => id)).toEqual(["msg-1", "msg-2"]));
 });

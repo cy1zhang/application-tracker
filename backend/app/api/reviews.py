@@ -33,7 +33,9 @@ from app.services.credential_crypto import CredentialCipher
 from app.services.gmail_fetch import GmailFetchClient
 from app.services.google_oauth import GoogleOAuthClient
 from app.services.local_review_ai import (
+    LocalAiConnectionChanged,
     LocalAiIneligible,
+    LocalAiMessageUnavailable,
     LocalAiNotFound,
     LocalAiStale,
     LocalAiUnavailable,
@@ -81,10 +83,14 @@ def local_ai_input(message_id: str, owner_id: Owner, service: LocalService):
         return service.prepare(owner_id, message_id)
     except LocalAiNotFound:
         raise HTTPException(status_code=404, detail="Review not found") from None
+    except LocalAiConnectionChanged:
+        raise HTTPException(status_code=409, detail="gmail_connection_changed") from None
     except (LocalAiIneligible, LocalAiStale):
-        raise HTTPException(status_code=409, detail="Review or Gmail connection changed") from None
+        raise HTTPException(status_code=409, detail="review_changed") from None
+    except LocalAiMessageUnavailable:
+        raise HTTPException(status_code=503, detail="message_unavailable") from None
     except LocalAiUnavailable:
-        raise HTTPException(status_code=503, detail="Gmail message is unavailable") from None
+        raise HTTPException(status_code=503, detail="gmail_connection_unavailable") from None
 
 
 @router.post("/{message_id}/local-ai-suggestion")
@@ -99,10 +105,14 @@ def local_ai_suggestion(
         )
     except (LocalAiNotFound, ReviewNotFound):
         raise HTTPException(status_code=404, detail="Review not found") from None
+    except LocalAiConnectionChanged:
+        raise HTTPException(status_code=409, detail="gmail_connection_changed") from None
     except (LocalAiIneligible, LocalAiStale, ReviewAlreadyResolved, ReviewVersionConflict):
-        raise HTTPException(status_code=409, detail="Review or Gmail connection changed") from None
+        raise HTTPException(status_code=409, detail="review_changed") from None
+    except LocalAiMessageUnavailable:
+        raise HTTPException(status_code=503, detail="message_unavailable") from None
     except LocalAiUnavailable:
-        raise HTTPException(status_code=503, detail="Gmail message is unavailable") from None
+        raise HTTPException(status_code=503, detail="gmail_connection_unavailable") from None
     except InvalidExtraction:
         raise HTTPException(status_code=422, detail="Invalid model output") from None
 

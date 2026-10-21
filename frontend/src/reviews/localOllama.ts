@@ -2,6 +2,13 @@ import type { LocalAiInput } from "../api/types";
 
 const BASE = "http://127.0.0.1:11434";
 
+export class OllamaUnreachableError extends Error {
+  constructor() {
+    super("Could not reach Ollama on this computer.");
+    this.name = "OllamaUnreachableError";
+  }
+}
+
 export async function listLocalModels(signal?: AbortSignal): Promise<string[]> {
   let response: Response;
   try {
@@ -9,7 +16,7 @@ export async function listLocalModels(signal?: AbortSignal): Promise<string[]> {
       signal, credentials: "omit", referrerPolicy: "no-referrer",
     });
   } catch {
-    throw new Error("Could not reach Ollama on this computer.");
+    throw new OllamaUnreachableError();
   }
   if (!response.ok) throw new Error("Could not list local Ollama models.");
   const body: unknown = await response.json();
@@ -46,7 +53,7 @@ export async function runLocalModel(
       }),
     });
   } catch {
-    throw new Error("Could not reach Ollama on this computer.");
+    throw new OllamaUnreachableError();
   }
   if (!response.ok) throw new Error(`Ollama could not analyze this email (${response.status}).`);
   const body: unknown = await response.json();

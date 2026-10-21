@@ -2,12 +2,30 @@ import { useEffect, useRef, useState } from "react";
 
 import { ApiError, getLocalAiInput, getSettings, submitLocalAiSuggestion } from "../api/client";
 import type { ReviewItem } from "../api/types";
-import { listLocalModels, runLocalModel } from "./localOllama";
+import { OllamaUnreachableError, listLocalModels, runLocalModel } from "./localOllama";
 
 const ELIGIBLE_REASONS = new Set([
   "ambiguous_application", "unknown_stage", "subject_only_event",
   "nonaffirmative_event", "conflicting_roles",
 ]);
+
+const GLOBAL_STATUSES = new Set([0, 401, 410, 423]);
+
+function globalStopMessage(caught: unknown): string | null {
+  if (caught instanceof OllamaUnreachableError) {
+    return "Could not reach Ollama on this computer. Start Ollama, then start again.";
+  }
+  if (!(caught instanceof ApiError)) return null;
+  if (caught.status === 503 && caught.message === "gmail_connection_unavailable") {
+    return "Gmail is unavailable. Check the Gmail connection, then retry.";
+  }
+  if (caught.status === 409 && caught.message === "gmail_connection_changed") {
+    return "The Gmail connection changed. Refreshing the review queue; start again for remaining items.";
+  }
+  if (caught.status === 401) return "Sign in again, then start the analysis again.";
+  if (GLOBAL_STATUSES.has(caught.status)) return "The app could not be reached. Check the connection, then retry.";
+  return null;
+}
 
 interface Props {
   reviews: ReviewItem[];
@@ -25,6 +43,7 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
   const [current, setCurrent] = useState(0);
   const [runError, setRunError] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
+  const failedIds = useRef(new Set<string>());
   const eligibleCount = reviews.filter((item) => ELIGIBLE_REASONS.has(item.reason) && !item.ai_proposal).length;
 
   useEffect(() => {
@@ -46,7 +65,9 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
 
   async function start() {
     if (!model || controller.current) return;
-    const pending = reviews.filter((item) => ELIGIBLE_REASONS.has(item.reason) && !item.ai_proposal);
+    const pending = reviews.filter(
+      (item) => ELIGIBLE_REASONS.has(item.reason) && !item.ai_proposal && !failedIds.current.has(item.message_id),
+    );
     const result = { suggested: 0, skipped: reviews.length - pending.length, failed: 0 };
     const abort = new AbortController();
     controller.current = abort;
@@ -71,26 +92,18 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
         }
       } catch (caught) {
         if (abort.signal.aborted) break;
+        const stop = globalStopMessage(caught);
+        if (stop) {
+          result.failed++;
+          setRunError(stop);
+          setCounts({ ...result });
+          break;
+        }
         if (caught instanceof ApiError && caught.status === 404) {
           result.skipped++;
-        } else if (caught instanceof ApiError && caught.status === 409) {
-          result.skipped++;
-          setRunError("A review or Gmail connection changed. Refreshing the review queue; start again for remaining items.");
-          setCounts({ ...result });
-          break;
         } else {
           result.failed++;
-          setRunError(
-            caught instanceof ApiError && caught.status === 503
-              ? "Gmail is unavailable. Check the Gmail connection, then retry."
-              : caught instanceof ApiError && caught.status === 422
-                ? "The model returned invalid output. Try another installed model."
-                : caught instanceof ApiError
-                  ? "The app could not analyze this email. Check the connection, then retry."
-                  : caught instanceof Error ? caught.message : "Ollama could not analyze this email.",
-          );
-          setCounts({ ...result });
-          break;
+          failedIds.current.add(item.message_id);
         }
       }
       setCounts({ ...result });
@@ -124,7 +137,7 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
       </div>
       {running && <p role="status">Analyzing {current} of {eligibleCount} eligible reviews…</p>}
       {counts && <p role="status">{counts.suggested} suggested, {counts.skipped} skipped, {counts.failed} failed</p>}
-      {counts && <p className="muted">Skipped includes reviews outside the AI reasons and reviews that already have a suggestion.</p>}
+      {counts && <p className="muted">Skipped includes reviews outside the AI reasons, reviews that already have a suggestion, and reviews that failed earlier in this session. Failed reviews are not retried until you reload this page.</p>}
       {runError && <p role="alert" className="review-error">{runError}</p>}
     </div>
   );
