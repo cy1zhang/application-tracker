@@ -250,3 +250,19 @@ Complete offline: deletion state machine, sweeper, handler, resumption, every ra
 - **Fixture authorship.** The agent writes and labels all synthetic scenarios; the PRD makes owner review of a small set of tricky examples optional. Offer the ambiguous-identity and injection scenarios for review.
 - **Deletion queue and function.** A separate queue and function (not the sync worker, not inline) is chosen for least privilege, a longer time budget, and a DLQ; say if a lighter inline design with a recovery-driven continuation is preferred.
 - **Who drives.** Claude Code drives and Codex reviews read-only, as in Milestone 9; the user has not restated roles for this milestone.
+
+## Manager Resolutions (2026-10-20)
+
+The owner delegated execution while away. These resolutions are reversible defaults; the owner can revisit any of them.
+
+- **Driver/reviewer:** Claude Code drives, with implementation delegated to subagents that are graded per task. Codex reviews read-only.
+- **24-hour Users tombstone:** keep it. It covers the access-token lifetime after `AdminDeleteUser`.
+- **Cognito username:** capture the verified `username` claim at request time, as planned.
+- **Active-account check:** one consistent Users read on every authenticated API request, for simplicity and safety on a single-user dev stack.
+- **Deleted application events:** keep them until account deletion. There is no application-delete UI yet, so no disclosure is needed now.
+- **OAuthStates cleanup:** a filtered scan is acceptable, since the table is small and has a TTL. No owner index.
+- **Disconnect revoke:** revoke only on account deletion. Revoking on disconnect is listed as an owner follow-up.
+- **Alarm thresholds:** accept the starting values. Logs carry no owner IDs.
+- **Evaluation gates:** CI enforces the committed thresholds. If an honest first run misses the PRD 98%/90% targets, do not tune rules or lower targets silently. Commit the measured numbers, gate CI on "no regression below the measured baseline", and report the gap to the PRD target for the owner.
+- **Deletion design:** keep the separate deletion queue and function. This follows from the finding that API writes lack generation guards.
+- **Deploy:** deploy to development with `AlarmNotifications` disabled by default, so no SNS email subscription is created without the owner. Agents never run L7 (live deletion) or L6 (revocation).
