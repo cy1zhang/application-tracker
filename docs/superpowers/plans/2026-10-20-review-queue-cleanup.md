@@ -43,9 +43,9 @@
 
 **Interfaces:** `ReviewItem` gains nullable `subject` and `sender`; only review outcomes persist these headers. The UI shows them with fallback labels and initially displays 20 items, with an explicit way to show more.
 
-- [ ] Add failing repository/API and UI tests for headers, missing-header fallback, and bounded display.
-- [ ] Persist and expose bounded headers; show them and specific reason copy in the review list.
-- [ ] Run focused and full backend/frontend checks; commit the verified change.
+- [x] Add failing repository/API and UI tests for headers, missing-header fallback, and bounded display.
+- [x] Persist and expose bounded headers; show them and specific reason copy in the review list.
+- [x] Run focused and full backend/frontend checks; commit the verified change.
 
 ### Task 3: Recheck the existing live queue safely
 

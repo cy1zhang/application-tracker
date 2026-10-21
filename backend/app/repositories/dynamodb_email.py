@@ -13,6 +13,7 @@ from app.services.gmail_message import ParsedGmailMessage
 
 StoredOutcomeName = Literal["applied", "ignored", "review_required", "retryable"]
 _TERMINAL = {"applied", "ignored", "review_required"}
+_MAX_HEADER = 300
 
 
 @dataclass(frozen=True)
@@ -187,6 +188,7 @@ class DynamoEmailRepository:
     def record_unparseable(
         self, *, owner_id: str, message_id: str,
         thread_id: str | None = None, received_at: datetime | None = None,
+        subject: str | None = None, sender: str | None = None,
     ) -> StoredOutcome:
         prior = self._get_outcome(owner_id, message_id)
         if prior is not None and prior.outcome in _TERMINAL:
@@ -202,6 +204,10 @@ class DynamoEmailRepository:
             item["thread_id"] = thread_id
         if received_at is not None:
             item["received_at"] = received_at.isoformat()
+        if subject:
+            item["subject"] = subject[:_MAX_HEADER]
+        if sender:
+            item["sender"] = sender[:_MAX_HEADER]
         return self._put_outcome(item)
 
     def record_unavailable(self, *, owner_id: str, message_id: str) -> StoredOutcome:
@@ -336,9 +342,9 @@ class DynamoEmailRepository:
         }
         if outcome == "review_required":
             if message.subject:
-                item["subject"] = message.subject
+                item["subject"] = message.subject[:_MAX_HEADER]
             if message.sender:
-                item["sender"] = message.sender
+                item["sender"] = message.sender[:_MAX_HEADER]
         if decision.application_id is not None:
             item["application_id"] = decision.application_id
         if decision.status is not None:

@@ -93,6 +93,8 @@ test("shows a pending review count and opens the review queue", async () => {
     received_at: null,
     thread_id: null,
     source_url: null,
+    subject: null,
+    sender: null,
     application_id: "app-1",
     proposed_status: "interviewing",
     proposed_season: null,

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import boto3
@@ -354,3 +355,18 @@ def test_disconnected_run_cannot_commit_email_outcome(outcome) -> None:
         )
         if outcome == "applied":
             assert applications.get(owner_id="user-a", application_id="app-1").version == 2
+
+
+def test_review_headers_are_bounded(storage) -> None:
+    client, _, emails = storage
+    message = replace(_message("long"), subject="S" * 500, sender="F" * 500)
+
+    emails.record(
+        owner_id="user-a",
+        message=message,
+        decision=_decision(outcome="review_required", application_id=None),
+    )
+
+    stored = _stored_event(client, "user-a", "long")
+    assert stored["subject"] == "S" * 300
+    assert stored["sender"] == "F" * 300

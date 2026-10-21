@@ -89,3 +89,40 @@ def test_processing_is_owner_scoped_idempotent_and_reviewable() -> None:
         assert next(item for item in reviews if item.message_id == "bad-2").source_url is None
         assert applications.get(owner_id="user-a", application_id="app-1").version == 2
         assert len(applications.list_events(owner_id="user-a", application_id="app-1")) == 2
+
+
+def test_unparseable_review_keeps_bounded_subject_and_sender_headers() -> None:
+    with mock_aws():
+        client = boto3.client(
+            "dynamodb",
+            region_name="us-east-1",
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
+        )
+        create_tables(client, applications_table="Applications", events_table="Events")
+        emails = DynamoEmailRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        )
+        with_headers = {
+            **_gmail("bad-h", "text"),
+            "payload": {
+                "headers": [
+                    {"name": "subject", "value": "S" * 400},
+                    {"name": "From", "value": "Recruiting <jobs@acme.test>"},
+                    {"name": "To", "value": "me@example.test"},
+                ]
+            },
+        }
+        without_headers = {**_gmail("bad-n", "text"), "payload": {"headers": "oops"}}
+        process_message("user-a", with_headers, [], emails)
+        process_message("user-a", without_headers, [], emails)
+        reviews = DynamoReviewRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        ).list_pending(owner_id="user-a", limit=100, cursor=None).items
+        with_item = next(item for item in reviews if item.message_id == "bad-h")
+        without_item = next(item for item in reviews if item.message_id == "bad-n")
+
+        assert with_item.subject == "S" * 300
+        assert with_item.sender == "Recruiting <jobs@acme.test>"
+        assert without_item.subject is None
+        assert without_item.sender is None

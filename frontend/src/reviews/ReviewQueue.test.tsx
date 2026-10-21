@@ -37,7 +37,7 @@ test("shows evidence and accepts a proposed change with the current version", as
 
   expect(screen.getByText("invite you to interview")).toBeInTheDocument();
   expect(screen.getByText("Interview update")).toBeInTheDocument();
-  expect(screen.getByText("Recruiting <jobs@acme.test>")).toBeInTheDocument();
+  expect(screen.getByText("From: Recruiting <jobs@acme.test>")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Open email" })).toHaveAttribute("href", review.source_url);
   fireEvent.click(screen.getByRole("button", { name: "Accept proposal" }));
 
@@ -58,6 +58,22 @@ test("shows a bounded first set of reviews and loads more on request", () => {
   fireEvent.click(screen.getByRole("button", { name: "Show more reviews" }));
   expect(screen.getAllByRole("article")).toHaveLength(21);
   expect(screen.getByText("Subject 20")).toBeInTheDocument();
+});
+
+test("falls back to the application or a generic heading when headers are missing", () => {
+  const bare = { ...review, subject: null, sender: null };
+  render(
+    <ReviewQueue
+      reviews={[bare, { ...bare, message_id: "msg-2", application_id: null }]}
+      applications={[makeApplication({ application_id: "app-1", company: "Acme", role: "Engineer" })]}
+      onResolved={vi.fn()}
+      onBack={() => {}}
+    />,
+  );
+
+  expect(screen.getByRole("heading", { name: "Acme · Engineer" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Unmatched email" })).toBeInTheDocument();
+  expect(screen.queryByText(/^From:/)).not.toBeInTheDocument();
 });
 
 test("rejects a review without changing an application", async () => {
