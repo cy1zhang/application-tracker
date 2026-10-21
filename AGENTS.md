@@ -24,7 +24,8 @@ owner-run deletion and revocation checks, live AI, and real-inbox quality are
 pending (`docs/VERIFICATION.md`). The three milestone branches are stacked and
 unmerged, awaiting the owner. A Hugging Face provider integration is implemented
 on `codex/huggingface-provider` and deployed in development; live model
-verification remains pending the owner's token. The dashboard offers review,
+verification is blocked by a Hugging Face credit-related HTTP 402 on the first
+synthetic request. The dashboard offers review,
 merge, sync, AI settings, and account deletion controls.
 
 Key docs: `docs/PRD.md` (product behavior), `docs/TECHNICAL_DESIGN.md` (target AWS
