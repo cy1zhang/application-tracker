@@ -327,8 +327,8 @@ Read-only Codex review of this branch against `main`. Both P2 findings were acce
 - **Live checks:** L4 and L9 are verified, and L8 alarm activation was observed (see `docs/VERIFICATION.md`).
   - No `DELETE /account` was invoked.
   - L5 (the next 09:00 UTC scheduled run), L6, L7, L10, L11 and L12 remain pending as documented.
-- **Owner follow-ups:**
-  - Purge the 6 obsolete sync DLQ messages to clear `SyncDeadLetterAlarm`.
-  - Decide on a fresh import or rescan to verify L12 with the recursion fix.
-  - Confirm the AI auto-apply status restriction and the new evaluation labels.
-  - Review and merge the three stacked branches.
+- **Post-deploy follow-ups (2026-10-21):**
+  - [x] The six obsolete sync DLQ messages were each checked against their completed, inactive run and deleted. Both sync queues were empty, and `SyncDeadLetterAlarm` returned to OK at 06:18:22Z.
+  - [x] A fresh 90-day import of the designated test mailbox completed at 06:20:09Z after processing 1,092 messages. The existing Gmail checkpoint was preserved until the new run completed; the active-run slot cleared, application and event counts stayed at 1 and 1,101, and no recovery invocation or worker failure was logged during the run. `RecursiveInvocationsDropped` had no datapoints while normal worker invocations were reported. L12 is verified in `docs/VERIFICATION.md`.
+  - [ ] Confirm the AI auto-apply status restriction and the new evaluation labels.
+  - [ ] Review and merge the three stacked branches.

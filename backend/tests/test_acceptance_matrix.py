@@ -112,5 +112,5 @@ def test_owner_only_checks_are_never_agent_run_and_stay_pending() -> None:
         assert checklist[check][2].startswith("Owner"), check
         assert checklist[check][3].startswith("Pending"), check
     assert "agents never run" in checklist["L7"][2].lower()
-    for check in ("L10", "L11", "L12"):
+    for check in ("L10", "L11"):
         assert checklist[check][3].startswith("Pending"), check
