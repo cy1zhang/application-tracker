@@ -240,6 +240,18 @@ without review.
   before they are run, and live provider results never enter CI or the
   repository.
 
+### Development deploy note (2026-10-20)
+
+Milestone 9 was deployed to `app-tracker-dev` with all three model IDs blank
+(`UPDATE_COMPLETE` 2026-10-21T02:50:15Z UTC), so AI is unavailable. Checked
+afterward: `/health` 200, `/settings` 401 without a token, CORS preflight for
+`PUT /settings/ai` allowed, worker timeout 600 and queue visibility 3600, and a
+daily-mode sync that processed 5 messages (the worker decrypted the Gmail
+credential under the new KMS condition) with no worker errors. Live provider
+calls, real invalid-key and rate-limit behavior, an observed AI proposal, and
+the signed-in settings UI remain unverified until the owner supplies a key and
+model IDs. Results are recorded in the plan's Results section.
+
 ### Timing
 
 The worker timeout is 600 seconds, the SQS visibility timeout is 3600 seconds,

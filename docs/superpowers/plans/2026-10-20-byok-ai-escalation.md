@@ -192,9 +192,9 @@ Never escalated, with the reason in the code that decides it:
 - [x] Write the template guard test and the `test_deploy.py` cases first; confirm they fail.
 - [x] Implement template, deploy script, example env, lease change; run `sam validate --template-file infra/template.yaml --lint`, `python3 scripts/test_deploy.py -q`, and backend sync tests; commit.
 - [x] Update `DEVELOPMENT.md`; run every CI command (backend sync/lint/pytest, frontend lint/test/typecheck/build/`npm audit`, SAM lint, offline deploy tests); commit.
-- [ ] Request read-only branch review (`codex exec review -c sandbox_mode='"read-only"' --base main`, or against `codex/milestone-8-resilient-sync` while stacked), pass findings to the user, resolve those the user accepts, and commit.
-- [ ] After user approval: review the CloudFormation change set (expect no replacements; new parameters, CORS method, KMS statements, worker timeout, queue visibility), deploy to development with all three model IDs blank, and verify `UPDATE_COMPLETE`, health 200, protected `/settings` 401 without a token, CORS preflight allows `PUT`, Gmail connect and sync still work, and `GET /settings` shows no available providers.
-- [ ] Update the roadmap status and `AGENTS.md` to the verified state, and commit the clean Milestone 9 handoff.
+- [x] Request read-only branch review (`codex exec review -c sandbox_mode='"read-only"' --base main`, or against `codex/milestone-8-resilient-sync` while stacked), pass findings to the user, resolve those the user accepts, and commit.
+- [x] After user approval: review the CloudFormation change set (expect no replacements; new parameters, CORS method, KMS statements, worker timeout, queue visibility), deploy to development with all three model IDs blank, and verify `UPDATE_COMPLETE`, health 200, protected `/settings` 401 without a token, CORS preflight allows `PUT`, Gmail connect and sync still work, and `GET /settings` shows no available providers.
+- [x] Update the roadmap status and `AGENTS.md` to the verified state, and commit the clean Milestone 9 handoff.
 
 ## Verification Boundary
 
@@ -235,3 +235,21 @@ A read-only Codex review of this branch raised three P1 findings. All were accep
 - **Linked match contradicting extracted identity:** a thread- or requisition-linked application was matched even when the validated extraction named a different company or role. A linked candidate must now agree (case-folded, whitespace-normalized) with each extracted company/role present, otherwise the result is an unmatched review. Fixed in `cb2478a`.
 - **Negated status cues:** quotes such as "Your offer letter is not ready" supported `status=offer`. Any status other than `rejected` is now nulled when its quote contains a negation. Fixed in `dd05e26`.
 - **Stale model parameters on deploy:** omitting a model ID override made SAM send `UsePreviousValue=True`, keeping the old ID. `deploy.sh` now always passes all three overrides, using `Key=""` when unset or blank. Fixed in `c0585ee`.
+
+## Results (2026-10-20 ET)
+
+**Pre-deploy CI-equivalent run, all passing:** backend ruff; pytest 538 passed (1 existing Mangum deprecation warning); frontend lint, vitest 104 passed, typecheck; `npm audit` 0 vulnerabilities; `sam validate --lint`; `scripts/test_deploy.py`; `git diff --check` against `codex/milestone-8-resilient-sync` clean (after a commit removing a trailing blank line).
+
+**Change set (previewed, then deleted unexecuted):** no replacements. Modified: API and worker roles and functions; HttpApi (CORS); dispatcher function, role, and schedules; SyncQueue (visibility). The worker SQS event-source mapping showed "Conditional" replacement, expected with the queue change.
+
+**Deploy** via `./scripts/deploy.sh` with all three model IDs blank:
+- `app-tracker-dev` UPDATE_COMPLETE at 2026-10-21T02:50:15Z; `OpenAiModelId`, `AnthropicModelId`, `GeminiModelId` are empty.
+- Worker Timeout 600, SQS VisibilityTimeout 3600; API and worker Lambdas Successful with all `AI_MODEL_*` variables empty.
+- `/health` 200; `/settings` 401 without a token; CORS preflight for PUT `/settings/ai` returns 204 allowing `DELETE,GET,OPTIONS,PATCH,POST,PUT`.
+- Hosted Amplify serves `assets/index-DYBbsRSI.js`, matching the local build and containing the "request cap, not a monetary cap" copy.
+
+**Post-deploy live sync:** the dispatcher was invoked in `daily` mode (the 09:00 UTC schedule path). A new incremental run completed at 2026-10-21T02:53:04Z with 5 messages processed, so the worker decrypted the Gmail credential under the new KMS `credential_type` condition. Ignored went 708 to 712 and review_required 384 to 385 (+1 `unknown_stage`, subject and sender stored). Application count stayed at 1 with its id/version hash unchanged. No WARNING, ERROR, or Traceback lines in worker logs for the preceding 30 minutes. AI did not run because no model IDs are configured.
+
+**Codex read-only reviews:** the first (against `codex/milestone-8-resilient-sync`) raised 3 P1s, all fixed (see Branch review). A re-review of the commits after 630113b found no actionable defects; Codex could not run tests in its read-only sandbox.
+
+**Still pending (needs the owner's own key and model IDs):** live calls to each provider, including structured-output behavior and whether Gemini accepts enum-with-null; real invalid-key and rate-limit responses; an observed AI auto-apply or proposal on the designated mailbox; the signed-in browser UI for the settings panel and AI suggestions (no interactive auth was available); thinking-heavy models against the 1024 output-token cap.

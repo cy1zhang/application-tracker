@@ -137,7 +137,7 @@ and scheduled synchronization runs without a browser.
 
 ### 9. Add BYOK AI escalation
 
-**Status: in progress on `milestone-9-byok-ai`**
+**Status: implemented on `milestone-9-byok-ai` (stacked on unmerged Milestone 8) and deployed in development with AI unavailable (no model IDs); live provider checks pending the owner's key**
 
 - Define one validated extraction schema.
 - Store provider keys encrypted.

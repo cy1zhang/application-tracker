@@ -14,9 +14,12 @@ locally. Milestone 7 review and reconciliation and Milestone 8 Gmail import,
 SQS sync, incremental history, daily dispatch, and recovery are deployed in
 development from `codex/milestone-8-resilient-sync`. The initial live Gmail
 import, empty incremental repeat, and scheduled recovery were verified;
-remaining Gmail and review-flow checks are pending. AI providers do not exist
-yet. The dashboard offers
-review, merge, and sync controls.
+remaining Gmail and review-flow checks are pending. Milestone 9 BYOK AI
+escalation (OpenAI, Anthropic, and Gemini providers) is implemented on
+`milestone-9-byok-ai` and deployed in development with AI disabled (no model
+IDs configured); live provider checks are pending the owner's own key. Both
+milestone branches are unmerged, awaiting the owner. The dashboard offers
+review, merge, sync, and AI settings controls.
 
 Key docs: `docs/PRD.md` (product behavior), `docs/TECHNICAL_DESIGN.md` (target AWS
 architecture, tables, API surface, sync/classification rules),
