@@ -227,3 +227,11 @@ The owner delegated execution while away. These resolutions are reversible defau
 - **Budget-limited reviews:** accepted. They stay in review until the follow-up retry action exists.
 - **Queue visibility:** 3600 seconds, relying on the 15-minute recovery pass and 12-minute lease.
 - **Deploy:** deploy to development with all model IDs blank, so AI is unavailable. That is the same environment the owner already authorized, and it leaves behavior unchanged for the live mailbox. Codex findings are triaged by the manager: clear defects are fixed, and design choices are recorded for the owner.
+
+## Branch review (Codex)
+
+A read-only Codex review of this branch raised three P1 findings. All were accepted and fixed test-first, one commit each.
+
+- **Linked match contradicting extracted identity:** a thread- or requisition-linked application was matched even when the validated extraction named a different company or role. A linked candidate must now agree (case-folded, whitespace-normalized) with each extracted company/role present, otherwise the result is an unmatched review. Fixed in `cb2478a`.
+- **Negated status cues:** quotes such as "Your offer letter is not ready" supported `status=offer`. Any status other than `rejected` is now nulled when its quote contains a negation. Fixed in `dd05e26`.
+- **Stale model parameters on deploy:** omitting a model ID override made SAM send `UsePreviousValue=True`, keeping the old ID. `deploy.sh` now always passes all three overrides, using `Key=""` when unset or blank. Fixed in `c0585ee`.
