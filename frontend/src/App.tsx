@@ -84,6 +84,11 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
     void loadReviews();
   }, []);
 
+  function showReviews() {
+    setView({ kind: "reviews" });
+    void loadReviews();
+  }
+
   function showList() {
     setView({ kind: "list" });
     void loadApplications();
@@ -118,7 +123,7 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
         {!accessDenied && applications !== null && (
           <nav className="tracker-nav" aria-label="Tracker views">
             <button type="button" onClick={showList}>Applications</button>
-            <button type="button" onClick={() => setView({ kind: "reviews" })}>Needs review ({reviews.length})</button>
+            <button type="button" onClick={showReviews}>Needs review ({reviews.length})</button>
           </nav>
         )}
         {accessDenied && (

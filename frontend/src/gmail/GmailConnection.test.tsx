@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
@@ -150,4 +150,63 @@ test("revoked Gmail access offers reconnect instead of another sync", async () =
   expect(screen.queryByRole("button", { name: "Sync now" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Reconnect Gmail" }));
   await waitFor(() => expect(navigateToGoogle).toHaveBeenCalledOnce());
+});
+
+const completedRun = {
+  run_id: "run-1", mode: "incremental" as const, status: "completed" as const,
+  processed_count: 2, started_at: "2026-10-20T12:00:00Z", import_after: null,
+  last_success_at: "2026-10-20T12:01:00Z",
+};
+
+test("keeps polling slowly after a run completes so scheduled syncs appear", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(getGmailConnection).mockResolvedValue({ connected: true, email: "a@example.test" });
+    vi.mocked(getLatestSync).mockResolvedValueOnce(completedRun).mockResolvedValue({
+      ...completedRun, run_id: "run-2", status: "running", processed_count: 1,
+    });
+    render(<GmailConnection />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByText("Sync complete (2 messages processed).")).toBeInTheDocument();
+    expect(getLatestSync).toHaveBeenCalledOnce();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(59_000); });
+    expect(getLatestSync).toHaveBeenCalledOnce();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(getLatestSync).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Syncing (1 messages processed).")).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("keeps polling slowly when no sync has run, and stops after unmount", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(getGmailConnection).mockResolvedValue({ connected: true, email: "a@example.test" });
+    const { unmount } = render(<GmailConnection />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(getLatestSync).toHaveBeenCalledOnce();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(getLatestSync).toHaveBeenCalledTimes(2);
+
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(180_000); });
+    expect(getLatestSync).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("does not poll while Gmail is disconnected", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(getGmailConnection).mockResolvedValue({ connected: false, email: null });
+    render(<GmailConnection />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(180_000); });
+    expect(getLatestSync).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });

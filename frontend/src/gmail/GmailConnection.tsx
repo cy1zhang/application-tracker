@@ -12,6 +12,9 @@ import {
 import type { SyncRun } from "../api/types";
 import { navigateToGoogle } from "./navigation";
 
+const ACTIVE_POLL_MS = 15_000;
+const IDLE_POLL_MS = 60_000;
+
 export function GmailConnection() {
   const [status, setStatus] = useState<GmailConnectionStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -63,10 +66,12 @@ export function GmailConnection() {
   }, []);
 
   useEffect(() => {
-    if (!status?.connected || (run?.status !== "pending" && run?.status !== "running")) {
-      return;
-    }
-    const timer = window.setInterval(() => { void loadSync(); }, 15_000);
+    if (!status?.connected) return;
+    const active = run?.status === "pending" || run?.status === "running";
+    const timer = window.setInterval(
+      () => { void loadSync(); },
+      active ? ACTIVE_POLL_MS : IDLE_POLL_MS,
+    );
     return () => window.clearInterval(timer);
   }, [status?.connected, run?.status]);
 

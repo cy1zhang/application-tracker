@@ -107,6 +107,32 @@ test("shows a pending review count and opens the review queue", async () => {
   expect(screen.getByText("Interview invitation")).toBeInTheDocument();
 });
 
+test("reloads reviews when the review queue is opened", async () => {
+  vi.mocked(listAllApplications).mockResolvedValue([internship]);
+  render(<App />);
+  await screen.findByRole("button", { name: "Needs review (0)" });
+  expect(listAllReviews).toHaveBeenCalledOnce();
+
+  vi.mocked(listAllReviews).mockResolvedValue([{
+    message_id: "message-2",
+    reason: "ambiguous_application",
+    evidence: "Offer discussion",
+    received_at: null,
+    thread_id: null,
+    source_url: null,
+    subject: null,
+    sender: null,
+    application_id: "app-1",
+    proposed_status: "offer",
+    proposed_season: null,
+    proposed_year: null,
+  }]);
+  fireEvent.click(screen.getByRole("button", { name: "Needs review (0)" }));
+
+  expect(await screen.findByText("Offer discussion")).toBeInTheDocument();
+  expect(listAllReviews).toHaveBeenCalledTimes(2);
+});
+
 test("shows a load error and retries", async () => {
   vi.mocked(listAllApplications)
     .mockRejectedValueOnce(
