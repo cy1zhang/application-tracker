@@ -252,8 +252,8 @@ so no SNS topic or subscription exists. It adds:
 - `RecursiveLoop: Allow` on the self-continuing worker and deletion functions.
 
 A post-deploy incremental sync completed and changed no application.
-`SyncDeadLetterAlarm` shows ALARM because of 6 obsolete continuation messages
-left from the first import. Purge the sync DLQ to clear it. Never invoke
+The 6 obsolete continuation messages left in the sync DLQ from the first import
+were later purged, and `SyncDeadLetterAlarm` returned to OK. Never invoke
 `DELETE /account` against the development owner. Live deletion checks use a
 separate test identity, and the owner runs them. Results and pending checks are
 in `docs/superpowers/plans/2026-10-20-harden-evaluate.md` and

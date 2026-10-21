@@ -117,7 +117,9 @@ recursive-loop detection. The worker continues Lambda -> SQS -> same Lambda, and
 after about 16 hops in one trace Lambda drops the message. CloudWatch showed 30
 `RecursiveInvocationsDropped` on the sync worker (23 in one hour, 7 in the next)
 and AWS sent a recursive-loop Health notice. Fixed by setting `RecursiveLoop:
-Allow` on the sync worker and account deletion functions; pending deployment.
+Allow` on the sync worker and account deletion functions. Deployed 2026-10-21; a
+fresh 90-day import then completed in about 7 minutes with no dropped invocations
+and no recovery-pass intervention (`docs/VERIFICATION.md` L12).
 A new-message incremental update, the 09:00 UTC daily start,
 revocation/reconnect, dead-letter alarm activation, and live review actions
 still need controlled verification.
