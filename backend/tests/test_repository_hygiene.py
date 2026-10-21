@@ -37,6 +37,8 @@ ALLOWED_FILE = {".env.example"}
 ALLOWLIST: dict[str, set[str]] = {
     # Line 130 posts the literal "another-synthetic-key-WXYZ" as a fake api_key.
     "backend/tests/test_settings_api.py": {"secret_assignment"},
+    # Line 1938 is the fake recorded-request api_key "synthetic-key-not-real".
+    "backend/evaluation/fixtures/ai.json": {"secret_assignment"},
 }
 
 
