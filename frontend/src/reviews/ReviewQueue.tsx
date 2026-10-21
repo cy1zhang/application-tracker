@@ -19,6 +19,10 @@ const REASONS: Record<string, string> = {
   status_regression: "The proposed stage conflicts with the current status.",
   cycle_conflict: "The proposed hiring cycle conflicts with this application.",
   forwarded_message: "This message forwards an older email.",
+  conflicting_roles: "The email mentions more than one role.",
+  subject_only_event: "The subject suggests an update, but the message does not confirm it.",
+  conflicting_requisitions: "The email mentions different job IDs.",
+  nonaffirmative_event: "The wording does not confirm this application update.",
   unparseable_message: "The email could not be read automatically. Open it to review the details.",
   missing_application: "The linked application is unavailable or was merged.",
 };
@@ -33,6 +37,7 @@ interface ReviewQueueProps {
 }
 
 export function ReviewQueue({ reviews, applications, onResolved, onBack }: ReviewQueueProps) {
+  const [visibleCount, setVisibleCount] = useState(20);
   const [active, setActive] = useState<ActiveAction | null>(null);
   const [attachId, setAttachId] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -115,7 +120,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
       {notice && <p role="status">{notice}</p>}
       {reviews.length === 0 && <p className="empty">No emails need review.</p>}
       <div className="review-list">
-        {reviews.map((review) => {
+        {reviews.slice(0, visibleCount).map((review) => {
           const application = applications.find(
             (item) => item.application_id === review.application_id,
           ) ?? linkedApplications[review.application_id ?? ""];
@@ -124,9 +129,11 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
           return (
             <article className="review-item" key={review.message_id}>
               <div className="review-heading">
-                <h2>{application ? `${application.company} · ${application.role}` : "Unmatched email"}</h2>
+                <h2>{review.subject || (application ? `${application.company} · ${application.role}` : "Unmatched email")}</h2>
                 {review.received_at && <time dateTime={review.received_at}>{formatTimestamp(review.received_at)}</time>}
               </div>
+              {review.sender && <p className="review-sender">From: {review.sender}</p>}
+              {application && review.subject && <p className="review-application">Application: {application.company} · {application.role}</p>}
               <p>{REASONS[review.reason] ?? "This email needs your decision."}</p>
               {review.evidence && <blockquote>{review.evidence}</blockquote>}
               {(review.proposed_status || review.proposed_season || review.proposed_year) && (
@@ -171,6 +178,9 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
           );
         })}
       </div>
+      {visibleCount < reviews.length && (
+        <button type="button" onClick={() => setVisibleCount((count) => count + 20)}>Show more reviews</button>
+      )}
     </section>
   );
 }

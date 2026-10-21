@@ -334,6 +334,11 @@ class DynamoEmailRepository:
             "reason": reason,
             "evidence": decision.evidence[:500],
         }
+        if outcome == "review_required":
+            if message.subject:
+                item["subject"] = message.subject
+            if message.sender:
+                item["sender"] = message.sender
         if decision.application_id is not None:
             item["application_id"] = decision.application_id
         if decision.status is not None:

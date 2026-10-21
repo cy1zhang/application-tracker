@@ -20,6 +20,8 @@ const review: ReviewItem = {
   received_at: "2026-10-18T00:00:00Z",
   thread_id: "thread-1",
   source_url: "https://mail.google.com/mail/u/0/#all/thread-1",
+  subject: "Interview update",
+  sender: "Recruiting <jobs@acme.test>",
   application_id: "app-1",
   proposed_status: "interviewing",
   proposed_season: null,
@@ -34,11 +36,28 @@ test("shows evidence and accepts a proposed change with the current version", as
   );
 
   expect(screen.getByText("invite you to interview")).toBeInTheDocument();
+  expect(screen.getByText("Interview update")).toBeInTheDocument();
+  expect(screen.getByText("Recruiting <jobs@acme.test>")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Open email" })).toHaveAttribute("href", review.source_url);
   fireEvent.click(screen.getByRole("button", { name: "Accept proposal" }));
 
   expect(resolveReview).toHaveBeenCalledWith("msg-1", { action: "accept", expected_version: 3 });
   expect(await screen.findByText("Review saved.")).toBeInTheDocument();
+});
+
+test("shows a bounded first set of reviews and loads more on request", () => {
+  const reviews = Array.from({ length: 21 }, (_, index) => ({
+    ...review,
+    message_id: `msg-${index}`,
+    subject: `Subject ${index}`,
+  }));
+  render(<ReviewQueue reviews={reviews} applications={[]} onResolved={vi.fn()} onBack={() => {}} />);
+
+  expect(screen.getAllByRole("article")).toHaveLength(20);
+  expect(screen.queryByText("Subject 20")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Show more reviews" }));
+  expect(screen.getAllByRole("article")).toHaveLength(21);
+  expect(screen.getByText("Subject 20")).toBeInTheDocument();
 });
 
 test("rejects a review without changing an application", async () => {

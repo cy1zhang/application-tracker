@@ -49,6 +49,8 @@ class ReviewResolution(BaseModel):
 class ReviewItem(BaseModel):
     message_id: str
     reason: str
+    subject: str | None = None
+    sender: str | None = None
     evidence: str = ""
     received_at: datetime | None = None
     thread_id: str | None = None

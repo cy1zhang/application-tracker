@@ -95,6 +95,8 @@ def test_pending_reviews_are_owner_scoped_paginated_and_hide_resolved(store) -> 
     )
 
     assert [item.message_id for item in first.items + second.items] == ["msg-1", "msg-2"]
+    assert first.items[0].subject == "Update"
+    assert first.items[0].sender == "Recruiting <jobs@acme.test>"
     assert [item.message_id for item in reviews.list_pending(owner_id="user-a", limit=10, cursor=None).items] == ["msg-2"]
     assert reviews.list_pending(owner_id="user-b", limit=10, cursor=None).items[0].message_id == "msg-3"
 

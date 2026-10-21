@@ -76,6 +76,8 @@ export type ApplicationPatch = Partial<ApplicationValues> & {
 export interface ReviewItem {
   message_id: string;
   reason: string;
+  subject: string | null;
+  sender: string | null;
   evidence: string;
   received_at: string | null;
   thread_id: string | null;

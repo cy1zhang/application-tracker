@@ -320,6 +320,8 @@ class DynamoReviewRepository:
         return ReviewItem(
             message_id=item["source_message_id"],
             reason=item["reason"],
+            subject=item.get("subject"),
+            sender=item.get("sender"),
             evidence=item.get("evidence", ""),
             received_at=item.get("received_at"),
             thread_id=thread_id,

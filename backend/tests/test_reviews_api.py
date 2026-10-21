@@ -54,6 +54,8 @@ def test_review_list_and_reject_are_owner_scoped(review_api) -> None:
     response = review_api.get("/reviews")
     assert response.status_code == 200
     assert response.json()["items"][0]["message_id"] == "msg-1"
+    assert response.json()["items"][0]["subject"] == "Synthetic"
+    assert response.json()["items"][0]["sender"] == "jobs@acme.test"
     assert response.json()["items"][0]["source_url"].startswith("https://mail.google.com/")
 
     app.dependency_overrides[get_current_subject] = lambda: "user-b"

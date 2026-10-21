@@ -134,7 +134,12 @@ def test_ignored_and_review_outcomes_are_persisted_without_mutation(storage) -> 
 
     assert ignored.outcome == "ignored"
     assert review.outcome == "review_required"
-    assert _stored_event(client, "user-a", "review")["outcome"] == "review_required"
+    review_item = _stored_event(client, "user-a", "review")
+    assert review_item["outcome"] == "review_required"
+    assert review_item["subject"] == "Update"
+    assert review_item["sender"] == "jobs@example.test"
+    assert "subject" not in _stored_event(client, "user-a", "ignored")
+    assert "sender" not in _stored_event(client, "user-a", "ignored")
     assert applications.get(owner_id="user-a", application_id="app-1").version == 1
     assert len(applications.list_events(owner_id="user-a", application_id="app-1")) == 1
 
