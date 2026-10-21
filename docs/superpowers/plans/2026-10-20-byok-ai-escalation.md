@@ -226,6 +226,7 @@ The owner delegated execution while away. These resolutions are reversible defau
 - **Quote length:** keep 70 characters and tune later against synthetic fixtures in Milestone 10.
 - **Budget-limited reviews:** accepted. They stay in review until the follow-up retry action exists.
 - **Queue visibility:** 3600 seconds, relying on the 15-minute recovery pass and 12-minute lease.
+- **AI auto-apply statuses (2026-10-21, new policy to confirm):** on the AI path only applied, oa_received and interviewing may auto-apply; offer, rejected and withdrawn always become `ai_proposal` reviews with the match recorded, even when the status came from the rule's regex. Added after the synthetic evaluation found an injected offer auto-applied. Rule-path behavior is unchanged.
 - **Deploy:** deploy to development with all model IDs blank, so AI is unavailable. That is the same environment the owner already authorized, and it leaves behavior unchanged for the live mailbox. Codex findings are triaged by the manager: clear defects are fixed, and design choices are recorded for the owner.
 
 ## Branch review (Codex)
