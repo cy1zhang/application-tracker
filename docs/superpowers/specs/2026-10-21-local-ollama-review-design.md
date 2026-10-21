@@ -1,6 +1,6 @@
 # Local Ollama suggestions for pending reviews
 
-**Status:** Proposed for owner approval, 2026-10-21.
+**Status:** Implemented on `codex/local-ollama-review`; Firefox browser acceptance remains open, 2026-10-21.
 
 ## Intent
 

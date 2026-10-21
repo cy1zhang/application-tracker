@@ -38,10 +38,10 @@
 - Consumes: the deployed Amplify origin and the locally installed `gemma4:latest` model.
 - Produces: a verified Firefox connection from the hosted HTTPS origin to `http://127.0.0.1:11434/api/tags`, with origin permissions limited to that origin.
 
-- [ ] **Step 1: Probe Ollama's loopback service and CORS preflight** with synthetic requests. Verify the service is present and an arbitrary origin is rejected.
-- [ ] **Step 2: Allow only the exact hosted origin** in the user's local Ollama configuration, keeping `OLLAMA_HOST` at loopback; verify a preflight for that origin succeeds.
+- [x] **Step 1: Probe Ollama's loopback service and CORS preflight** with synthetic requests. Verify the service is present and an arbitrary origin is rejected.
+- [x] **Step 2: Allow only the exact hosted origin** in the user's local Ollama configuration, keeping `OLLAMA_HOST` at loopback; verify a preflight for that origin succeeds.
 - [ ] **Step 3: From Firefox on the hosted app**, make a synthetic local `/api/tags` call and a synthetic structured `/api/chat` call. Record whether browser private-network and mixed-content controls permit them. If this fails, stop and revise the spec before adding API routes.
-- [ ] **Step 4: Document the verified setup** in `docs/DEVELOPMENT.md`, run `git diff --check`, and commit `docs: verify browser access to local Ollama`.
+- [x] **Step 4: Document the verified setup** in `docs/DEVELOPMENT.md`, run `git diff --check`, and commit the setup guide (`c4b6349`).
 
 ### Task 2: Owner-scoped local suggestion API
 
@@ -55,11 +55,11 @@
 - The service builds prompts with `build_prompt`, validates with `validate_extraction`, and derives a review-only result with `reconcile_extraction`; it never passes the result to the email auto-apply path.
 - The repository exposes a pending-review read and a conditional suggestion update, guarded by pending outcome, no resolution, no existing proposal, original reason, and the Gmail generation.
 
-- [ ] **Step 1: Write failing API and repository tests** for the two endpoints, owner isolation, eligible reasons, unresolved-only reads, stale/resolved writes, generation change, invented identity, and invalid evidence. Use synthetic Gmail messages and injected dependencies.
-- [ ] **Step 2: Run focused backend tests** and confirm failures are from the missing interfaces: `cd backend && uv run pytest tests/test_reviews_api.py tests/test_dynamodb_reviews.py tests/test_local_review_ai.py -q`.
-- [ ] **Step 3: Implement the smallest service, routes, and conditional repository update.** Re-fetch Gmail on submission; keep model output out of logs. Return 404 for another owner's review, 409 for stale state, and 422 for malformed output.
-- [ ] **Step 4: Run focused tests and lint**: `cd backend && uv run pytest tests/test_reviews_api.py tests/test_dynamodb_reviews.py tests/test_local_review_ai.py -q && uv run ruff check .`.
-- [ ] **Step 5: Commit** `feat: save validated local AI review suggestions`.
+- [x] **Step 1: Write failing API and repository tests** for the two endpoints, owner isolation, eligible reasons, unresolved-only reads, stale/resolved writes, generation change, invented identity, and invalid evidence. Use synthetic Gmail messages and injected dependencies.
+- [x] **Step 2: Run focused backend tests** and confirm failures are from the missing interfaces: `cd backend && uv run pytest tests/test_reviews_api.py tests/test_dynamodb_reviews.py tests/test_local_review_ai.py -q`.
+- [x] **Step 3: Implement the smallest service, routes, and conditional repository update.** Re-fetch Gmail on submission; keep model output out of logs. Return 404 for another owner's review, 409 for stale state, and 422 for malformed output.
+- [x] **Step 4: Run focused tests and lint**: `cd backend && uv run pytest tests/test_reviews_api.py tests/test_dynamodb_reviews.py tests/test_local_review_ai.py -q && uv run ruff check .`.
+- [x] **Step 5: Commit** `feat: save validated local AI review suggestions` (`08163a5`).
 
 ### Task 3: Browser Ollama client and review batch control
 
@@ -71,11 +71,11 @@
 - Consumes: Task 2 API. Calls Ollama `/api/tags` for installed model names and `/api/chat` with `{model, messages, stream:false, format}`. Sends parsed JSON and the generation to the API.
 - Produces: an explicit **Analyze with Ollama** control, model choice, sequential progress, Stop, setup/errors, and a warning if hosted AI is enabled.
 
-- [ ] **Step 1: Write failing frontend tests** for model detection, JSON response parsing, eligible/skipped counts, sequential calls, stop/restart, saved-suggestion refresh, offline/CORS error, and hosted-AI warning.
-- [ ] **Step 2: Run focused frontend tests** and confirm missing behavior: `cd frontend && npx vitest run src/reviews/localOllama.test.ts src/reviews/ReviewQueue.test.tsx`.
-- [ ] **Step 3: Implement the local client and minimal review controls.** Use `AbortController` for Stop; keep prompt/model response in component memory only; never use localStorage/sessionStorage for them.
-- [ ] **Step 4: Run focused tests, lint, typecheck, and build**: `cd frontend && npx vitest run src/reviews/localOllama.test.ts src/reviews/ReviewQueue.test.tsx && npm run lint && npm run typecheck && npm run build`.
-- [ ] **Step 5: Commit** `feat: analyze pending reviews with local Ollama`.
+- [x] **Step 1: Write failing frontend tests** for model detection, JSON response parsing, eligible/skipped counts, sequential calls, stop/restart, saved-suggestion refresh, offline/CORS error, and hosted-AI warning.
+- [x] **Step 2: Run focused frontend tests** and confirm missing behavior: `cd frontend && npx vitest run src/reviews/localOllama.test.ts src/reviews/ReviewQueue.test.tsx`.
+- [x] **Step 3: Implement the local client and minimal review controls.** Use `AbortController` for Stop; keep prompt/model response in component memory only; never use localStorage/sessionStorage for them.
+- [x] **Step 4: Run focused tests, lint, typecheck, and build**: `cd frontend && npx vitest run src/reviews/localOllama.test.ts src/reviews/ReviewQueue.test.tsx && npm run lint && npm run typecheck && npm run build`.
+- [x] **Step 5: Commit** `feat: analyze pending reviews with local Ollama` (`b7268a3`).
 
 ### Task 4: Whole-feature verification and handoff
 
@@ -86,7 +86,15 @@
 - Consumes: Tasks 1-3.
 - Produces: a clean branch with exact local/browser evidence and unresolved live-test boundary.
 
-- [ ] **Step 1: Run repo CI-equivalent checks**: backend `uv run ruff check . && uv run pytest -q`; frontend `npm run lint && npm test && npm run typecheck && npm run build && npm audit`; `sam validate --template-file infra/template.yaml --lint`; `python3 scripts/test_deploy.py -q`; `git diff --check`.
+- [x] **Step 1: Run repo CI-equivalent checks**: backend `uv run ruff check . && uv run pytest -q`; frontend `npm run lint && npm test && npm run typecheck && npm run build && npm audit`; `sam validate --template-file infra/template.yaml --lint`; `python3 scripts/test_deploy.py -q`; `git diff --check`.
 - [ ] **Step 2: Test a synthetic message end to end** against local Ollama in the hosted Firefox app. Verify a suggestion appears and no application changes. Do not run real-mailbox batch analysis without a new explicit user action.
-- [ ] **Step 3: Record results and limits**, request one read-only branch review, fix accepted defects, and commit each focused change.
-- [ ] **Step 4: Leave a clean tree and report the branch and exact verification results.** Do not merge without the owner's approval.
+- [x] **Step 3: Record results and limits**, request one read-only branch review, fix accepted defects, and commit each focused change.
+- [x] **Step 4: Leave a clean tree and report the branch and exact verification results.** Do not merge without the owner's approval.
+
+## Verification notes (2026-10-21)
+
+- Backend: 803 tests passed; Ruff passed. Frontend: 134 tests passed; ESLint, TypeScript, Vite build, and npm audit passed. SAM lint and 14 offline deploy tests passed. The focused frontend tests also passed after the last progress-copy change.
+- Synthetic local model request using the production prompt/schema returned a valid extraction from `gemma4:latest`. The loopback Ollama service accepted only the configured Amplify origin in the CORS preflight. The hosted Chrome tab listed the installed model after the owner allowed local service access.
+- Read-only review found missing API `ConditionCheckItem` permission, stale review acceptance, and batch error/refresh issues. Fixed in `de05505` and `0a2edf3` and covered by focused tests. The accept action now requires the version of the review proposal shown to the user.
+- Redeployed `app-tracker-dev` and the Amplify frontend. Hosted app and API health returned 200; both new API routes returned 401 without authentication. The deployed API IAM policy includes `dynamodb:ConditionCheckItem` on the Users table. After reloading the hosted Chrome page, **Needs review → Analyze with Ollama** showed the installed `gemma4:latest` model and an enabled Start analysis control.
+- Firefox browser access could not be observed through the available UI controller. A hosted browser test that saves a suggestion from a synthetic Gmail message is still open. No real-mailbox batch was started.
