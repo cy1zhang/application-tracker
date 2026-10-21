@@ -164,6 +164,40 @@ server before anything can change an application. Everything is covered offline
 with stub providers: `uv run pytest tests/test_ai_*.py tests/test_settings_api.py
 -q` from `backend/` needs no network, key, or AWS account.
 
+### Local Ollama review suggestions (development)
+
+The **Needs review → Analyze with Ollama** control runs a model on the computer
+holding the browser tab. It handles only pending reviews with one of the five AI
+escalation reasons, one email at a time. It saves validated suggestions for a
+human decision; it does not change applications or run on a schedule. Gmail and
+application data remain in AWS. The browser sends the bounded email prompt to
+Ollama at `http://127.0.0.1:11434`; no Gmail token is sent there. The model and
+Ollama service must be installed and running on that same computer.
+
+For the current development app on macOS, install an Ollama model and allow only
+the app's origin in the local Ollama service:
+
+```bash
+ollama pull gemma4:latest
+launchctl setenv OLLAMA_ORIGINS 'https://main.d2pqicgf5e8l1p.amplifyapp.com'
+```
+
+Quit and reopen Ollama after setting the variable. Keep `OLLAMA_HOST` unset (its
+default binds to loopback); do not expose port 11434 to the network. Open the
+hosted app on the same Mac, sign in, and open **Needs review**. Choose **Analyze
+with Ollama**, select the installed model, then **Start analysis**. The browser
+may ask permission for the app site to access local services. **Stop** aborts
+the current request; restarting skips suggestions that were already saved. If
+the app reports no connection, check that Ollama is running, the origin is
+exact, and Ollama was restarted. This setup is per computer. To remove this
+origin allowance later, run `launchctl unsetenv OLLAMA_ORIGINS` and restart
+Ollama.
+
+Hosted AI is separate: if its setting is on, scheduled Gmail sync may still
+send candidate email to that provider. Turn it off in AI settings for local-only
+analysis. The Ollama path has no provider fee, though it uses local CPU/GPU and
+requires the tab to remain open.
+
 ### Model-ID parameters
 
 The template has four SAM parameters: `OpenAiModelId`, `AnthropicModelId`,
