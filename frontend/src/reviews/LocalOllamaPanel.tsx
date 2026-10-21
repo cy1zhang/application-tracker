@@ -10,6 +10,15 @@ const ELIGIBLE_REASONS = new Set([
 ]);
 
 const GLOBAL_STATUSES = new Set([0, 401, 410, 423]);
+const BUSY_STATUSES = new Set([429, 502]);
+
+// Only failures about this one review are remembered; API outages are not.
+function isReviewSpecificFailure(caught: unknown): boolean {
+  if (!(caught instanceof ApiError)) return true;
+  return caught.status === 422
+    || (caught.status === 409 && caught.message === "review_changed")
+    || (caught.status === 503 && caught.message === "message_unavailable");
+}
 
 function globalStopMessage(caught: unknown): string | null {
   if (caught instanceof OllamaUnreachableError) {
@@ -23,6 +32,7 @@ function globalStopMessage(caught: unknown): string | null {
     return "The Gmail connection changed. Refreshing the review queue; start again for remaining items.";
   }
   if (caught.status === 401) return "Sign in again, then start the analysis again.";
+  if (BUSY_STATUSES.has(caught.status)) return "The app is busy or unreachable. Wait a moment, then start again.";
   if (GLOBAL_STATUSES.has(caught.status)) return "The app could not be reached. Check the connection, then retry.";
   return null;
 }
@@ -108,7 +118,7 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
           result.skipped++;
         } else {
           result.failed++;
-          failedIds.current.add(item.message_id);
+          if (isReviewSpecificFailure(caught)) failedIds.current.add(item.message_id);
         }
       }
       setCounts({ ...result });

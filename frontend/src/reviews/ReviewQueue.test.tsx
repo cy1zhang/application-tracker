@@ -454,3 +454,47 @@ test("the limit counts only reviews that have not failed before", async () => {
   await waitFor(() => expect(getLocalAiInput).toHaveBeenCalledTimes(1));
   expect(getLocalAiInput).toHaveBeenCalledWith("msg-2", expect.anything());
 });
+
+test.each([
+  ["429", new ApiError(429, "Too many requests")],
+  ["502", new ApiError(502, "Bad gateway")],
+])("stops the batch with a busy message on API %s", async (_name, error) => {
+  await openPanel(queue(3));
+  vi.mocked(getLocalAiInput).mockRejectedValueOnce(error);
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("The app is busy or unreachable. Wait a moment, then start again.");
+  expect(getLocalAiInput).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  ["500", new ApiError(500, "Internal error")],
+  ["504", new ApiError(504, "Gateway timeout")],
+])("an API %s counts as failed, continues, and is retried on the next Start", async (_name, error) => {
+  await openPanel(queue(3));
+  vi.mocked(runLocalModel).mockResolvedValue({ status: "interviewing" });
+  vi.mocked(getLocalAiInput).mockRejectedValueOnce(error);
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  expect(await screen.findByText(/2 suggested, 0 skipped, 1 failed/)).toBeInTheDocument();
+  vi.mocked(getLocalAiInput).mockClear();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await waitFor(() => expect(getLocalAiInput).toHaveBeenCalledWith("msg-1", expect.anything()));
+});
+
+test.each([
+  ["422", new ApiError(422, "Invalid model output")],
+  ["review_changed", new ApiError(409, "review_changed")],
+  ["message_unavailable", new ApiError(503, "message_unavailable")],
+])("a %s failure is not retried by the next Start", async (_name, error) => {
+  await openPanel(queue(3));
+  vi.mocked(runLocalModel).mockResolvedValue({ status: "interviewing" });
+  vi.mocked(getLocalAiInput).mockRejectedValueOnce(error);
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  expect(await screen.findByText(/2 suggested, 0 skipped, 1 failed/)).toBeInTheDocument();
+  vi.mocked(getLocalAiInput).mockClear();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start analysis" })).toBeEnabled());
+  expect(getLocalAiInput).not.toHaveBeenCalledWith("msg-1", expect.anything());
+});
