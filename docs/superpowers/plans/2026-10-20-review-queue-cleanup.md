@@ -53,8 +53,8 @@
 
 **Interfaces:** Operator command defaults to preview. Apply mode conditionally changes only a pending item's outcome when a fresh corrected-rule decision is `ignored`; all other items remain pending. It backfills bounded headers when available and prints aggregate counts only.
 
-- [ ] Add failing synthetic tests for ignored, ambiguous, unavailable, resolved, and connection-generation-change cases.
-- [ ] Implement the command and test it with moto and a fake Gmail fetcher; commit.
+- [x] Add failing synthetic tests for ignored, ambiguous, unavailable, resolved, and connection-generation-change cases.
+- [x] Implement the command and test it with moto and a fake Gmail fetcher; commit.
 - [ ] Preview the designated mailbox and inspect aggregate counts and pending-run state.
 - [ ] Apply the reviewed cleanup; verify new reason counts, preserved audit items, and zero unintended application changes.
 

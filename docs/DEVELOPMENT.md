@@ -367,3 +367,30 @@ and cannot decrypt credentials during that period. Both separate Secrets
 Manager secrets and the $1 budget remain until you explicitly remove them. A
 later fresh stack will create new tables rather than automatically reuse
 retained ones.
+
+## Recheck pending reviews (operator command)
+
+`backend/scripts/recheck_reviews.py` re-reads each pending review's Gmail message,
+re-classifies it with the current rules, and changes only items whose fresh
+decision is `ignored` (`review_required` becomes `ignored`; the original reason is
+kept as `previous_reason`, evidence is kept, and `subject`/`sender` are removed).
+Everything else stays pending, never creates or updates applications, and gets a
+bounded `subject`/`sender` backfilled when missing. It refuses to run while a
+sync run is active, stops if the Gmail connection generation changes, and
+skips items that were resolved or changed since listing.
+
+Run it from `backend/` with the Lambda's environment variables (`USERS_TABLE`,
+`EVENTS_TABLE`, `APPLICATIONS_TABLE`, `GMAIL_KMS_KEY_ARN`,
+`GMAIL_OAUTH_SECRET_NAME`, optional `OAUTH_STATES_TABLE`) and AWS credentials.
+Preview first (no writes), inspect the counts, then add `--apply`:
+
+```bash
+uv run python -m scripts.recheck_reviews --owner-id <owner-id>
+uv run python -m scripts.recheck_reviews --owner-id <owner-id> --apply
+```
+
+It prints aggregate counts as JSON only; subjects, senders, evidence, message
+IDs, and tokens are never printed, and errors print only the exception type.
+Local AWS SSO-style login sessions may need
+`uv run --with "botocore[crt]==1.43.101" python -m scripts.recheck_reviews ...`
+(this does not change `uv.lock`).

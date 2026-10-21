@@ -6,6 +6,23 @@ from app.services.email_rules import ApplicationCandidate, classify_message
 from app.services.gmail_message import MessageParseError, parse_gmail_message
 
 
+def extract_headers(gmail_message) -> tuple[str | None, str | None]:
+    subject = sender = None
+    payload = gmail_message.get("payload") if isinstance(gmail_message, dict) else None
+    headers = payload.get("headers") if isinstance(payload, dict) else None
+    for header in headers if isinstance(headers, list) else []:
+        if not isinstance(header, dict):
+            continue
+        name, value = header.get("name"), header.get("value")
+        if not isinstance(name, str) or not isinstance(value, str):
+            continue
+        if name.lower() == "subject" and subject is None:
+            subject = value
+        elif name.lower() == "from" and sender is None:
+            sender = value
+    return subject, sender
+
+
 def process_message(
     owner_id: str,
     gmail_message: dict,
@@ -28,19 +45,7 @@ def process_message(
                 received_at = datetime.fromtimestamp(received_ms / 1000, UTC)
         except (KeyError, TypeError, ValueError, OverflowError):
             pass
-        subject = sender = None
-        payload = gmail_message.get("payload")
-        headers = payload.get("headers") if isinstance(payload, dict) else None
-        for header in headers if isinstance(headers, list) else []:
-            if not isinstance(header, dict):
-                continue
-            name, value = header.get("name"), header.get("value")
-            if not isinstance(name, str) or not isinstance(value, str):
-                continue
-            if name.lower() == "subject" and subject is None:
-                subject = value
-            elif name.lower() == "from" and sender is None:
-                sender = value
+        subject, sender = extract_headers(gmail_message)
         return repository.record_unparseable(
             owner_id=owner_id, message_id=message_id,
             thread_id=thread_id, received_at=received_at,
