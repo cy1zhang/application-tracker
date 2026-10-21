@@ -360,4 +360,3 @@ def test_failure_logs_carry_no_text(env, caplog) -> None:
     for secret in (SYNTHETIC_KEY, "PRIVATE-EMAIL-BODY", "Software Engineer Intern",
                    "invite you to interview"):
         assert secret not in caplog.text
-
