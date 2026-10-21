@@ -150,6 +150,8 @@ injection, tools, or credentials.
 
 ### 10. Harden and evaluate
 
+**Status: in progress on `milestone-10-harden-evaluate` (plan: `docs/superpowers/plans/2026-10-20-harden-evaluate.md`)**
+
 - Complete account deletion and stale-work protection.
 - Add sanitized logs, alarms, dead-letter handling, and retention.
 - Measure synthetic classification behavior in CI.
