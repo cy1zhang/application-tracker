@@ -50,6 +50,8 @@ _UNCERTAIN = re.compile(
     r"\b(?:have|has|had)\s+not\s+(?:yet\s+)?decided\b",
     re.IGNORECASE,
 )
+HYPOTHETICAL = _HYPOTHETICAL
+UNCERTAIN = _UNCERTAIN
 _FUTURE_OR_NEGATED = re.compile(r"\b(?:will|not)\b", re.IGNORECASE)
 _CYCLE = re.compile(r"\b(summer|fall|spring|winter)\s+(20\d{2})\b", re.IGNORECASE)
 _REQUISITION = re.compile(

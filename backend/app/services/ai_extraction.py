@@ -6,7 +6,7 @@ from pydantic import ValidationError
 
 from app.domain.ai import ExtractionOutput
 from app.domain.applications import ApplicationStatus, RoleType, Season
-from app.services.email_rules import ApplicationCandidate
+from app.services.email_rules import HYPOTHETICAL, UNCERTAIN, ApplicationCandidate
 from app.services.gmail_message import ParsedGmailMessage
 
 BODY_LIMIT = 8_000
@@ -28,10 +28,10 @@ SYSTEM_PROMPT = (
 
 _CUES = {
     ApplicationStatus.APPLIED: r"applied|application (?:has been )?(?:received|submitted)|thank(?:s| you) for applying",
-    ApplicationStatus.OA_RECEIVED: r"assessment|coding challenge|online test",
-    ApplicationStatus.INTERVIEWING: r"interview",
-    ApplicationStatus.OFFER: r"offer",
-    ApplicationStatus.REJECTED: r"not moving forward|unfortunately|regret|other candidates|decided not",
+    ApplicationStatus.OA_RECEIVED: r"(?:online|technical|coding) assessment|coding challenge|online test|hackerrank|codesignal",
+    ApplicationStatus.INTERVIEWING: r"invite you to (?:an? |the )?(?:\w+ )?interview|schedule (?:an? |your )?(?:\w+ )?interview|interview (?:is )?(?:scheduled|confirmed)|next round of interviews",
+    ApplicationStatus.OFFER: r"pleased to offer|offer (?:you|of employment)|offer letter|extend(?:ing)? (?:you )?an offer|(?:formal|verbal|written) offer",
+    ApplicationStatus.REJECTED: r"(?:not|no longer) (?:be )?moving forward|will not be moving forward|decided (?:not to|to (?:move|go) forward with other)|other candidates|regret to inform|not (?:been )?selected|unable to offer",
     ApplicationStatus.WITHDRAWN: r"withdr[ae]w",
     RoleType.INTERNSHIP: r"intern",
     RoleType.CO_OP: r"co-?op",
@@ -156,4 +156,6 @@ def _supports(field: str, value: object, quote: str) -> bool:
         return str(value) in quote
     if field == "season":
         return value.value in lowered
+    if field == "status" and (HYPOTHETICAL.search(quote) or UNCERTAIN.search(quote)):
+        return False
     return re.search(_CUES[value], lowered) is not None

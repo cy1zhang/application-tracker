@@ -165,18 +165,18 @@ def test_candidate_name_is_not_valid_evidence():
 
 
 def test_subject_only_status_is_flagged():
-    prompt = _prompt("Please see below.", subject="Your interview invitation")
+    prompt = _prompt("Please see below.", subject="We would like to schedule an interview")
     result = validate_extraction(
-        _raw(status=("interviewing", "interview invitation")), prompt
+        _raw(status=("interviewing", "schedule an interview")), prompt
     )
     assert result.status is ApplicationStatus.INTERVIEWING
     assert result.status_in_subject_only is True
 
 
 def test_status_quote_in_subject_and_body_is_not_subject_only():
-    prompt = _prompt("We would like an interview.", subject="Interview")
+    prompt = _prompt("We would like to schedule an interview.", subject="schedule an interview")
     result = validate_extraction(
-        _raw(status=("interviewing", "an interview")), prompt
+        _raw(status=("interviewing", "schedule an interview")), prompt
     )
     assert result.status_in_subject_only is False
 
@@ -288,3 +288,18 @@ def test_body_is_capped_and_sections_match_what_was_sent():
     assert sections["sender"] == "Acme Recruiting <jobs@example.test>"
     short = _prompt("short")
     assert "truncated" not in short.user.lower()
+
+
+@pytest.mark.parametrize(
+    ("status", "quote", "kept"),
+    [
+        ("offer", "we offer competitive benefits", False),
+        ("interviewing", "interview tips", False),
+        ("interviewing", "if you are selected for an interview", False),
+        ("rejected", "we will not be moving forward with your application", True),
+        ("offer", "we are pleased to offer you the role", True),
+    ],
+)
+def test_status_cues_reject_boilerplate_and_hedging(status, quote, kept):
+    result = validate_extraction(_raw(status=(status, quote)), _prompt(quote + "."))
+    assert (result.status is not None) is kept
