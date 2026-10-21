@@ -11,6 +11,7 @@ import type {
 } from "../api/types";
 import { ApplicationForm, buildPatch } from "../applications/ApplicationForm";
 import { STATUS_LABELS, formatCycle, formatTimestamp } from "../applications/labels";
+import { LocalOllamaPanel } from "./LocalOllamaPanel";
 
 const REASONS: Record<string, string> = {
   ambiguous_application: "The email could match more than one application.",
@@ -61,6 +62,9 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [linkedApplications, setLinkedApplications] = useState<Record<string, Application>>({});
+  const [showLocalAi, setShowLocalAi] = useState(false);
+  const [localSuggestions, setLocalSuggestions] = useState<Record<string, ReviewItem>>({});
+  const displayedReviews = reviews.map((review) => localSuggestions[review.message_id] ?? review);
 
   useEffect(() => {
     const missingIds = [...new Set(reviews.map((review) => review.application_id).filter(
@@ -133,11 +137,13 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
         <h1 id="reviews-title">Needs review</h1>
         <span className="review-count">{reviews.length} pending</span>
       </div>
+      {reviews.length > 0 && <button type="button" onClick={() => setShowLocalAi((shown) => !shown)}>Analyze with Ollama</button>}
+      {showLocalAi && <LocalOllamaPanel reviews={displayedReviews} onSuggested={(review) => setLocalSuggestions((current) => ({ ...current, [review.message_id]: review }))} onFinished={onResolved} />}
       {error && <p role="alert" className="review-error">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       {reviews.length === 0 && <p className="empty">No emails need review.</p>}
       <div className="review-list">
-        {reviews.slice(0, visibleCount).map((review) => {
+        {displayedReviews.slice(0, visibleCount).map((review) => {
           const application = applications.find(
             (item) => item.application_id === review.application_id,
           ) ?? linkedApplications[review.application_id ?? ""];

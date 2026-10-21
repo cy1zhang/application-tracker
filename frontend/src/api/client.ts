@@ -7,6 +7,8 @@ import type {
   ApplicationEvent,
   ApplicationPage,
   ApplicationPatch,
+  LocalAiInput,
+  LocalAiSuggestionResult,
   MergeRequest,
   ReviewItem,
   ReviewPage,
@@ -145,6 +147,23 @@ export function resolveReview(
   return request<ReviewResolutionResult>(
     `/reviews/${encodeURIComponent(messageId)}/resolve`,
     { method: "POST", body: JSON.stringify(resolution) },
+  );
+}
+
+export function getLocalAiInput(messageId: string, signal?: AbortSignal): Promise<LocalAiInput> {
+  return request<LocalAiInput>(
+    `/reviews/${encodeURIComponent(messageId)}/local-ai-input`, { signal },
+  );
+}
+
+export function submitLocalAiSuggestion(
+  messageId: string,
+  payload: { generation: number; model: string; extraction: Record<string, unknown> },
+  signal?: AbortSignal,
+): Promise<LocalAiSuggestionResult> {
+  return request<LocalAiSuggestionResult>(
+    `/reviews/${encodeURIComponent(messageId)}/local-ai-suggestion`,
+    { method: "POST", body: JSON.stringify(payload), signal },
   );
 }
 

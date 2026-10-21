@@ -129,6 +129,18 @@ export interface ReviewPage {
   next_cursor: string | null;
 }
 
+export interface LocalAiInput {
+  system_prompt: string;
+  user_prompt: string;
+  format: Record<string, unknown>;
+  generation: number;
+}
+
+export interface LocalAiSuggestionResult {
+  saved: boolean;
+  review: ReviewItem | null;
+}
+
 export interface ReviewApplicationCreate extends Omit<ApplicationCreate, "status"> {
   status: ApplicationStatus | null;
 }

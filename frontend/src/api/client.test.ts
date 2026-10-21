@@ -9,9 +9,11 @@ import {
   getAccountStatus,
   getGmailConnection,
   getLatestSync,
+  getLocalAiInput,
   listAllApplications,
   startGmailConnection,
   startSync,
+  submitLocalAiSuggestion,
   updateApplication,
 } from "./client";
 
@@ -64,6 +66,26 @@ test("creates an application with a JSON body", async () => {
     method: "POST",
     body: JSON.stringify(payload),
     headers: { "Content-Type": "application/json" },
+  });
+});
+
+test("local AI API sends model output only to the selected review", async () => {
+  const prepared = { system_prompt: "Synthetic", user_prompt: "Email", format: {}, generation: 2 };
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(fakeResponse(prepared))
+    .mockResolvedValueOnce(fakeResponse({ saved: false, review: null }));
+  vi.stubGlobal("fetch", fetchMock);
+  const signal = new AbortController().signal;
+
+  await expect(getLocalAiInput("msg/1", signal)).resolves.toEqual(prepared);
+  await expect(submitLocalAiSuggestion("msg/1", {
+    generation: 2, model: "gemma4:latest", extraction: { status: null },
+  }, signal)).resolves.toEqual({ saved: false, review: null });
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/reviews/msg%2F1/local-ai-input");
+  expect(fetchMock.mock.calls[0][1].signal).toBe(signal);
+  expect(fetchMock.mock.calls[1][0]).toBe("/api/reviews/msg%2F1/local-ai-suggestion");
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+    generation: 2, model: "gemma4:latest", extraction: { status: null },
   });
 });
 
