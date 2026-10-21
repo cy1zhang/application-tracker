@@ -86,6 +86,41 @@ export interface ReviewItem {
   proposed_status: ApplicationStatus | null;
   proposed_season: Season | null;
   proposed_year: number | null;
+  ai_proposal?: AiProposal | null;
+  rule_reason?: string | null;
+  ai_note?: string | null;
+  ai_provider?: string | null;
+}
+
+export interface AiProposal {
+  company?: string | null;
+  role?: string | null;
+  employment_type?: RoleType | null;
+  season?: Season | null;
+  year?: number | null;
+  status?: ApplicationStatus | null;
+  requisition_id?: string | null;
+  evidence: Record<string, string>;
+}
+
+export type AiProviderName = "openai" | "anthropic" | "gemini";
+
+export interface AiSettings {
+  available_providers: AiProviderName[];
+  provider: AiProviderName | null;
+  key_hint: string | null;
+  enabled: boolean;
+  key_status: "ok" | "invalid" | null;
+  requests_today: number;
+  daily_limit: number;
+  usage_day: string;
+}
+
+export interface AiSettingsUpdate {
+  provider: AiProviderName;
+  enabled: boolean;
+  api_key?: string;
+  consent?: boolean;
 }
 
 export interface ReviewPage {

@@ -161,3 +161,62 @@ test("closes a stale edit form so it cannot resubmit an old version", async () =
   expect(screen.queryByRole("button", { name: "Save review changes" })).not.toBeInTheDocument();
   expect(onResolved).toHaveBeenCalledOnce();
 });
+
+const aiReview: ReviewItem = {
+  ...review,
+  message_id: "msg-ai",
+  reason: "ai_proposal",
+  rule_reason: "ambiguous_application",
+  ai_provider: "openai",
+  ai_proposal: {
+    company: "Acme",
+    role: "Engineer",
+    status: "interviewing",
+    evidence: { status: "<img src=x onerror=alert(1)> invite you to interview" },
+  },
+};
+
+test("renders an AI suggestion with evidence quotes as plain text", () => {
+  const { container } = render(
+    <ReviewQueue reviews={[aiReview]} applications={[makeApplication({ application_id: "app-1" })]} onResolved={vi.fn()} onBack={() => {}} />,
+  );
+
+  expect(screen.getByText("AI suggestion")).toBeInTheDocument();
+  expect(screen.getByText("The email could match more than one application.")).toBeInTheDocument();
+  expect(screen.getByText(/Company: Acme/)).toBeInTheDocument();
+  expect(screen.getByText(/<img src=x onerror=alert\(1\)> invite you to interview/)).toBeInTheDocument();
+  expect(container.querySelector("img")).toBeNull();
+  expect(screen.getByRole("button", { name: "Accept proposal" })).toBeInTheDocument();
+});
+
+test.each([
+  ["ai_unavailable", "AI was not used for this email."],
+  ["ai_budget_exhausted", "AI was not used: daily limit reached."],
+  ["ai_key_invalid", "AI was not used: your API key was rejected."],
+])("shows the %s note", (note, text) => {
+  render(<ReviewQueue reviews={[{ ...review, ai_note: note }]} applications={[]} onResolved={vi.fn()} onBack={() => {}} />);
+
+  expect(screen.getByText(text)).toBeInTheDocument();
+  expect(screen.queryByText("AI suggestion")).not.toBeInTheDocument();
+});
+
+test("offers no accept for an AI suggestion without an application or status", () => {
+  render(
+    <ReviewQueue
+      reviews={[{ ...aiReview, application_id: null, proposed_status: null }]}
+      applications={[]}
+      onResolved={vi.fn()}
+      onBack={() => {}}
+    />,
+  );
+
+  expect(screen.getByText("AI suggestion")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Accept proposal" })).not.toBeInTheDocument();
+});
+
+test("a rule-only item has no AI block or note", () => {
+  render(<ReviewQueue reviews={[review]} applications={[]} onResolved={vi.fn()} onBack={() => {}} />);
+
+  expect(screen.queryByText("AI suggestion")).not.toBeInTheDocument();
+  expect(screen.queryByText(/AI was not used/)).not.toBeInTheDocument();
+});

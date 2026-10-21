@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { ApiError, getApplication, resolveReview } from "../api/client";
 import type {
+  AiProposal,
   Application,
   ApplicationValues,
   ReviewApplicationCreate,
@@ -26,6 +27,22 @@ const REASONS: Record<string, string> = {
   unparseable_message: "The email could not be read automatically. Open it to review the details.",
   missing_application: "The linked application is unavailable or was merged.",
 };
+
+const AI_NOTES: Record<string, string> = {
+  ai_unavailable: "AI was not used for this email.",
+  ai_budget_exhausted: "AI was not used: daily limit reached.",
+  ai_key_invalid: "AI was not used: your API key was rejected.",
+};
+
+const AI_FIELD_LABELS: [Exclude<keyof AiProposal, "evidence">, string][] = [
+  ["company", "Company"],
+  ["role", "Role"],
+  ["employment_type", "Type"],
+  ["season", "Season"],
+  ["year", "Year"],
+  ["status", "Status"],
+  ["requisition_id", "Job ID"],
+];
 
 type ActiveAction = { messageId: string; kind: "edit" | "attach" | "create" };
 
@@ -134,8 +151,22 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
               </div>
               {review.sender && <p className="review-sender">From: {review.sender}</p>}
               {application && review.subject && <p className="review-application">Application: {application.company} · {application.role}</p>}
-              <p>{REASONS[review.reason] ?? "This email needs your decision."}</p>
+              <p>{REASONS[review.reason === "ai_proposal" ? review.rule_reason ?? "" : review.reason] ?? "This email needs your decision."}</p>
+              {review.ai_note && AI_NOTES[review.ai_note] && <p className="muted">{AI_NOTES[review.ai_note]}</p>}
               {review.evidence && <blockquote>{review.evidence}</blockquote>}
+              {review.ai_proposal && (
+                <div className="ai-suggestion">
+                  <h3>AI suggestion</h3>
+                  <ul>
+                    {AI_FIELD_LABELS.filter(([field]) => review.ai_proposal?.[field] != null).map(([field, label]) => (
+                      <li key={field}>
+                        {label}: {String(review.ai_proposal?.[field])}
+                        {review.ai_proposal?.evidence[field] && <blockquote>{review.ai_proposal.evidence[field]}</blockquote>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {(review.proposed_status || review.proposed_season || review.proposed_year) && (
                 <p className="review-proposal">
                   Proposed: {review.proposed_status ? STATUS_LABELS[review.proposed_status] : "Stage unknown"}

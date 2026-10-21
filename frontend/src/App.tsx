@@ -16,6 +16,7 @@ import {
   type SortKey,
 } from "./applications/filtering";
 import { GmailConnection } from "./gmail/GmailConnection";
+import { AiSettings } from "./settings/AiSettings";
 import { ReviewQueue } from "./reviews/ReviewQueue";
 import "./styles.css";
 
@@ -118,7 +119,10 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
 
       <main className="content">
         {!accessDenied && applications !== null && email && onSignOut && (
-          <GmailConnection />
+          <>
+            <GmailConnection />
+            <AiSettings />
+          </>
         )}
         {!accessDenied && applications !== null && (
           <nav className="tracker-nav" aria-label="Tracker views">

@@ -422,3 +422,38 @@ tbody tr:last-child td {
     padding: 28px 20px 48px;
   }
 }
+
+.ai-settings {
+  margin-bottom: 32px;
+  padding: 16px 20px;
+  border: 1px solid #d4ddd7;
+  border-radius: 4px;
+}
+
+.ai-settings h2 {
+  margin: 0;
+}
+
+.ai-settings p {
+  margin: 8px 0 0;
+}
+
+.ai-actions,
+.ai-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ai-suggestion {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid #d4ddd7;
+}
+
+.ai-suggestion h3,
+.ai-suggestion ul {
+  margin: 0;
+}

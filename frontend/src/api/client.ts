@@ -1,4 +1,6 @@
 import type {
+  AiSettings,
+  AiSettingsUpdate,
   Application,
   ApplicationCreate,
   ApplicationEvent,
@@ -168,4 +170,21 @@ export function getLatestSync(): Promise<SyncRun> {
 
 export function startSync(): Promise<SyncRun> {
   return request<SyncRun>("/syncs", { method: "POST" });
+}
+
+export async function getSettings(): Promise<AiSettings> {
+  return (await request<{ ai: AiSettings }>("/settings")).ai;
+}
+
+export async function saveAiSettings(payload: AiSettingsUpdate): Promise<AiSettings> {
+  return (
+    await request<{ ai: AiSettings }>("/settings/ai", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    })
+  ).ai;
+}
+
+export function deleteAiSettings(): Promise<void> {
+  return request<void>("/settings/ai", { method: "DELETE" });
 }
