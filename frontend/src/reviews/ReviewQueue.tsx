@@ -10,7 +10,7 @@ import type {
   ReviewResolution,
 } from "../api/types";
 import { ApplicationForm, buildPatch } from "../applications/ApplicationForm";
-import { STATUS_LABELS, formatCycle, formatTimestamp } from "../applications/labels";
+import { ROLE_TYPE_LABELS, SEASON_LABELS, STATUS_LABELS, formatCycle, formatTimestamp } from "../applications/labels";
 import { LocalOllamaPanel } from "./LocalOllamaPanel";
 
 const REASONS: Record<string, string> = {
@@ -44,6 +44,28 @@ const AI_FIELD_LABELS: [Exclude<keyof AiProposal, "evidence">, string][] = [
   ["status", "Status"],
   ["requisition_id", "Job ID"],
 ];
+
+function isKey<T extends string>(labels: Record<T, string>, value: unknown): value is T {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(labels, value);
+}
+
+// Only values the review actually carries and the form can represent; never inferred.
+function prefillFromReview(review: ReviewItem): Partial<ApplicationValues> {
+  const proposal = review.ai_proposal;
+  const text = (value: string | null | undefined) => value?.trim() || null;
+  const employmentType = proposal?.employment_type;
+  const status = proposal?.status ?? review.proposed_status;
+  const season = proposal?.season ?? review.proposed_season;
+  const year = proposal?.year ?? review.proposed_year;
+  return {
+    company: text(proposal?.company),
+    role: text(proposal?.role),
+    ...(isKey(ROLE_TYPE_LABELS, employmentType) && { role_type: employmentType }),
+    season: isKey(SEASON_LABELS, season) ? season : null,
+    year: Number.isInteger(year) ? (year as number) : null,
+    status: isKey(STATUS_LABELS, status) ? status : null,
+  };
+}
 
 type ActiveAction = { messageId: string; kind: "edit" | "attach" | "create" };
 
@@ -199,7 +221,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
                 <ApplicationForm initial={application} submitLabel="Save review changes" onSubmit={(values) => edit(review, application, values)} onCancel={() => setActive(null)} />
               )}
               {action === "create" && (
-                <ApplicationForm allowUnknownStatus submitLabel="Create from email" onSubmit={(values) => create(review, values)} onCancel={() => setActive(null)} />
+                <ApplicationForm allowUnknownStatus prefill={prefillFromReview(review)} submitLabel="Create from email" onSubmit={(values) => create(review, values)} onCancel={() => setActive(null)} />
               )}
               {action === "attach" && (
                 <div className="review-attach">

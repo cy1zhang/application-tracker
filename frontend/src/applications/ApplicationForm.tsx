@@ -109,6 +109,19 @@ interface ApplicationFormProps {
   onSubmit: (values: ApplicationValues) => Promise<void>;
   onCancel: () => void;
   allowUnknownStatus?: boolean;
+  prefill?: Partial<ApplicationValues>;
+}
+
+function valuesFromPrefill(prefill: Partial<ApplicationValues>): FormState {
+  return {
+    ...EMPTY_FORM,
+    company: prefill.company ?? "",
+    role: prefill.role ?? "",
+    roleType: prefill.role_type ?? "unknown",
+    season: prefill.season ?? "",
+    year: prefill.year == null ? "" : String(prefill.year),
+    status: prefill.status ?? "",
+  };
 }
 
 export function ApplicationForm({
@@ -117,9 +130,10 @@ export function ApplicationForm({
   onSubmit,
   onCancel,
   allowUnknownStatus = false,
+  prefill,
 }: ApplicationFormProps) {
   const [state, setState] = useState<FormState>(() =>
-    initial ? valuesFromApplication(initial) : EMPTY_FORM,
+    initial ? valuesFromApplication(initial) : prefill ? valuesFromPrefill(prefill) : EMPTY_FORM,
   );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);

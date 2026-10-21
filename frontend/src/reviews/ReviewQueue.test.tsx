@@ -537,3 +537,75 @@ test.each(["0", ""])("a limit of %j analyzes exactly one review", async (value) 
   expect(await screen.findByText(/1 suggested/)).toBeInTheDocument();
   expect(getLocalAiInput).toHaveBeenCalledTimes(1);
 });
+
+const unmatched: ReviewItem = { ...review, application_id: null, proposed_status: null };
+
+function openCreate(item: ReviewItem) {
+  render(<ReviewQueue reviews={[item]} applications={[]} onResolved={vi.fn().mockResolvedValue(undefined)} onBack={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Create application" }));
+}
+
+test("prefills the create form from a full AI proposal and submits only after review", async () => {
+  vi.mocked(resolveReview).mockResolvedValue({ message_id: "msg-1", action: "create", application_id: "new" });
+  openCreate({ ...unmatched, reason: "ai_proposal", ai_proposal: {
+    company: "Example Co", role: "Engineer", employment_type: "internship", season: "summer",
+    year: 2027, status: "interviewing", requisition_id: "R-1", evidence: {},
+  } });
+
+  expect(screen.getByLabelText("Company")).toHaveValue("Example Co");
+  expect(screen.getByLabelText("Role")).toHaveValue("Engineer");
+  expect(screen.getByLabelText("Role type")).toHaveValue("internship");
+  expect(screen.getByLabelText("Season")).toHaveValue("summer");
+  expect(screen.getByLabelText("Year")).toHaveValue(2027);
+  expect(screen.getByLabelText("Status")).toHaveValue("interviewing");
+  expect(resolveReview).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Create from email" }));
+  await waitFor(() => expect(resolveReview).toHaveBeenCalledWith("msg-1", {
+    action: "create", application: {
+      company: "Example Co", role: "Engineer", role_type: "internship", season: "summer",
+      year: 2027, status: "interviewing", application_date: null,
+    },
+  }));
+});
+
+test("leaves fields empty and status unset when the AI proposal has nulls", () => {
+  openCreate({ ...unmatched, reason: "ai_proposal", ai_proposal: {
+    company: "Example Co", role: null, employment_type: null, season: null, year: null, status: null, evidence: {},
+  } });
+
+  expect(screen.getByLabelText("Company")).toHaveValue("Example Co");
+  expect(screen.getByLabelText("Role")).toHaveValue("");
+  expect(screen.getByLabelText("Role type")).toHaveValue("unknown");
+  expect(screen.getByLabelText("Season")).toHaveValue("");
+  expect(screen.getByLabelText("Year")).toHaveValue(null);
+  expect(screen.getByLabelText("Status")).toHaveValue("");
+});
+
+test("prefills stage and cycle from the review's proposed fields when there is no AI proposal", () => {
+  openCreate({ ...unmatched, proposed_status: "oa_received", proposed_season: "fall", proposed_year: 2026 });
+
+  expect(screen.getByLabelText("Status")).toHaveValue("oa_received");
+  expect(screen.getByLabelText("Season")).toHaveValue("fall");
+  expect(screen.getByLabelText("Year")).toHaveValue(2026);
+  expect(screen.getByLabelText("Company")).toHaveValue("");
+});
+
+test("opens a blank create form for a review without a proposal", () => {
+  openCreate(unmatched);
+
+  for (const label of ["Company", "Role", "Season", "Status"]) expect(screen.getByLabelText(label)).toHaveValue("");
+  expect(screen.getByLabelText("Year")).toHaveValue(null);
+  expect(screen.getByLabelText("Role type")).toHaveValue("unknown");
+});
+
+test("ignores AI proposal values that are not valid form options", () => {
+  openCreate({ ...unmatched, reason: "ai_proposal", ai_proposal: {
+    company: "  ", season: "monsoon" as never, status: "hired" as never, employment_type: "gig" as never, year: 2026.5, evidence: {},
+  } });
+
+  expect(screen.getByLabelText("Company")).toHaveValue("");
+  expect(screen.getByLabelText("Season")).toHaveValue("");
+  expect(screen.getByLabelText("Status")).toHaveValue("");
+  expect(screen.getByLabelText("Role type")).toHaveValue("unknown");
+  expect(screen.getByLabelText("Year")).toHaveValue(null);
+});
