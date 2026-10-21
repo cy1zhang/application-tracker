@@ -25,6 +25,7 @@ from app.services.google_oauth import GoogleOAuthClient
 from app.services.sync_candidates import load_candidates
 
 _MAX_HEADER = 300
+_FLIPPABLE_REASONS = frozenset({"conflicting_roles"})
 _serializer = TypeSerializer()
 _deserializer = TypeDeserializer()
 
@@ -94,6 +95,7 @@ def recheck_reviews(
     counts: Counter = Counter()
     pending_by_reason: Counter = Counter(item["reason"] for item in pending)
     retained_by_reason: Counter = Counter()
+    ignore_by_reason: Counter = Counter()
 
     def transact(item: dict, update: str, values: dict) -> str:
         """Returns 'ok', 'changed', or 'stopped'."""
@@ -144,6 +146,7 @@ def recheck_reviews(
         if not values:
             return
         if not apply:
+            counts["would_backfill"] += 1
             return
         assignments = ", ".join(
             f"{name} = if_not_exists({name}, :{name})" for name in ("subject", "sender")
@@ -181,6 +184,13 @@ def recheck_reviews(
 
         decision = classify_message(message, candidates)
         if decision.outcome == "ignored":
+            ignore_by_reason[f"{item['reason']}->{decision.reason}"] += 1
+            if item["reason"] not in _FLIPPABLE_REASONS:
+                retained_by_reason[f"ignored_but_kept:{item['reason']}"] += 1
+                backfill(item, message.subject, message.sender)
+                if counts["stopped_generation_changed"]:
+                    break
+                continue
             if not apply:
                 counts["would_ignore"] += 1
                 continue
@@ -215,10 +225,11 @@ def recheck_reviews(
         "mode": "apply" if apply else "preview",
         "pending_by_reason": dict(sorted(pending_by_reason.items())),
         "retained_by_reason": dict(sorted(retained_by_reason.items())),
+        "ignore_by_reason": dict(sorted(ignore_by_reason.items())),
     }
     for name in (
         "scanned", "would_ignore", "ignored", "retained_now_actionable", "unavailable",
-        "unparseable", "fetch_failed", "skipped_changed", "headers_backfilled",
+        "unparseable", "fetch_failed", "skipped_changed", "headers_backfilled", "would_backfill",
         "stopped_generation_changed",
     ):
         report[name] = counts[name]

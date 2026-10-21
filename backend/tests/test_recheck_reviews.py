@@ -165,6 +165,51 @@ def test_preview_makes_no_writes(env) -> None:
     assert report["headers_backfilled"] == 0
 
 
+def test_ignored_decision_for_other_reasons_is_kept_and_backfilled(env) -> None:
+    client = env[0]
+    seed(client, "m1", reason="ambiguous_application")
+    seed(client, "m2", reason="subject_only_event")
+    seed(client, "m3")
+    messages = {n: gmail(n, MULTI_ROLE_LISTING) for n in ("m1", "m2", "m3")}
+
+    report, _ = run(env, messages, apply=True)
+
+    for name, reason in (("m1", "ambiguous_application"), ("m2", "subject_only_event")):
+        item = get_event(client, name)
+        assert item["outcome"] == "review_required" and item["reason"] == reason
+        assert item["subject"] == SUBJECT and "previous_reason" not in item
+    assert get_event(client, "m3")["outcome"] == "ignored"
+    assert report["retained_by_reason"] == {
+        "ignored_but_kept:ambiguous_application": 1,
+        "ignored_but_kept:subject_only_event": 1,
+    }
+    assert report["ignore_by_reason"] == {
+        "ambiguous_application->no_event": 1,
+        "conflicting_roles->no_event": 1,
+        "subject_only_event->no_event": 1,
+    }
+    assert report["ignored"] == 1 and report["headers_backfilled"] == 2
+
+
+def test_preview_reports_would_backfill_and_ignore_breakdown(env) -> None:
+    client = env[0]
+    seed(client, "m1")
+    seed(client, "m2", reason="ambiguous_application")
+    seed(client, "m3", subject="s", sender="f")
+    seed(client, "m4")
+
+    report, _ = run(env, {
+        "m1": gmail("m1", MULTI_ROLE_LISTING), "m2": gmail("m2", MULTI_ROLE_LISTING),
+        "m3": gmail("m3", REAL_EVENT), "m4": gmail("m4", REAL_EVENT),
+    })
+
+    assert report["would_ignore"] == 1 and report["would_backfill"] == 2
+    assert report["headers_backfilled"] == 0
+    assert report["ignore_by_reason"] == {
+        "ambiguous_application->no_event": 1, "conflicting_roles->no_event": 1,
+    }
+
+
 def test_real_event_stays_pending_and_gets_headers_backfilled(env) -> None:
     client = env[0]
     seed(client, "m1")
