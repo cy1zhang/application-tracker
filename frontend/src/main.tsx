@@ -9,7 +9,9 @@ import { authSession } from "./auth/session";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <AuthGate session={authSession} configurationError={authConfigError}>
-      {({ email, onSignOut }) => <App email={email} onSignOut={onSignOut} />}
+      {({ email, onSignOut, onAccountDeleted }) => (
+        <App email={email} onSignOut={onSignOut} onAccountDeleted={onAccountDeleted} />
+      )}
     </AuthGate>
   </StrictMode>,
 );

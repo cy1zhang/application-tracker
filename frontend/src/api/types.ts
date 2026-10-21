@@ -162,3 +162,7 @@ export interface SyncRun {
   completed_at?: string | null;
   last_success_at: string | null;
 }
+
+export interface AccountStatus {
+  state: "active" | "deleting" | "deleted";
+}

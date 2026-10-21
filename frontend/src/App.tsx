@@ -17,6 +17,7 @@ import {
 } from "./applications/filtering";
 import { GmailConnection } from "./gmail/GmailConnection";
 import { AiSettings } from "./settings/AiSettings";
+import { DeleteAccount } from "./settings/DeleteAccount";
 import { ReviewQueue } from "./reviews/ReviewQueue";
 import "./styles.css";
 
@@ -26,7 +27,14 @@ type View =
   | { kind: "reviews" }
   | { kind: "detail"; applicationId: string };
 
-function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => void }) {
+type AppProps = {
+  email?: string | null;
+  onSignOut?: () => void;
+  onAccountDeleted?: () => void;
+};
+
+function App({ email, onSignOut, onAccountDeleted }: AppProps) {
+  const [deleting, setDeleting] = useState(false);
   const [view, setView] = useState<View>({ kind: "list" });
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
@@ -81,6 +89,17 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
   }
 
   useEffect(() => {
+    const onDeleting = () => setDeleting(true);
+    const onDeleted = () => onAccountDeleted?.();
+    window.addEventListener("account-deleting", onDeleting);
+    window.addEventListener("account-deleted", onDeleted);
+    return () => {
+      window.removeEventListener("account-deleting", onDeleting);
+      window.removeEventListener("account-deleted", onDeleted);
+    };
+  }, [onAccountDeleted]);
+
+  useEffect(() => {
     void loadApplications();
     void loadReviews();
   }, []);
@@ -118,25 +137,29 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
       </header>
 
       <main className="content">
-        {!accessDenied && applications !== null && email && onSignOut && (
+        {deleting && (
+          <DeleteAccount resumed onAccountDeleted={() => onAccountDeleted?.()} />
+        )}
+        {!deleting && !accessDenied && applications !== null && email && onSignOut && (
           <>
             <GmailConnection />
             <AiSettings />
+            <DeleteAccount onAccountDeleted={() => onAccountDeleted?.()} />
           </>
         )}
-        {!accessDenied && applications !== null && (
+        {!deleting && !accessDenied && applications !== null && (
           <nav className="tracker-nav" aria-label="Tracker views">
             <button type="button" onClick={showList}>Applications</button>
             <button type="button" onClick={showReviews}>Needs review ({reviews.length})</button>
           </nav>
         )}
-        {accessDenied && (
+        {!deleting && accessDenied && (
           <section className="page" aria-labelledby="access-denied-title">
             <h1 id="access-denied-title">Access denied</h1>
             <p>Ask the app administrator to approve your account.</p>
           </section>
         )}
-        {!accessDenied && view.kind === "create" && (
+        {!deleting && !accessDenied && view.kind === "create" && (
           <section className="page" aria-labelledby="create-title">
             <h1 id="create-title">New application</h1>
             <ApplicationForm
@@ -146,15 +169,15 @@ function App({ email, onSignOut }: { email?: string | null; onSignOut?: () => vo
             />
           </section>
         )}
-        {!accessDenied && view.kind === "detail" && (
+        {!deleting && !accessDenied && view.kind === "detail" && (
           <ApplicationDetail applicationId={view.applicationId} otherApplications={(applications ?? []).filter((item) => item.application_id !== view.applicationId)} onMerged={loadApplications} onBack={showList} />
         )}
-        {!accessDenied && view.kind === "reviews" && applications !== null && (
+        {!deleting && !accessDenied && view.kind === "reviews" && applications !== null && (
           reviewError ? (
             <div role="alert" className="error"><p>Could not load reviews: {reviewError}</p><button type="button" onClick={() => void loadReviews()}>Retry reviews</button></div>
           ) : <ReviewQueue reviews={reviews} applications={applications} onResolved={refreshAfterReview} onBack={showList} />
         )}
-        {!accessDenied && view.kind === "list" &&
+        {!deleting && !accessDenied && view.kind === "list" &&
           (loadError !== null ? (
             <div role="alert" className="error">
               <p>Could not load applications: {loadError}</p>

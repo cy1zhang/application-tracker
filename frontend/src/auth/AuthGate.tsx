@@ -2,7 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { AuthSession, SignedInUser } from "./session";
 
-type AppSession = { email: string | null; onSignOut?: () => void };
+type AppSession = {
+  email: string | null;
+  onSignOut?: () => void;
+  onAccountDeleted?: () => void;
+};
 
 export function AuthGate({
   session,
@@ -16,6 +20,7 @@ export function AuthGate({
   const [user, setUser] = useState<SignedInUser | null>(null);
   const [loading, setLoading] = useState(session !== null);
   const [error, setError] = useState<string | null>(null);
+  const [deletedNotice, setDeletedNotice] = useState(false);
   const callbackPromise = useRef<Promise<SignedInUser> | null>(null);
 
   useEffect(() => {
@@ -57,6 +62,7 @@ export function AuthGate({
         <span className="wordmark-mark" aria-hidden="true">AT</span>
         <h1>Application Tracker</h1>
         {error && <p role="alert">{error}</p>}
+        {deletedNotice && <p role="status">Your account and data have been deleted.</p>}
         <button type="button" onClick={() => void session.signIn()}>
           Sign in with Google
         </button>
@@ -68,6 +74,12 @@ export function AuthGate({
     onSignOut: () => {
       setUser(null);
       void session.signOut();
+    },
+    onAccountDeleted: () => {
+      // The Cognito user no longer exists, so skip the hosted logout redirect.
+      setUser(null);
+      setDeletedNotice(true);
+      void session.clearUser();
     },
   });
 }

@@ -9,6 +9,9 @@ import {
   listAllApplications,
   listAllReviews,
   listApplicationEvents,
+  getAccountStatus,
+  getGmailConnection,
+  getSettings,
 } from "./api/client";
 import type { Application } from "./api/types";
 import { makeApplication } from "./test/fixtures";
@@ -23,6 +26,9 @@ vi.mock("./api/client", async (importOriginal) => {
     getApplication: vi.fn(),
     listApplicationEvents: vi.fn(),
     updateApplication: vi.fn(),
+    getAccountStatus: vi.fn(),
+    getGmailConnection: vi.fn(),
+    getSettings: vi.fn(),
   };
 });
 
@@ -41,6 +47,11 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.mocked(listAllReviews).mockResolvedValue([]);
+  vi.mocked(getGmailConnection).mockResolvedValue({ connected: false, email: null });
+  vi.mocked(getSettings).mockResolvedValue({
+    available_providers: [], provider: null, key_hint: null, enabled: false,
+    key_status: null, requests_today: 0, daily_limit: 50, usage_day: "2026-10-20",
+  });
 });
 
 test("shows internships by default with a status summary", async () => {
@@ -240,4 +251,50 @@ test("an older list response does not overwrite a newer one", async () => {
 
   expect(screen.getByRole("cell", { name: "Offer" })).toBeInTheDocument();
   expect(screen.queryByRole("cell", { name: "Applied" })).not.toBeInTheDocument();
+});
+
+test("shows the danger zone only when signed in", async () => {
+  vi.mocked(listAllApplications).mockResolvedValue([internship]);
+  const { unmount } = render(<App />);
+  await screen.findByRole("button", { name: "Acme" });
+  expect(screen.queryByRole("heading", { name: "Danger zone" })).not.toBeInTheDocument();
+  unmount();
+
+  render(<App email="a@example.test" onSignOut={vi.fn()} onAccountDeleted={vi.fn()} />);
+  expect(await screen.findByRole("heading", { name: "Danger zone" })).toBeInTheDocument();
+});
+
+test("hides the danger zone when access is denied", async () => {
+  vi.mocked(listAllApplications).mockRejectedValue(new ApiError(403, "Access denied"));
+  render(<App email="a@example.test" onSignOut={vi.fn()} />);
+  await screen.findByRole("heading", { name: "Access denied" });
+  expect(screen.queryByRole("heading", { name: "Danger zone" })).not.toBeInTheDocument();
+});
+
+test("a 423 from any call shows the deleting state, not access denied", async () => {
+  vi.mocked(listAllApplications).mockResolvedValue([internship]);
+  vi.mocked(getAccountStatus).mockResolvedValue({ state: "deleting" });
+  render(<App email="a@example.test" onSignOut={vi.fn()} onAccountDeleted={vi.fn()} />);
+  await screen.findByRole("button", { name: "Acme" });
+
+  act(() => {
+    window.dispatchEvent(new Event("account-deleting"));
+  });
+
+  expect(screen.getByText("Account deletion in progress")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Access denied" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Acme" })).not.toBeInTheDocument();
+});
+
+test("a 410 from any call finishes sign-out", async () => {
+  const done = vi.fn();
+  vi.mocked(listAllApplications).mockResolvedValue([internship]);
+  render(<App email="a@example.test" onSignOut={vi.fn()} onAccountDeleted={done} />);
+  await screen.findByRole("button", { name: "Acme" });
+
+  act(() => {
+    window.dispatchEvent(new Event("account-deleted"));
+  });
+
+  expect(done).toHaveBeenCalledOnce();
 });

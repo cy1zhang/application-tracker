@@ -457,3 +457,20 @@ tbody tr:last-child td {
 .ai-suggestion ul {
   margin: 0;
 }
+
+.danger-zone {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid #e9c3c3;
+  border-radius: 4px;
+}
+
+.danger-zone h2 {
+  color: #7a1f1f;
+}
+
+.danger-zone form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}

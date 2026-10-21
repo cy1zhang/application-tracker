@@ -1,4 +1,5 @@
 import type {
+  AccountStatus,
   AiSettings,
   AiSettingsUpdate,
   Application,
@@ -53,6 +54,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (authConfig && response.status === 401) {
       window.dispatchEvent(new Event("auth-required"));
     }
+    if (response.status === 423) window.dispatchEvent(new Event("account-deleting"));
+    if (response.status === 410) window.dispatchEvent(new Event("account-deleted"));
     throw new ApiError(response.status, await errorMessage(response));
   }
   if (response.status === 204) return undefined as T;
@@ -187,4 +190,15 @@ export async function saveAiSettings(payload: AiSettingsUpdate): Promise<AiSetti
 
 export function deleteAiSettings(): Promise<void> {
   return request<void>("/settings/ai", { method: "DELETE" });
+}
+
+export function getAccountStatus(): Promise<AccountStatus> {
+  return request<AccountStatus>("/account");
+}
+
+export function deleteAccount(): Promise<AccountStatus> {
+  return request<AccountStatus>("/account", {
+    method: "DELETE",
+    body: JSON.stringify({ confirm: "DELETE" }),
+  });
 }

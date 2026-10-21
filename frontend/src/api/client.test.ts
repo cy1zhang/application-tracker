@@ -4,7 +4,9 @@ import { makeApplication } from "../test/fixtures";
 import {
   ApiError,
   createApplication,
+  deleteAccount,
   disconnectGmail,
+  getAccountStatus,
   getGmailConnection,
   getLatestSync,
   listAllApplications,
@@ -145,4 +147,37 @@ test("sync API starts work and reads the latest status", async () => {
   expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
     ["/api/syncs", "POST"], ["/api/syncs/latest", undefined],
   ]);
+});
+
+test("account API sends the DELETE confirmation body and reads status", async () => {
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(fakeResponse({ state: "deleting" }, 202))
+    .mockResolvedValueOnce(fakeResponse({ state: "active" }));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(deleteAccount()).resolves.toEqual({ state: "deleting" });
+  await expect(getAccountStatus()).resolves.toEqual({ state: "active" });
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/account");
+  expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ confirm: "DELETE" });
+  expect(fetchMock.mock.calls[1][0]).toBe("/api/account");
+});
+
+test("423 and 410 responses announce the account state", async () => {
+  const deleting = vi.fn();
+  const deleted = vi.fn();
+  window.addEventListener("account-deleting", deleting);
+  window.addEventListener("account-deleted", deleted);
+  try {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeResponse({ detail: "busy" }, 423)));
+    await expect(listAllApplications()).rejects.toMatchObject({ status: 423 });
+    expect(deleting).toHaveBeenCalledOnce();
+    expect(deleted).not.toHaveBeenCalled();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeResponse({ detail: "gone" }, 410)));
+    await expect(listAllApplications()).rejects.toMatchObject({ status: 410 });
+    expect(deleted).toHaveBeenCalledOnce();
+  } finally {
+    window.removeEventListener("account-deleting", deleting);
+    window.removeEventListener("account-deleted", deleted);
+  }
 });

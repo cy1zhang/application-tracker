@@ -90,3 +90,19 @@ test("signed-in header action signs out", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Sign out test@example.test" }));
   expect(session.signOut).toHaveBeenCalledOnce();
 });
+
+test("account deletion clears the user without the Cognito logout and confirms", async () => {
+  const session = fakeSession({ email: "test@example.test", accessToken: "token" });
+  render(
+    <AuthGate session={session}>
+      {({ onAccountDeleted }) => <button onClick={onAccountDeleted}>Finish deletion</button>}
+    </AuthGate>,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Finish deletion" }));
+
+  expect(await screen.findByRole("button", { name: "Sign in with Google" })).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("Your account and data have been deleted.");
+  expect(session.clearUser).toHaveBeenCalledOnce();
+  expect(session.signOut).not.toHaveBeenCalled();
+});
