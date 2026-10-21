@@ -632,6 +632,7 @@ def test_handler_builds_escalator_from_environment(monkeypatch) -> None:
     monkeypatch.setenv("AI_MODEL_OPENAI", "model-o")
     monkeypatch.setenv("AI_MODEL_ANTHROPIC", "model-a")
     monkeypatch.setenv("AI_MODEL_GEMINI", "")
+    monkeypatch.setenv("AI_MODEL_HUGGING_FACE", "Qwen/Qwen3-32B:nscale")
     sentinel_settings, sentinel_cipher = object(), object()
     monkeypatch.setattr(sync_handler, "_dependencies", lambda: {
         "client": object(), "syncs": object(), "cipher": sentinel_cipher,
@@ -659,6 +660,7 @@ def test_handler_builds_escalator_from_environment(monkeypatch) -> None:
     assert escalator._models[AiProvider.OPENAI] == "model-o"
     assert escalator._models[AiProvider.ANTHROPIC] == "model-a"
     assert not escalator._models.get(AiProvider.GEMINI)
+    assert escalator._models[AiProvider.HUGGING_FACE] == "Qwen/Qwen3-32B:nscale"
 
 
 def test_benign_offer_on_ai_path_goes_to_review_not_applied(env) -> None:

@@ -49,7 +49,7 @@ beforeEach(() => {
   vi.mocked(listAllReviews).mockResolvedValue([]);
   vi.mocked(getGmailConnection).mockResolvedValue({ connected: false, email: null });
   vi.mocked(getSettings).mockResolvedValue({
-    available_providers: [], provider: null, key_hint: null, enabled: false,
+    available_providers: [], hugging_face_host: null, provider: null, key_hint: null, enabled: false,
     key_status: null, requests_today: 0, daily_limit: 50, usage_day: "2026-10-20",
   });
 });

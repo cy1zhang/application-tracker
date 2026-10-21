@@ -120,4 +120,8 @@ def create_provider(provider: AiProvider) -> ExtractionProvider:
         from app.services.ai_providers.gemini_adapter import GeminiProvider
 
         return GeminiProvider()
+    if provider is AiProvider.HUGGING_FACE:
+        from app.services.ai_providers.huggingface_adapter import HuggingFaceProvider
+
+        return HuggingFaceProvider()
     raise ProviderError("provider_unavailable")

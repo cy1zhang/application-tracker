@@ -25,6 +25,7 @@ class AiProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     GEMINI = "gemini"
+    HUGGING_FACE = "huggingface"
 
 
 class ExtractionEvidence(BaseModel):
@@ -124,6 +125,7 @@ class AiSettingsUpdate(BaseModel):
 
 class AiSettingsView(BaseModel):
     available_providers: list[AiProvider] = []
+    hugging_face_host: str | None = None
     provider: AiProvider | None
     key_hint: str | None
     enabled: bool

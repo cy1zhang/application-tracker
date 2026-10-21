@@ -61,6 +61,7 @@ def _escalator_factory(dependencies, owner_id, generation, run_id):
         AiProvider.OPENAI: os.environ.get("AI_MODEL_OPENAI", ""),
         AiProvider.ANTHROPIC: os.environ.get("AI_MODEL_ANTHROPIC", ""),
         AiProvider.GEMINI: os.environ.get("AI_MODEL_GEMINI", ""),
+        AiProvider.HUGGING_FACE: os.environ.get("AI_MODEL_HUGGING_FACE", ""),
     }
     return lambda: AiEscalator(
         owner_id=owner_id, generation=generation, run_id=run_id,

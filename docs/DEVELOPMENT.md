@@ -152,6 +152,11 @@ have not yet been checked.
 ## Bring-your-own-key AI escalation
 
 Milestone 9 lets an owner supply their own OpenAI, Anthropic, or Gemini API key.
+The Hugging Face Inference Providers option was added afterward for a hosted
+open-weight model trial. Hugging Face routes candidate email text to the pinned
+inference provider, so both services handle it during a request. A fine-grained
+Hugging Face token needs the "Make calls to Inference Providers" permission.
+The AI settings page shows the pinned model host before the owner saves a key.
 Deterministic rules always run first. Only messages the rules leave ambiguous
 (the reasons in `ESCALATION_REASONS`) are sent to the owner's chosen provider;
 the model's answer is validated against the email text and reconciled by the
@@ -161,21 +166,26 @@ with stub providers: `uv run pytest tests/test_ai_*.py tests/test_settings_api.p
 
 ### Model-ID parameters
 
-The template has three SAM parameters, `OpenAiModelId`, `AnthropicModelId`, and
-`GeminiModelId`, each defaulting to blank. They become the `AI_MODEL_OPENAI`,
-`AI_MODEL_ANTHROPIC`, and `AI_MODEL_GEMINI` environment variables on the API and
-sync worker Lambdas. **A blank ID means that provider is unavailable**: it is
-not offered in `GET /settings`, and the worker will not call it. With all three
+The template has four SAM parameters: `OpenAiModelId`, `AnthropicModelId`,
+`GeminiModelId`, and `HuggingFaceModelId`, each defaulting to blank. They become
+the matching `AI_MODEL_*` environment variables on the API and sync worker
+Lambdas. **A blank ID means that provider is unavailable**: it is
+not offered in `GET /settings`, and the worker will not call it. With all four
 blank, which is the shipped default, AI is off and sync behaves exactly as
 before. No model ID is written in code or committed config. To enable one, set
-`OPENAI_MODEL_ID`, `ANTHROPIC_MODEL_ID`, or `GEMINI_MODEL_ID` in the ignored
-`.env.deploy` (see `.env.deploy.example`) to an exact ID your provider account
-can call. `deploy.sh` always passes all three overrides, with an explicit empty
-value (`Name=""`) when a variable is unset or blank. On an existing stack
-`sam deploy` reuses the previous value of any parameter it is not given, so the
+`OPENAI_MODEL_ID`, `ANTHROPIC_MODEL_ID`, `GEMINI_MODEL_ID`, or
+`HUGGING_FACE_MODEL_ID` in the ignored `.env.deploy` (see `.env.deploy.example`)
+to an exact ID your provider account can call. For Hugging Face, use
+`org/model:provider` so the underlying host is
+fixed; automatic `:fastest`, `:cheapest`, and `:preferred` routing is rejected.
+Check that this model/provider pair supports structured output and review that
+provider's data handling before sending real email. `deploy.sh` always passes
+all four overrides, with an explicit empty value (`Name=""`) when a variable is
+unset or blank. On an existing stack, `sam deploy` reuses the previous value of
+any parameter it is not given, so the
 explicit empty value is what turns a provider off when you delete its variable
-and redeploy. Lambda environment
-values are not secrets; never put an API key in a parameter.
+and redeploy. Lambda environment values are not secrets; never put an API key
+in a parameter.
 
 Models that spend output tokens on hidden reasoning ("thinking") may use up the
 fixed 1024-output-token cap before producing the JSON. The adapters report that

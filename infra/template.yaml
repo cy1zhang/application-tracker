@@ -29,6 +29,10 @@ Parameters:
     Type: String
     Default: ''
     Description: Gemini model ID; blank leaves the Gemini provider unavailable
+  HuggingFaceModelId:
+    Type: String
+    Default: ''
+    Description: Hugging Face model ID with pinned inference provider; blank disables it
   AlarmNotifications:
     Type: String
     Default: 'false'
@@ -306,6 +310,7 @@ Resources:
           AI_MODEL_OPENAI: !Ref OpenAiModelId
           AI_MODEL_ANTHROPIC: !Ref AnthropicModelId
           AI_MODEL_GEMINI: !Ref GeminiModelId
+          AI_MODEL_HUGGING_FACE: !Ref HuggingFaceModelId
       Policies:
         - Version: '2012-10-17'
           Statement:
@@ -422,6 +427,7 @@ Resources:
           AI_MODEL_OPENAI: !Ref OpenAiModelId
           AI_MODEL_ANTHROPIC: !Ref AnthropicModelId
           AI_MODEL_GEMINI: !Ref GeminiModelId
+          AI_MODEL_HUGGING_FACE: !Ref HuggingFaceModelId
       Policies:
         - Version: '2012-10-17'
           Statement:

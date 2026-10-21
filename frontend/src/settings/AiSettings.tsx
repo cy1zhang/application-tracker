@@ -88,6 +88,7 @@ export function AiSettings() {
 
   const configured = settings?.provider != null;
   const showForm = settings !== null && settings.available_providers.length > 0 && (!configured || replacing);
+  const selectedProvider = settings?.provider ?? (provider || settings?.available_providers[0]);
 
   return (
     <section className="ai-settings" aria-labelledby="ai-settings-title">
@@ -104,10 +105,13 @@ export function AiSettings() {
           {settings.available_providers.length === 0 && (
             <p>AI assistance is not available in this deployment.</p>
           )}
+          {selectedProvider === "huggingface" && (
+            <p className="muted">Hugging Face forwards candidate email text to {settings.hugging_face_host || "the model host"}.</p>
+          )}
           {configured && (
             <>
               <p>
-                Provider: <strong>{settings.provider}</strong> · key ends in {settings.key_hint}
+                Provider: <strong>{settings.provider === "huggingface" ? "Hugging Face" : settings.provider}</strong> · key ends in {settings.key_hint}
               </p>
               <p>AI is {settings.enabled ? "on" : "off"}.</p>
               {settings.key_status === "invalid" ? (
@@ -147,7 +151,7 @@ export function AiSettings() {
                     onChange={(event) => setProvider(event.target.value as AiProviderName)}
                   >
                     {settings.available_providers.map((name) => (
-                      <option key={name} value={name}>{name}</option>
+                      <option key={name} value={name}>{name === "huggingface" ? "Hugging Face" : name}</option>
                     ))}
                   </select>
                 </>

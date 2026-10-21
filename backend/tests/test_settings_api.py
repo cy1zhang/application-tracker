@@ -85,6 +85,7 @@ def test_get_with_nothing_saved(setup) -> None:
     assert response.json() == {
         "ai": {
             "available_providers": ["openai", "gemini"],
+            "hugging_face_host": None,
             "provider": None,
             "key_hint": None,
             "enabled": False,
@@ -229,12 +230,22 @@ def test_delete_is_idempotent_and_keeps_counter(setup) -> None:
 
 
 def test_available_providers_come_from_model_env(monkeypatch) -> None:
-    for name in ("OPENAI", "ANTHROPIC", "GEMINI"):
+    for name in ("OPENAI", "ANTHROPIC", "GEMINI", "HUGGING_FACE"):
         monkeypatch.delenv(f"AI_MODEL_{name}", raising=False)
     assert get_ai_available_providers() == []
 
     monkeypatch.setenv("AI_MODEL_ANTHROPIC", "some-model")
     monkeypatch.setenv("AI_MODEL_OPENAI", "   ")
     monkeypatch.setenv("AI_MODEL_GEMINI", "")
+    monkeypatch.setenv("AI_MODEL_HUGGING_FACE", "Qwen/Qwen3-32B:nscale")
 
-    assert get_ai_available_providers() == [AiProvider.ANTHROPIC]
+    assert get_ai_available_providers() == [AiProvider.ANTHROPIC, AiProvider.HUGGING_FACE]
+
+
+def test_settings_disclose_hugging_face_model_host(setup, monkeypatch) -> None:
+    api, _ = setup
+    app.dependency_overrides[get_ai_available_providers] = lambda: [AiProvider.HUGGING_FACE]
+    monkeypatch.setenv("AI_MODEL_HUGGING_FACE", "Qwen/Qwen3-Next-80B-A3B-Instruct:deepinfra")
+
+    ai = api.get("/settings").json()["ai"]
+    assert ai["hugging_face_host"] == "deepinfra"

@@ -146,7 +146,7 @@ class DeployScriptTests(unittest.TestCase):
         result = self.run_deploy()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         call = self.deploy_call()
-        for name in ("OpenAiModelId", "AnthropicModelId", "GeminiModelId"):
+        for name in ("OpenAiModelId", "AnthropicModelId", "GeminiModelId", "HuggingFaceModelId"):
             self.assertIn(f'{name}=""', call)
 
     def test_blank_model_id_is_passed_as_explicit_empty_override(self):
@@ -165,6 +165,7 @@ class DeployScriptTests(unittest.TestCase):
             + "OPENAI_MODEL_ID=synthetic-openai\n"
             + "ANTHROPIC_MODEL_ID=synthetic-anthropic\n"
             + "GEMINI_MODEL_ID=synthetic-gemini\n"
+            + "HUGGING_FACE_MODEL_ID=Qwen/Qwen3-32B:nscale\n"
         )
         result = self.run_deploy()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -172,6 +173,7 @@ class DeployScriptTests(unittest.TestCase):
         self.assertIn("OpenAiModelId=synthetic-openai", call)
         self.assertIn("AnthropicModelId=synthetic-anthropic", call)
         self.assertIn("GeminiModelId=synthetic-gemini", call)
+        self.assertIn("HuggingFaceModelId=Qwen/Qwen3-32B:nscale", call)
         self.assertNotIn('ModelId=""', call)
         self.assertNotIn("synthetic-openai", result.stdout + result.stderr)
 

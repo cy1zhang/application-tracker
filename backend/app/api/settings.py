@@ -1,3 +1,4 @@
+import os
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -43,7 +44,12 @@ def _response(
 ) -> AiSettingsResponse:
     today = datetime.now(UTC).date().isoformat()
     view = repository.public_view(owner_id, today)
-    return AiSettingsResponse(ai=view.model_copy(update={"available_providers": providers}))
+    model = os.getenv("AI_MODEL_HUGGING_FACE", "")
+    host = model.rpartition(":")[2] if AiProvider.HUGGING_FACE in providers else None
+    return AiSettingsResponse(ai=view.model_copy(update={
+        "available_providers": providers,
+        "hugging_face_host": host or None,
+    }))
 
 
 @router.get("/settings", response_model=AiSettingsResponse)

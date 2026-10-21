@@ -22,7 +22,9 @@ IDs configured); live provider checks are pending the owner's own key. Milestone
 implemented on `milestone-10-harden-evaluate` and deployed in development;
 owner-run deletion and revocation checks, live AI, and real-inbox quality are
 pending (`docs/VERIFICATION.md`). The three milestone branches are stacked and
-unmerged, awaiting the owner. The dashboard offers review, merge, sync, AI
+unmerged, awaiting the owner. A Hugging Face provider integration is implemented
+on `codex/huggingface-provider`; live model verification and deployment remain
+pending. The dashboard offers review, merge, sync, AI
 settings, and account deletion controls.
 
 Key docs: `docs/PRD.md` (product behavior), `docs/TECHNICAL_DESIGN.md` (target AWS

@@ -41,12 +41,12 @@ printf 'Building Lambda package in a Linux container...\n'
 (cd backend && uv export --locked --no-dev --format requirements.txt --output-file requirements.txt >/dev/null)
 sam build --use-container --template-file infra/template.yaml
 
-# Model IDs are optional, but every deploy passes all three overrides. SAM sends
+# Model IDs are optional, but every deploy passes all four overrides. SAM sends
 # UsePreviousValue=True for any template parameter without an override, so an omitted
 # ID would keep the old stack value. An unset or blank variable becomes the literal
 # value "" (SAM CLI parses Key="" as an empty string; a bare Key= is rejected).
 parameters=("BudgetEmail=$BUDGET_EMAIL" "GoogleOAuthSecretName=$GOOGLE_SECRET_NAME" "GmailOAuthSecretName=$GMAIL_SECRET_NAME")
-for pair in OpenAiModelId:OPENAI_MODEL_ID AnthropicModelId:ANTHROPIC_MODEL_ID GeminiModelId:GEMINI_MODEL_ID; do
+for pair in OpenAiModelId:OPENAI_MODEL_ID AnthropicModelId:ANTHROPIC_MODEL_ID GeminiModelId:GEMINI_MODEL_ID HuggingFaceModelId:HUGGING_FACE_MODEL_ID; do
   variable="${pair#*:}"
   value="${!variable:-}"
   if [[ -z "$value" ]]; then

@@ -48,7 +48,7 @@ def test_lease_outlasts_worker_and_queue_visibility_has_headroom() -> None:
 
 def test_model_id_parameters_default_blank_and_reach_both_functions() -> None:
     template = _template()
-    for parameter in ("OpenAiModelId", "AnthropicModelId", "GeminiModelId"):
+    for parameter in ("OpenAiModelId", "AnthropicModelId", "GeminiModelId", "HuggingFaceModelId"):
         assert template["Parameters"][parameter]["Default"] == ""
     for function in ("ApiFunction", "SyncWorkerFunction"):
         variables = template["Resources"][function]["Properties"]["Environment"][
@@ -57,6 +57,7 @@ def test_model_id_parameters_default_blank_and_reach_both_functions() -> None:
         assert variables["AI_MODEL_OPENAI"] == {"Ref": "OpenAiModelId"}
         assert variables["AI_MODEL_ANTHROPIC"] == {"Ref": "AnthropicModelId"}
         assert variables["AI_MODEL_GEMINI"] == {"Ref": "GeminiModelId"}
+        assert variables["AI_MODEL_HUGGING_FACE"] == {"Ref": "HuggingFaceModelId"}
 
 
 def test_cors_allows_put() -> None:

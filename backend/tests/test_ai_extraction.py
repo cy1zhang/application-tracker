@@ -213,7 +213,7 @@ def test_schema_is_flat_strict_and_all_nullable():
     for schema in [*[props[f] for f in FIELDS], *evidence["properties"].values()]:
         assert "null" in schema["type"]
     assert ExtractionOutput.model_validate(_raw())
-    assert {p.value for p in AiProvider} == {"openai", "anthropic", "gemini"}
+    assert {p.value for p in AiProvider} == {"openai", "anthropic", "gemini", "huggingface"}
 
 
 INJECTION = (

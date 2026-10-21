@@ -17,6 +17,7 @@ afterEach(() => {
 
 const unconfigured: AiSettingsData = {
   available_providers: ["openai", "gemini"],
+  hugging_face_host: null,
   provider: null,
   key_hint: null,
   enabled: false,
@@ -65,6 +66,18 @@ test("uses a password field and gates Save on consent and a key", async () => {
   expect(save).toBeEnabled();
   fireEvent.click(consent);
   expect(save).toBeDisabled();
+});
+
+test("explains Hugging Face routing before saving a key", async () => {
+  vi.mocked(getSettings).mockResolvedValue({
+    ...unconfigured,
+    available_providers: ["huggingface"],
+    hugging_face_host: "deepinfra",
+  } as AiSettingsData);
+  render(<AiSettings />);
+
+  expect(await screen.findByRole("option", { name: "Hugging Face" })).toBeInTheDocument();
+  expect(screen.getByText(/Hugging Face forwards candidate email text to deepinfra/)).toBeInTheDocument();
 });
 
 test("saves the key then clears it from the form", async () => {

@@ -103,10 +103,11 @@ export interface AiProposal {
   evidence: Record<string, string>;
 }
 
-export type AiProviderName = "openai" | "anthropic" | "gemini";
+export type AiProviderName = "openai" | "anthropic" | "gemini" | "huggingface";
 
 export interface AiSettings {
   available_providers: AiProviderName[];
+  hugging_face_host: string | null;
   provider: AiProviderName | null;
   key_hint: string | null;
   enabled: boolean;

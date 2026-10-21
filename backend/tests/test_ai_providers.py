@@ -214,6 +214,73 @@ def test_no_secrets_in_logs_or_exceptions(name, caplog) -> None:
 # --- OpenAI -----------------------------------------------------------------
 
 
+def test_hugging_face_provider_can_be_created() -> None:
+    assert callable(create_provider(AiProvider.HUGGING_FACE).extract)
+
+
+def test_hugging_face_sends_schema_to_pinned_model_without_tools() -> None:
+    stub = Stub({
+        "choices": [{
+            "finish_reason": "stop",
+            "message": {"role": "assistant", "content": json.dumps(EXTRACTION)},
+        }],
+    })
+    provider = create_provider(AiProvider.HUGGING_FACE)
+    provider._urlopen = stub
+
+    assert provider.extract(KEY, "Qwen/Qwen3-32B:nscale", PROMPT) == EXTRACTION
+    url = urlparse(stub.requests[0].full_url)
+    assert (url.scheme, url.netloc, url.path, url.query) == (
+        "https", "router.huggingface.co", "/v1/chat/completions", "",
+    )
+    assert stub.requests[0].get_method() == "POST"
+    assert stub.headers["authorization"] == f"Bearer {KEY}"
+    assert KEY not in stub.requests[0].full_url
+    assert KEY not in stub.requests[0].data.decode()
+    assert stub.body == {
+        "model": "Qwen/Qwen3-32B:nscale",
+        "messages": [
+            {"role": "system", "content": "SYSTEM-SECRET-TEXT"},
+            {"role": "user", "content": "USER-SECRET-TEXT"},
+        ],
+        "max_tokens": 1024,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "application_extraction",
+                "strict": True,
+                "schema": EXTRACTION_JSON_SCHEMA,
+            },
+        },
+    }
+    assert stub.timeouts == [20]
+
+
+@pytest.mark.parametrize("model", ["Qwen/Qwen3-32B", "Qwen/Qwen3-32B:fastest", "x:cheapest"])
+def test_hugging_face_refuses_unpinned_routing(model) -> None:
+    stub = Stub({"choices": []})
+    provider = create_provider(AiProvider.HUGGING_FACE)
+    provider._urlopen = stub
+    with pytest.raises(ProviderError) as info:
+        provider.extract(KEY, model, PROMPT)
+    assert info.value.category == "provider_unavailable"
+    assert stub.requests == []
+
+
+@pytest.mark.parametrize("response", [
+    {"choices": []},
+    {"choices": [{"finish_reason": "length", "message": {"content": "{}"}}]},
+    {"choices": [{"finish_reason": "stop", "message": {"content": "not json"}}]},
+    {"choices": [{"finish_reason": "stop", "message": {"content": None}}]},
+])
+def test_hugging_face_unusable_response_stays_in_review(response) -> None:
+    provider = create_provider(AiProvider.HUGGING_FACE)
+    provider._urlopen = Stub(response)
+    with pytest.raises(ProviderError) as info:
+        provider.extract(KEY, "Qwen/Qwen3-32B:nscale", PROMPT)
+    assert info.value.category == "invalid_output"
+
+
 def test_openai_request_shape() -> None:
     provider, stub = make("openai", openai_ok())
     run(provider)
