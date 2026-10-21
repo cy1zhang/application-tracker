@@ -169,9 +169,11 @@ blank, which is the shipped default, AI is off and sync behaves exactly as
 before. No model ID is written in code or committed config. To enable one, set
 `OPENAI_MODEL_ID`, `ANTHROPIC_MODEL_ID`, or `GEMINI_MODEL_ID` in the ignored
 `.env.deploy` (see `.env.deploy.example`) to an exact ID your provider account
-can call. `deploy.sh` passes only non-blank values; omitted parameters take the
-blank template default, and `sam deploy` does not reuse earlier values, so
-deleting a variable and redeploying turns that provider off. Lambda environment
+can call. `deploy.sh` always passes all three overrides, with an explicit empty
+value (`Name=""`) when a variable is unset or blank. On an existing stack
+`sam deploy` reuses the previous value of any parameter it is not given, so the
+explicit empty value is what turns a provider off when you delete its variable
+and redeploy. Lambda environment
 values are not secrets; never put an API key in a parameter.
 
 Models that spend output tokens on hidden reasoning ("thinking") may use up the
