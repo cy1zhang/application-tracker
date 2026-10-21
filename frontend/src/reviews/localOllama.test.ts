@@ -44,6 +44,7 @@ function assertUrlAndBody(url: string, options: RequestInit) {
   ]);
   expect(body.format).toEqual(input.format);
   expect(body.stream).toBe(false);
+  expect(body.think).toBe(false);
   expect(JSON.stringify(body)).not.toContain("generation");
 }
 

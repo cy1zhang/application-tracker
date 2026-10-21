@@ -41,6 +41,7 @@ export async function runLocalModel(
         ],
         format: input.format,
         stream: false,
+        think: false,
         options: { temperature: 0, num_predict: 512 },
       }),
     });
