@@ -7,6 +7,7 @@ from app.domain.applications import Application, ApplicationStatus, Season
 from app.services.ai_extraction import ValidatedExtraction
 from app.services.ai_reconcile import (
     AUTO_APPLY_REASONS,
+    AUTO_APPLY_STATUSES,
     ESCALATION_REASONS,
     reconcile_extraction,
 )
@@ -457,3 +458,48 @@ def test_linked_thread_with_matching_extracted_identity_still_applies():
     )
     assert result.outcome == "applied"
     assert result.application_id == "app-1"
+
+
+def test_auto_apply_statuses_exclude_high_impact_outcomes():
+    assert AUTO_APPLY_STATUSES == frozenset(
+        {
+            ApplicationStatus.APPLIED,
+            ApplicationStatus.OA_RECEIVED,
+            ApplicationStatus.INTERVIEWING,
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [ApplicationStatus.OFFER, ApplicationStatus.REJECTED, ApplicationStatus.WITHDRAWN],
+)
+def test_high_impact_ai_status_goes_to_review_with_match(status):
+    result = reconcile_extraction(
+        _rule(),
+        _extraction(status=status, evidence={"status": "pleased to offer you"}),
+        _message(),
+        [_candidate(threads={"thread-1"})],
+    )
+    assert result.outcome == "review_required"
+    assert result.reason == "ai_proposal"
+    assert result.application_id == "app-1"
+    assert result.status == status
+
+
+def test_high_impact_rule_status_on_ai_path_goes_to_review():
+    rule = _rule(
+        "ambiguous_application",
+        status=ApplicationStatus.OFFER,
+        evidence="pleased to offer you",
+    )
+    result = reconcile_extraction(
+        rule,
+        _extraction(status=None, evidence={}),
+        _message(),
+        [_candidate(threads={"thread-1"})],
+    )
+    assert result.outcome == "review_required"
+    assert result.reason == "ai_proposal"
+    assert result.application_id == "app-1"
+    assert result.status == ApplicationStatus.OFFER

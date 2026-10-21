@@ -659,3 +659,24 @@ def test_handler_builds_escalator_from_environment(monkeypatch) -> None:
     assert escalator._models[AiProvider.OPENAI] == "model-o"
     assert escalator._models[AiProvider.ANTHROPIC] == "model-a"
     assert not escalator._models.get(AiProvider.GEMINI)
+
+
+def test_benign_offer_on_ai_path_goes_to_review_not_applied(env) -> None:
+    env.connect()
+    env.app()
+    text = "We are pleased to offer you the Software Engineer Intern role at Acme."
+    offer = extraction(
+        company="Acme", role="Software Engineer Intern", status="offer",
+        evidence={
+            "company": "Acme", "role": "Software Engineer Intern",
+            "status": "pleased to offer you",
+        },
+    )
+
+    outcome = process(env, "m1", text, escalator_for(env, StubProvider(offer)))
+
+    assert outcome.outcome == "review_required" and outcome.reason == "ai_proposal"
+    assert application(env).status.value == "applied"
+    item = env.event("m1")
+    assert item["application_id"] == "app-1"
+    assert item["proposed_status"] == "offer"

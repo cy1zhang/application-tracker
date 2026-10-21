@@ -244,7 +244,7 @@ def test_provider_returning_unsupported_status_with_validation_off_trips_check(
         {**item, "ai_outputs": {
             "openai": {
                 **runner.expand_output(
-                    {"status": "offer", "company": "Acme", "role": "Software Engineer Intern"},
+                    {"status": "interviewing", "company": "Acme", "role": "Software Engineer Intern"},
                     {"status": "Acme", "company": "Acme", "role": "Software Engineer Intern"},
                 )
             }

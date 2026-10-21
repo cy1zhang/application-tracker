@@ -21,6 +21,14 @@ ESCALATION_REASONS = frozenset(
     }
 )
 AUTO_APPLY_REASONS = frozenset({"ambiguous_application", "unknown_stage"})
+# Offer, rejected and withdrawn are high impact: the AI path only proposes them.
+AUTO_APPLY_STATUSES = frozenset(
+    {
+        ApplicationStatus.APPLIED,
+        ApplicationStatus.OA_RECEIVED,
+        ApplicationStatus.INTERVIEWING,
+    }
+)
 
 _EVIDENCE_FIELDS = (
     "status",
@@ -68,7 +76,7 @@ def reconcile_extraction(
     )
     application = matched.application
     if (
-        status is None
+        status not in AUTO_APPLY_STATUSES
         or rule_decision.reason not in AUTO_APPLY_REASONS
         or _status_conflict(rule_decision, extraction)
         or extraction.status_in_subject_only

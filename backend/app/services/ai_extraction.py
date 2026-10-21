@@ -43,6 +43,16 @@ _CUES = {
 _NEGATION = re.compile(r"\b(?:not|no|never|yet to)\b|n['’]t\b", re.IGNORECASE)
 
 
+# Meta-instruction language aimed at an automated reader. A status quote inside
+# such a sentence is the email talking to the model, not reporting an event.
+_INJECTION = re.compile(
+    r"automated (?:reader|system|assistant)s?|\bai\b|assistant|language model|\bllm\b|"
+    r"record (?:the|this) status|set (?:the|this) status|"
+    r"ignore (?:all |any )?(?:previous|prior|above)|instructions?|system prompt",
+    re.IGNORECASE,
+)
+
+
 class InvalidExtraction(Exception):
     pass
 
@@ -135,6 +145,8 @@ def validate_extraction(raw: object, prompt_input: PromptInput) -> ValidatedExtr
             continue
         if not _supports(field, value, quote):
             continue
+        if field == "status" and _in_instruction(quote, found, prompt_input.sections):
+            continue
         kept[field] = value
         quotes[field] = quote
         quote_sections[field] = found
@@ -150,6 +162,20 @@ def validate_extraction(raw: object, prompt_input: PromptInput) -> ValidatedExtr
         evidence=quotes,
         status_in_subject_only=quote_sections.get("status") == {"subject"},
     )
+
+
+def _in_instruction(
+    quote: str, found: set[str], sections: tuple[tuple[str, str], ...]
+) -> bool:
+    """True when the sentence holding the quote contains meta-instruction language."""
+    for name, text in sections:
+        if name not in found:
+            continue
+        sentences = (_normalize(part) for part in re.split(r"[.!?;\n]", text))
+        containing = [part for part in sentences if quote in part]
+        if any(_INJECTION.search(part) for part in containing or [quote]):
+            return True
+    return False
 
 
 def _supports(field: str, value: object, quote: str) -> bool:
