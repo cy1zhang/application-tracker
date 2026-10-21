@@ -56,6 +56,13 @@ for pair in OpenAiModelId:OPENAI_MODEL_ID AnthropicModelId:ANTHROPIC_MODEL_ID Ge
   fi
 done
 
+# Alarm email is opt-in. Like the model IDs it is always passed explicitly, so an
+# omitted variable turns it off instead of keeping the stack's previous value.
+alarm_notifications="${ALARM_NOTIFICATIONS:-false}"
+[[ "$alarm_notifications" == true || "$alarm_notifications" == false ]] ||
+  fail "ALARM_NOTIFICATIONS must be true or false"
+parameters+=("AlarmNotifications=$alarm_notifications")
+
 mkdir -p .aws-sam
 printf 'Deploying CloudFormation stack %s...\n' "$STACK_NAME"
 if ! sam deploy \

@@ -176,6 +176,33 @@ class DeployScriptTests(unittest.TestCase):
         self.assertNotIn("synthetic-openai", result.stdout + result.stderr)
 
 
+    def test_absent_alarm_notifications_is_passed_as_explicit_false(self):
+        result = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("AlarmNotifications=false", self.deploy_call())
+
+    def test_alarm_notifications_true_is_passed_through(self):
+        config = self.root / ".env.deploy"
+        config.write_text(config.read_text() + "ALARM_NOTIFICATIONS=true\n")
+        result = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("AlarmNotifications=true", self.deploy_call())
+
+    def test_alarm_notifications_false_is_passed_through(self):
+        config = self.root / ".env.deploy"
+        config.write_text(config.read_text() + "ALARM_NOTIFICATIONS=false\n")
+        result = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("AlarmNotifications=false", self.deploy_call())
+
+    def test_invalid_alarm_notifications_stops_before_deploy(self):
+        config = self.root / ".env.deploy"
+        config.write_text(config.read_text() + "ALARM_NOTIFICATIONS=yes\n")
+        result = self.run_deploy()
+        self.assert_no_deploy(result)
+        self.assertIn("ALARM_NOTIFICATIONS", result.stderr)
+
+
 class DeploymentGuideTests(unittest.TestCase):
     def test_google_secret_command_outputs_clean_json(self):
         guide = GUIDE.read_text()

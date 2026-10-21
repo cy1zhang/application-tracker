@@ -29,9 +29,15 @@ Parameters:
     Type: String
     Default: ''
     Description: Gemini model ID; blank leaves the Gemini provider unavailable
+  AlarmNotifications:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set true to email alarm state changes to BudgetEmail through SNS
 
 Conditions:
   UseReservedConcurrency: !Equals [!Ref ReserveConcurrency, 'true']
+  SendAlarmEmail: !Equals [!Ref AlarmNotifications, 'true']
 
 Resources:
   ApplicationsTable:
@@ -92,6 +98,9 @@ Resources:
       KeySchema:
         - AttributeName: owner_id
           KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
 
   OAuthStatesTable:
     Type: AWS::DynamoDB::Table
@@ -134,6 +143,19 @@ Resources:
         maxReceiveCount: 5
 
   SyncDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+
+  AccountDeletionQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 1800
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AccountDeletionDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  AccountDeletionDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
       MessageRetentionPeriod: 1209600
@@ -276,6 +298,7 @@ Resources:
           OAUTH_STATES_TABLE: !Ref OAuthStatesTable
           SYNC_RUNS_TABLE: !Ref SyncRunsTable
           SYNC_QUEUE_URL: !Ref SyncQueue
+          DELETION_QUEUE_URL: !Ref AccountDeletionQueue
           COGNITO_USER_POOL_ID: !Ref UserPool
           GMAIL_KMS_KEY_ARN: !GetAtt GmailKmsKey.Arn
           GMAIL_OAUTH_SECRET_NAME: !Ref GmailOAuthSecretName
@@ -305,6 +328,9 @@ Resources:
             - Effect: Allow
               Action: sqs:SendMessage
               Resource: !GetAtt SyncQueue.Arn
+            - Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt AccountDeletionQueue.Arn
             - Effect: Allow
               Action: [dynamodb:PutItem, dynamodb:DeleteItem]
               Resource: !GetAtt OAuthStatesTable.Arn
@@ -453,6 +479,7 @@ Resources:
           USERS_TABLE: !Ref UsersTable
           SYNC_RUNS_TABLE: !Ref SyncRunsTable
           SYNC_QUEUE_URL: !Ref SyncQueue
+          DELETION_QUEUE_URL: !Ref AccountDeletionQueue
       Policies:
         - Version: '2012-10-17'
           Statement:
@@ -465,6 +492,9 @@ Resources:
             - Effect: Allow
               Action: sqs:SendMessage
               Resource: !GetAtt SyncQueue.Arn
+            - Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt AccountDeletionQueue.Arn
       Events:
         DailySync:
           Type: ScheduleV2
@@ -503,6 +533,282 @@ Resources:
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+
+  AccountDeletionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-account-deletion'
+      CodeUri: ../backend
+      Handler: app.deletion_handler.handler
+      Runtime: python3.12
+      Architectures: [arm64]
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          USERS_TABLE: !Ref UsersTable
+          APPLICATIONS_TABLE: !Ref ApplicationsTable
+          EVENTS_TABLE: !Ref EventsTable
+          SYNC_RUNS_TABLE: !Ref SyncRunsTable
+          OAUTH_STATES_TABLE: !Ref OAuthStatesTable
+          GMAIL_KMS_KEY_ARN: !GetAtt GmailKmsKey.Arn
+          USER_POOL_ID: !Ref UserPool
+          DELETION_QUEUE_URL: !Ref AccountDeletionQueue
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: [dynamodb:Query, dynamodb:BatchWriteItem, dynamodb:DeleteItem]
+              Resource: !GetAtt ApplicationsTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:Query, dynamodb:BatchWriteItem, dynamodb:DeleteItem]
+              Resource: !GetAtt EventsTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:Query, dynamodb:BatchWriteItem]
+              Resource: !GetAtt SyncRunsTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:Scan, dynamodb:DeleteItem, dynamodb:BatchWriteItem]
+              Resource: !GetAtt OAuthStatesTable.Arn
+            - Effect: Allow
+              Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:PutItem]
+              Resource: !GetAtt UsersTable.Arn
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt GmailKmsKey.Arn
+              Condition:
+                StringEquals:
+                  'kms:EncryptionContext:credential_type': gmail_refresh_token
+            - Effect: Allow
+              Action: cognito-idp:AdminDeleteUser
+              Resource: !GetAtt UserPool.Arn
+            - Effect: Allow
+              Action: [sqs:ReceiveMessage, sqs:DeleteMessage, sqs:GetQueueAttributes, sqs:SendMessage]
+              Resource: !GetAtt AccountDeletionQueue.Arn
+      Events:
+        DeletionJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt AccountDeletionQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes: [ReportBatchItemFailures]
+
+  AccountDeletionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AccountDeletionFunction}'
+      RetentionInDays: 14
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: SendAlarmEmail
+    Properties:
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref BudgetEmail
+
+  AccountDeletionDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Account deletion jobs exhausted SQS retries
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt AccountDeletionDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+
+  SyncWorkerErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Sync worker invocation raised an error
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SyncWorkerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+
+  SyncDispatcherErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Sync dispatcher invocation raised an error
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SyncDispatcherFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+
+  AccountDeletionErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Account deletion invocation raised an error
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AccountDeletionFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+
+  SyncWorkerFailureFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref SyncWorkerLogGroup
+      FilterPattern: '"event=sync_worker_failure"'
+      MetricTransformations:
+        - MetricNamespace: !Sub '${AWS::StackName}/Operations'
+          MetricName: SyncWorkerFailures
+          MetricValue: '1'
+          DefaultValue: 0
+
+  SyncWorkerFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Repeated sync worker failures in 15 minutes
+      Namespace: !Sub '${AWS::StackName}/Operations'
+      MetricName: SyncWorkerFailures
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+
+  SyncRunFailedFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref SyncWorkerLogGroup
+      FilterPattern: '"event=sync_run_failed"'
+      MetricTransformations:
+        - MetricNamespace: !Sub '${AWS::StackName}/Operations'
+          MetricName: SyncRunsFailed
+          MetricValue: '1'
+          DefaultValue: 0
+
+  SyncRunFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Repeated failed sync runs in 15 minutes
+      Namespace: !Sub '${AWS::StackName}/Operations'
+      MetricName: SyncRunsFailed
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+
+  ApiUnhandledErrorFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ApiLogGroup
+      FilterPattern: '"event=api_unhandled_error"'
+      MetricTransformations:
+        - MetricNamespace: !Sub '${AWS::StackName}/Operations'
+          MetricName: ApiUnhandledErrors
+          MetricValue: '1'
+          DefaultValue: 0
+
+  ApiUnhandledErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Repeated unhandled API errors in 15 minutes
+      Namespace: !Sub '${AWS::StackName}/Operations'
+      MetricName: ApiUnhandledErrors
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+
+  AccountDeletionFailedFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref AccountDeletionLogGroup
+      FilterPattern: '"event=deletion_job_failed"'
+      MetricTransformations:
+        - MetricNamespace: !Sub '${AWS::StackName}/Operations'
+          MetricName: AccountDeletionFailures
+          MetricValue: '1'
+          DefaultValue: 0
+
+  AccountDeletionFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: An account deletion job failed
+      Namespace: !Sub '${AWS::StackName}/Operations'
+      MetricName: AccountDeletionFailures
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+
+  AccountDeletionEnqueueFailedFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref ApiLogGroup
+      FilterPattern: '"event=deletion_enqueue_failed"'
+      MetricTransformations:
+        - MetricNamespace: !Sub '${AWS::StackName}/Operations'
+          MetricName: AccountDeletionEnqueueFailures
+          MetricValue: '1'
+          DefaultValue: 0
+
+  AccountDeletionEnqueueFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The API could not queue an account deletion job
+      Namespace: !Sub '${AWS::StackName}/Operations'
+      MetricName: AccountDeletionEnqueueFailures
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
+      OKActions: !If [SendAlarmEmail, [!Ref AlarmTopic], !Ref 'AWS::NoValue']
 
   MonthlyBudget:
     Type: AWS::Budgets::Budget

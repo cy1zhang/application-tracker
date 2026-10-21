@@ -407,6 +407,30 @@ put either Google secret value in a SAM parameter; pass only the Secrets Manager
 names. `sam validate --template-file infra/template.yaml --lint` and
 `python3 scripts/test_deploy.py -q` are offline checks.
 
+### Alarms and operations
+
+All alarms treat missing data as healthy. Lambda `Errors` alarms fire on one
+error in five minutes for the sync worker, sync dispatcher, and account
+deletion function; these are crashes, since ordinary sync failures are returned
+to SQS rather than raised. Log alarms count sanitized `event=<name>` lines over
+15 minutes: `sync_worker_failure` (3 or more), `sync_run_failed` (3 or more),
+`api_unhandled_error` (3 or more), `deletion_job_failed` (1), and
+`deletion_enqueue_failed` (1). `SyncDeadLetterAlarm` and
+`AccountDeletionDeadLetterAlarm` fire when either dead-letter queue holds a
+message. Best-effort revoke failures (`deletion_revoke_failed`) do not alarm.
+
+Alarm email is off by default. Set `ALARM_NOTIFICATIONS=true` in `.env.deploy`
+to create an SNS topic that emails `BUDGET_EMAIL`; the recipient must click the
+AWS confirmation link. `deploy.sh` always passes the value, so removing the
+variable turns the topic off on the next deploy.
+
+Deletion dead-letter runbook: the daily recovery pass re-publishes any account
+still in the `deleting` state, so a dead-lettered job is redundant. Inspect the
+message (it holds only an owner ID), check `deletion_job_failed` logs for the
+phase and error category, fix the cause, then purge the queue. The Users table
+expires deletion tombstones through TTL on `expires_at`, which can lag up to 48
+hours; the API checks `deletion_state` regardless.
+
 ### Approve Google accounts
 
 The Google audience is External, so anyone can complete Google sign-in. A new
