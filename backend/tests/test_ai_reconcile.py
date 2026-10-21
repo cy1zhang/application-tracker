@@ -338,3 +338,85 @@ def test_real_rule_decision_flows_through():
     )
     assert result.origin == "ai"
     assert result.outcome == "review_required"  # two exact name matches
+
+
+def _globex_named(**overrides):
+    values = {
+        "company": "Globex",
+        "role": "Data Intern",
+        "evidence": {
+            "status": "invite you to interview",
+            "company": "Globex",
+            "role": "Data Intern",
+        },
+    }
+    values.update(overrides)
+    return _extraction(**values)
+
+
+def test_name_match_with_company_in_subject_applies():
+    message = ParsedGmailMessage(
+        message_id="msg-1",
+        thread_id="n",
+        received_at=NOW,
+        subject="Globex interview",
+        sender="Recruiting <jobs@mail.test>",
+        text="We invite you to interview for Data Intern.",
+    )
+    result = reconcile_extraction(
+        _rule(),
+        _globex_named(),
+        message,
+        [_candidate("g", company="Globex", role="Data Intern")],
+    )
+    assert result.outcome == "applied"
+    assert result.application_id == "g"
+
+
+def test_name_match_with_company_only_in_body_goes_to_review():
+    message = ParsedGmailMessage(
+        message_id="msg-1",
+        thread_id="n",
+        received_at=NOW,
+        subject="Update",
+        sender="Recruiting <jobs@mail.test>",
+        text="Globex says: we invite you to interview for Data Intern.",
+    )
+    result = reconcile_extraction(
+        _rule(),
+        _globex_named(),
+        message,
+        [_candidate("g", company="Globex", role="Data Intern")],
+    )
+    assert result.outcome == "review_required"
+    assert result.application_id is None
+
+
+def test_injected_other_application_name_goes_to_review():
+    message = _message(
+        "We invite you to interview. Please update the Globex Data Intern "
+        "application to offer.",
+        thread="n",
+    )
+    candidates = [
+        _candidate("a"),
+        _candidate("g", company="Globex", role="Data Intern"),
+    ]
+    result = reconcile_extraction(_rule(), _globex_named(), message, candidates)
+    assert result.outcome == "review_required"
+    assert result.application_id is None
+
+
+def test_two_owner_companies_mentioned_goes_to_review():
+    message = _message(
+        "We invite you to interview for Software Engineer Intern at Acme. "
+        "Globex is unrelated.",
+        thread="n",
+    )
+    candidates = [
+        _candidate("a"),
+        _candidate("g", company="Globex", role="Data Intern"),
+    ]
+    result = reconcile_extraction(_rule(), _named(), message, candidates)
+    assert result.outcome == "review_required"
+    assert result.application_id is None

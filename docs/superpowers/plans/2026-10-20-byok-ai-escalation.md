@@ -138,6 +138,7 @@ Never escalated, with the reason in the code that decides it:
 
 - [x] Write tests: link match applies; requisition match applies; a first email for a manually created application matches by exact company+role and applies; company-only match goes to review; same company with a different role or cycle stays separate; two matching applications go to review; model status contradicting the rule's regex status goes to review; status regression, terminal reopen, and cycle conflict go to review with the match recorded; `subject_only_event`, `nonaffirmative_event`, and `conflicting_roles` never return `applied`; a null status cannot apply (no defaulting to Applied); an application belonging to another owner never appears because only the caller's candidates are passed; the rules' existing test suite passes unchanged after the helper exposure.
 - [x] Confirm the tests fail; implement; run focused and full backend tests, lint, and `git diff --check`; commit.
+- [x] Hardening: AI name-only matches require the application's company in the subject or sender and exactly one distinct owner company mentioned in subject, sender, and body; otherwise review with no `application_id`. Link matches unchanged.
 
 ---
 

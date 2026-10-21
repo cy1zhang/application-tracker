@@ -325,6 +325,10 @@ def _mentions(content: str, value: str) -> bool:
     return re.search(rf"(?<!\w){re.escape(value)}(?!\w)", content, re.IGNORECASE) is not None
 
 
+def mentions_whole_word(content: str, value: str) -> bool:
+    return _mentions(content, value)
+
+
 def _explicit_roles(content: str) -> set[str]:
     return {
         " ".join(match.group("role").casefold().removeprefix("applying for ").split())

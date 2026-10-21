@@ -6,6 +6,7 @@ from app.services.email_rules import (
     ApplicationCandidate,
     RuleDecision,
     linked_matches,
+    mentions_whole_word,
     would_regress,
 )
 from app.services.gmail_message import ParsedGmailMessage
@@ -121,7 +122,23 @@ def _match(message, applications, extraction, requisition_id, season, year):
         and (season is None or item.application.season in {None, season})
         and (year is None or item.application.year in {None, year})
     ]
-    return named[0] if len(named) == 1 else None
+    if len(named) != 1:
+        return None
+    return named[0] if _name_anchored(message, applications, named[0]) else None
+
+
+def _name_anchored(message, applications, matched) -> bool:
+    """Identity must come from the headers and be the only owner company named."""
+    headers = f"{message.subject}\n{message.sender}"
+    if not mentions_whole_word(headers, matched.application.company):
+        return False
+    sent = f"{headers}\n{message.text}"
+    mentioned = {
+        _fold(item.application.company)
+        for item in applications
+        if item.application.company and mentions_whole_word(sent, item.application.company)
+    }
+    return len(mentioned) == 1
 
 
 def _fold(value: str) -> str:
