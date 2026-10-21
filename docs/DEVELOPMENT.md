@@ -182,16 +182,61 @@ ollama pull gemma4:latest
 launchctl setenv OLLAMA_ORIGINS 'https://main.d2pqicgf5e8l1p.amplifyapp.com'
 ```
 
-Quit and reopen Ollama after setting the variable. Keep `OLLAMA_HOST` unset (its
-default binds to loopback); do not expose port 11434 to the network. Open the
-hosted app on the same Mac, sign in, and open **Needs review**. Choose **Analyze
-with Ollama**, select the installed model, then **Start analysis**. The browser
-may ask permission for the app site to access local services. **Stop** aborts
-the current request; restarting skips suggestions that were already saved. If
-the app reports no connection, check that Ollama is running, the origin is
-exact, and Ollama was restarted. This setup is per computer. To remove this
-origin allowance later, run `launchctl unsetenv OLLAMA_ORIGINS` and restart
-Ollama.
+`launchctl setenv` is lost on reboot, and Ollama.app does not read shell
+profiles. Quit and reopen Ollama after setting the variable. Keep `OLLAMA_HOST`
+unset (its default binds to loopback); do not expose port 11434 to the network,
+and never use `OLLAMA_ORIGINS=*`.
+
+To keep the allowance across reboots, create a user LaunchAgent at
+`~/Library/LaunchAgents/com.applicationtracker.ollama-origins.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.applicationtracker.ollama-origins</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/launchctl</string>
+    <string>setenv</string>
+    <string>OLLAMA_ORIGINS</string>
+    <string>https://main.d2pqicgf5e8l1p.amplifyapp.com</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+```
+
+Load it with `launchctl bootstrap gui/$(id -u)
+~/Library/LaunchAgents/com.applicationtracker.ollama-origins.plist`, then check
+`launchctl getenv OLLAMA_ORIGINS` prints the origin. Ollama.app only reads the
+variable at startup, so quit and reopen it afterward. At login the LaunchAgent
+may run after Ollama starts; if the app cannot connect after a reboot, quit and
+reopen Ollama once. To remove the allowance, run `launchctl bootout
+gui/$(id -u)/com.applicationtracker.ollama-origins`, delete the plist, run
+`launchctl unsetenv OLLAMA_ORIGINS`, and restart Ollama. This setup is per
+computer.
+
+#### Using it
+
+Use Chrome on the same Mac; listing models was verified there after allowing
+local-network access for the app site. Firefox is not yet verified and may show
+its own local network permission prompt; allow it only for the app's origin.
+Sign in, open **Needs review**, choose **Analyze with Ollama**, select the
+installed model, set **Reviews to analyze** (start with 1-5; default 5), then
+**Start analysis**.
+
+On an Apple M3 with 16 GB, expect about 50 seconds for the first review (model
+load) and about 27 seconds for each later one. Ollama unloads the model after
+about 5 minutes idle. Keep the tab open for the whole run. **Stop** aborts the
+current request; restarting skips suggestions already saved. A review that
+fails is counted and skipped for the rest of the session; Ollama being
+unreachable, a sign-in problem, or a Gmail connection problem stops the run.
+Suggestions are only proposals: the owner accepts or rejects each one, and
+nothing changes an application until then.
 
 Hosted AI is separate: if its setting is on, scheduled Gmail sync may still
 send candidate email to that provider. Turn it off in AI settings for local-only
