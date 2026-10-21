@@ -325,7 +325,7 @@ Resources:
                 - !GetAtt EventsTable.Arn
                 - !Sub '${EventsTable.Arn}/index/application-events-index'
             - Effect: Allow
-              Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+              Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:ConditionCheckItem]
               Resource: !GetAtt UsersTable.Arn
             - Effect: Allow
               Action: [dynamodb:GetItem, dynamodb:PutItem]

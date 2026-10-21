@@ -65,6 +65,15 @@ def test_cors_allows_put() -> None:
     assert "PUT" in cors["AllowMethods"]
 
 
+def test_api_can_condition_check_gmail_generation_when_saving_local_ai() -> None:
+    policy = _template()["Resources"]["ApiFunction"]["Properties"]["Policies"][0]
+    users = next(
+        statement for statement in policy["Statement"]
+        if statement["Resource"] == {"GetAtt": "UsersTable.Arn"}
+    )
+    assert "dynamodb:ConditionCheckItem" in _actions(users)
+
+
 def _kms_statements(function: str) -> list[dict]:
     policy = _template()["Resources"][function]["Properties"]["Policies"][0]
     return [
