@@ -25,6 +25,7 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
   const [current, setCurrent] = useState(0);
   const [runError, setRunError] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
+  const eligibleCount = reviews.filter((item) => ELIGIBLE_REASONS.has(item.reason) && !item.ai_proposal).length;
 
   useEffect(() => {
     let mounted = true;
@@ -70,22 +71,37 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
         }
       } catch (caught) {
         if (abort.signal.aborted) break;
-        if (caught instanceof ApiError && (caught.status === 404 || caught.status === 409)) {
+        if (caught instanceof ApiError && caught.status === 404) {
           result.skipped++;
+        } else if (caught instanceof ApiError && caught.status === 409) {
+          result.skipped++;
+          setRunError("A review or Gmail connection changed. Refreshing the review queue; start again for remaining items.");
+          setCounts({ ...result });
+          break;
         } else {
           result.failed++;
-          if (!(caught instanceof ApiError)) {
-            setRunError("Ollama stopped responding. Check that it is running, then start again to retry unsaved reviews.");
-            setCounts({ ...result });
-            break;
-          }
+          setRunError(
+            caught instanceof ApiError && caught.status === 503
+              ? "Gmail is unavailable. Check the Gmail connection, then retry."
+              : caught instanceof ApiError && caught.status === 422
+                ? "The model returned invalid output. Try another installed model."
+                : caught instanceof ApiError
+                  ? "The app could not analyze this email. Check the connection, then retry."
+                  : caught instanceof Error ? caught.message : "Ollama could not analyze this email.",
+          );
+          setCounts({ ...result });
+          break;
         }
       }
       setCounts({ ...result });
     }
     controller.current = null;
     setRunning(false);
-    if (result.suggested > 0) await onFinished();
+    try {
+      await onFinished();
+    } catch {
+      setRunError("Could not refresh reviews. Reload the page before deciding on a suggestion.");
+    }
   }
 
   return (
@@ -106,8 +122,9 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
         <button type="button" disabled={!model || running} onClick={() => void start()}>Start analysis</button>
         {running && <button type="button" onClick={() => controller.current?.abort()}>Stop</button>}
       </div>
-      {running && <p role="status">Analyzing {current} of {reviews.length} reviews…</p>}
+      {running && <p role="status">Analyzing {current} of {eligibleCount} eligible reviews…</p>}
       {counts && <p role="status">{counts.suggested} suggested, {counts.skipped} skipped, {counts.failed} failed</p>}
+      {counts && <p className="muted">Skipped includes reviews outside the AI reasons and reviews that already have a suggestion.</p>}
       {runError && <p role="alert" className="review-error">{runError}</p>}
     </div>
   );

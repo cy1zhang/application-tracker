@@ -43,7 +43,7 @@ test("shows evidence and accepts a proposed change with the current version", as
   expect(screen.getByRole("link", { name: "Open email" })).toHaveAttribute("href", review.source_url);
   fireEvent.click(screen.getByRole("button", { name: "Accept proposal" }));
 
-  expect(resolveReview).toHaveBeenCalledWith("msg-1", { action: "accept", expected_version: 3 });
+  expect(resolveReview).toHaveBeenCalledWith("msg-1", { action: "accept", expected_version: 3, expected_review_version: 0 });
   expect(await screen.findByText("Review saved.")).toBeInTheDocument();
 });
 
@@ -147,7 +147,7 @@ test("retains actions for a review linked to a merged application ID", async () 
 
   expect(await screen.findByRole("button", { name: "Accept proposal" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Accept proposal" }));
-  expect(resolveReview).toHaveBeenCalledWith("msg-1", { action: "accept", expected_version: 4 });
+  expect(resolveReview).toHaveBeenCalledWith("msg-1", { action: "accept", expected_version: 4, expected_review_version: 0 });
 });
 
 test("closes a stale edit form so it cannot resubmit an old version", async () => {
@@ -189,6 +189,15 @@ test("renders an AI suggestion with evidence quotes as plain text", () => {
   expect(screen.getByText(/<img src=x onerror=alert\(1\)> invite you to interview/)).toBeInTheDocument();
   expect(container.querySelector("img")).toBeNull();
   expect(screen.getByRole("button", { name: "Accept proposal" })).toBeInTheDocument();
+});
+
+test("accept includes the AI proposal revision displayed to the owner", () => {
+  vi.mocked(resolveReview).mockResolvedValue({ message_id: "msg-ai", action: "accept", application_id: "app-1" });
+  render(<ReviewQueue reviews={[{ ...aiReview, review_version: 1 }]} applications={[makeApplication({ application_id: "app-1", version: 3 })]} onResolved={vi.fn().mockResolvedValue(undefined)} onBack={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Accept proposal" }));
+  expect(resolveReview).toHaveBeenCalledWith("msg-ai", {
+    action: "accept", expected_version: 3, expected_review_version: 1,
+  });
 });
 
 test.each([
@@ -282,13 +291,14 @@ test("stops after an Ollama failure and can retry only unsaved reviews", async (
 
 test("Stop aborts the current local request before the next review", async () => {
   const second = { ...review, message_id: "msg-2" };
+  const onResolved = vi.fn().mockResolvedValue(undefined);
   vi.mocked(listLocalModels).mockResolvedValue(["gemma4:latest"]);
   vi.mocked(getSettings).mockResolvedValue({ enabled: false } as Awaited<ReturnType<typeof getSettings>>);
   vi.mocked(getLocalAiInput).mockResolvedValue({ generation: 1, system_prompt: "system", user_prompt: "email", format: {} });
   vi.mocked(runLocalModel).mockImplementationOnce((_model, _input, signal) => new Promise((_resolve, reject) => {
     signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
   }));
-  render(<ReviewQueue reviews={[review, second]} applications={[]} onResolved={vi.fn()} onBack={() => {}} />);
+  render(<ReviewQueue reviews={[review, second]} applications={[]} onResolved={onResolved} onBack={() => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "Analyze with Ollama" }));
   await screen.findByRole("option", { name: "gemma4:latest" });
   fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
@@ -298,4 +308,20 @@ test("Stop aborts the current local request before the next review", async () =>
   await waitFor(() => expect(screen.getByRole("button", { name: "Start analysis" })).toBeEnabled());
   expect(getLocalAiInput).toHaveBeenCalledTimes(1);
   expect(submitLocalAiSuggestion).not.toHaveBeenCalled();
+  expect(onResolved).toHaveBeenCalledOnce();
+});
+
+test("Gmail failure stops the batch with an explanation and refreshes the queue", async () => {
+  const onResolved = vi.fn().mockResolvedValue(undefined);
+  vi.mocked(listLocalModels).mockResolvedValue(["gemma4:latest"]);
+  vi.mocked(getSettings).mockResolvedValue({ enabled: false } as Awaited<ReturnType<typeof getSettings>>);
+  vi.mocked(getLocalAiInput).mockRejectedValue(new ApiError(503, "Gmail message is unavailable"));
+  render(<ReviewQueue reviews={[review, { ...review, message_id: "msg-2" }]} applications={[]} onResolved={onResolved} onBack={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Analyze with Ollama" }));
+  await screen.findByRole("option", { name: "gemma4:latest" });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Gmail is unavailable");
+  expect(getLocalAiInput).toHaveBeenCalledTimes(1);
+  expect(onResolved).toHaveBeenCalledOnce();
 });

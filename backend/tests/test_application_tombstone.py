@@ -204,7 +204,7 @@ def test_review_decisions_on_a_deleted_application_change_nothing(env, action) -
     applications_before = _dump(env.client, "Applications")
     events_before = _dump(env.client, "Events")
     resolutions = {
-        "accept": ReviewResolution(action="accept", expected_version=1),
+        "accept": ReviewResolution(action="accept", expected_version=1, expected_review_version=0),
         "attach": ReviewResolution(
             action="attach", application_id="app-1", expected_version=1
         ),

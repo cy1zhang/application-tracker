@@ -75,6 +75,7 @@ export type ApplicationPatch = Partial<ApplicationValues> & {
 
 export interface ReviewItem {
   message_id: string;
+  review_version?: number;
   reason: string;
   subject: string | null;
   sender: string | null;
@@ -146,7 +147,7 @@ export interface ReviewApplicationCreate extends Omit<ApplicationCreate, "status
 }
 
 export type ReviewResolution =
-  | { action: "accept"; expected_version: number }
+  | { action: "accept"; expected_version: number; expected_review_version: number }
   | { action: "edit"; application_id: string; patch: ApplicationPatch }
   | { action: "reject" }
   | { action: "attach"; application_id: string; expected_version: number }

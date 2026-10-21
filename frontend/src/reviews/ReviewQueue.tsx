@@ -66,6 +66,8 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
   const [localSuggestions, setLocalSuggestions] = useState<Record<string, ReviewItem>>({});
   const displayedReviews = reviews.map((review) => localSuggestions[review.message_id] ?? review);
 
+  useEffect(() => { setLocalSuggestions({}); }, [reviews]);
+
   useEffect(() => {
     const missingIds = [...new Set(reviews.map((review) => review.application_id).filter(
       (id): id is string => id !== null && !applications.some((item) => item.application_id === id),
@@ -185,7 +187,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
               )}
               <div className="review-actions">
                 {application && (review.proposed_status || review.proposed_season || review.proposed_year) && (
-                  <button type="button" disabled={busy} onClick={() => void resolve(review.message_id, { action: "accept", expected_version: application.version })}>Accept proposal</button>
+                  <button type="button" disabled={busy} onClick={() => void resolve(review.message_id, { action: "accept", expected_version: application.version, expected_review_version: review.review_version ?? 0 })}>Accept proposal</button>
                 )}
                 {application && <button type="button" disabled={busy} onClick={() => start(review.message_id, "edit")}>Edit and apply</button>}
                 <button type="button" disabled={busy} onClick={() => start(review.message_id, "attach")}>Attach to application</button>

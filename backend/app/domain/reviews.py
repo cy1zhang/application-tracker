@@ -29,14 +29,17 @@ class ReviewResolution(BaseModel):
 
     action: Literal["accept", "edit", "reject", "attach", "create"]
     expected_version: int | None = Field(default=None, ge=1)
+    expected_review_version: int | None = Field(default=None, ge=0)
     application_id: str | None = None
     patch: ApplicationPatch | None = None
     application: ReviewApplicationCreate | None = None
 
     @model_validator(mode="after")
     def require_action_fields(self) -> "ReviewResolution":
-        if self.action == "accept" and self.expected_version is None:
-            raise ValueError("accept requires expected_version")
+        if self.action == "accept" and (
+            self.expected_version is None or self.expected_review_version is None
+        ):
+            raise ValueError("accept requires expected_version and expected_review_version")
         if self.action == "edit" and (not self.application_id or self.patch is None):
             raise ValueError("edit requires application_id and patch")
         if self.action == "attach" and (not self.application_id or self.expected_version is None):
@@ -59,6 +62,7 @@ class AiProposalView(BaseModel):
 
 class ReviewItem(BaseModel):
     message_id: str
+    review_version: int = 0
     reason: str
     subject: str | None = None
     sender: str | None = None

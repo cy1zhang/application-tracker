@@ -163,6 +163,41 @@ def test_local_suggestion_rejects_review_resolved_during_inference(store):
         )
 
 
+def test_stale_accept_cannot_apply_a_new_local_suggestion(store):
+    applications, emails, reviews = store
+    _application(applications)
+    _review(emails, status="applied")
+    _connect_local_user(reviews)
+    before = reviews.list_pending(owner_id="user-a", limit=10, cursor=None).items[0]
+    assert before.review_version == 0
+
+    saved = reviews.save_local_suggestion(
+        owner_id="user-a", message_id="msg-1", generation=1,
+        decision=_local_decision(), model="gemma4:latest",
+    )
+    assert saved.review_version == 1
+    with pytest.raises(ReviewVersionConflict):
+        reviews.resolve(
+            owner_id="user-a", message_id="msg-1",
+            resolution=ReviewResolution(
+                action="accept", expected_version=1,
+                expected_review_version=before.review_version,
+            ),
+            occurred_at=NOW,
+        )
+    assert applications.get(owner_id="user-a", application_id="app-1").status is ApplicationStatus.APPLIED
+
+    reviews.resolve(
+        owner_id="user-a", message_id="msg-1",
+        resolution=ReviewResolution(
+            action="accept", expected_version=1,
+            expected_review_version=saved.review_version,
+        ),
+        occurred_at=NOW,
+    )
+    assert applications.get(owner_id="user-a", application_id="app-1").status is ApplicationStatus.INTERVIEWING
+
+
 def test_pending_reviews_are_owner_scoped_paginated_and_hide_resolved(store) -> None:
     _, emails, reviews = store
     _review(emails, message_id="msg-1")
@@ -193,7 +228,7 @@ def test_reject_is_terminal_and_cross_owner_resolution_is_hidden(store) -> None:
         reviews.resolve(owner_id="user-b", message_id="msg-1", resolution=ReviewResolution(action="reject"), occurred_at=NOW)
     result = reviews.resolve(owner_id="user-a", message_id="msg-1", resolution=ReviewResolution(action="reject"), occurred_at=NOW)
     with pytest.raises(ReviewAlreadyResolved):
-        reviews.resolve(owner_id="user-a", message_id="msg-1", resolution=ReviewResolution(action="accept", expected_version=1), occurred_at=NOW)
+        reviews.resolve(owner_id="user-a", message_id="msg-1", resolution=ReviewResolution(action="accept", expected_version=1, expected_review_version=0), occurred_at=NOW)
 
     assert result.action == "reject"
     assert result.application_id is None
@@ -207,7 +242,7 @@ def test_accept_updates_application_and_links_email_to_history(store) -> None:
     result = reviews.resolve(
         owner_id="user-a",
         message_id="msg-1",
-        resolution=ReviewResolution(action="accept", expected_version=1),
+        resolution=ReviewResolution(action="accept", expected_version=1, expected_review_version=0),
         occurred_at=NOW,
     )
 

@@ -106,6 +106,7 @@ class DynamoReviewRepository:
         proposal = decision.ai_proposal
         saved = {
             **review,
+            "review_version": review.get("review_version", 0) + 1,
             "reason": "ai_proposal",
             "rule_reason": review["reason"],
             "origin": "ai",
@@ -185,6 +186,10 @@ class DynamoReviewRepository:
             raise ReviewNotFound
         if "resolution" in review:
             raise ReviewAlreadyResolved
+        if resolution.action == "accept" and (
+            review.get("review_version", 0) != resolution.expected_review_version
+        ):
+            raise ReviewVersionConflict
 
         if resolution.action == "reject":
             resolved = {
@@ -324,7 +329,12 @@ class DynamoReviewRepository:
                     ":version": self._serializer.serialize(expected_version)
                 },
             }}
-        self._transact(owner_id, message_id, resolved, [application_operation])
+        self._transact(
+            owner_id, message_id, resolved, [application_operation],
+            expected_review_version=(
+                resolution.expected_review_version if resolution.action == "accept" else None
+            ),
+        )
         return ReviewResolutionResult(
             message_id=message_id,
             action=resolution.action,
@@ -337,20 +347,28 @@ class DynamoReviewRepository:
         message_id: str,
         review: dict[str, Any],
         operations: list[dict[str, Any]],
+        expected_review_version: int | None = None,
     ) -> None:
+        condition = (
+            "attribute_exists(event_id) AND "
+            "attribute_not_exists(resolution) AND outcome = :review"
+        )
+        values = {":review": self._serializer.serialize("review_required")}
+        if expected_review_version == 0:
+            condition += " AND attribute_not_exists(review_version)"
+        elif expected_review_version is not None:
+            condition += " AND review_version = :expected_review_version"
+            values[":expected_review_version"] = self._serializer.serialize(
+                expected_review_version
+            )
         try:
             self._client.transact_write_items(TransactItems=[
                 *operations,
                 {"Put": {
                     "TableName": self._events_table,
                     "Item": self._encode(review),
-                    "ConditionExpression": (
-                        "attribute_exists(event_id) AND "
-                        "attribute_not_exists(resolution) AND outcome = :review"
-                    ),
-                    "ExpressionAttributeValues": {
-                        ":review": self._serializer.serialize("review_required")
-                    },
+                    "ConditionExpression": condition,
+                    "ExpressionAttributeValues": values,
                 }},
             ])
         except ClientError as error:
@@ -417,6 +435,7 @@ class DynamoReviewRepository:
         thread_id = item.get("thread_id")
         return ReviewItem(
             message_id=item["source_message_id"],
+            review_version=item.get("review_version", 0),
             reason=item["reason"],
             subject=item.get("subject"),
             sender=item.get("sender"),
