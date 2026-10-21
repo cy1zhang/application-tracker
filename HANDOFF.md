@@ -1,46 +1,40 @@
-# Handoff to Claude Code — review queue repair
+# Handoff to Claude Code — local Ollama review suggestions
 
-**Date:** 2026-10-20 (America/Indiana/Indianapolis)
+**Updated:** 2026-10-21 (America/Indiana/Indianapolis)
 
-**Branch:** `codex/milestone-8-resilient-sync`
-**Status:** Complete and deployed to development (2026-10-20). The sections below are the original handoff, kept as history; see Outcome.
+**Checkout:** `/Users/alexz/application-tracker`
 
-## Outcome
+**Branch:** `codex/local-ollama-review` (stacked on `codex/huggingface-provider`; unmerged)
 
-The review queue repair was finished, applied to the designated development mailbox, and deployed. Measured results, checks, and remaining limitations are in the `Results` section of `docs/superpowers/plans/2026-10-20-review-queue-cleanup.md`. Not merged; ask the user before merging.
+**State at handoff:** Implemented and deployed to the development stack; working tree clean after this handoff commit. Browser-to-saved-suggestion acceptance remains open.
 
-## User intent and authorization
+## User decision and scope
 
-The user opened the development app after a real Gmail import and objected to 809 nearly identical “Needs review” cards, a blank “Create from email” form, and a “Sync complete (0 messages processed)” banner. Explain that the 0 refers to the **repeat** incremental run; the first import processed 1,092 candidate messages. AI extraction is not implemented yet (Milestone 9), so this is still a rules-only classifier.
+The user chose a no-provider-fee local Ollama route after Hugging Face Inference Providers returned a credit-related HTTP 402. They chose **suggestions only**: the browser may analyze eligible pending reviews with a model running on the same Mac, but the model must never create, edit, accept, reject, or resolve an application. The user separately decides what to do with each saved suggestion. They approved Chrome's prompt allowing the hosted app to access local services on this device.
 
-The user selected **“Yes, fix and clean up”**: fix the false-positive rule, re-read existing pending messages from the designated connected Gmail mailbox, clear only items the corrected rule classifies as irrelevant, preserve uncertain items, and add sender/subject context to reviews. This authorizes the cleanup; do not ask the user to approve the same action again. Do not bulk reject or create applications. The user is switching chats and asked for this handoff.
+This is an explicit, tab-driven action, not a scheduled job. **No real-mailbox analysis batch has been started.** The last observed development review count was 386. The local path analyzes only the five existing AI escalation reasons and does not clear unrelated review items. Do not represent it as a repair for the whole review backlog. The earlier review-queue cleanup was completed and deployed; its measured results are in `docs/superpowers/plans/2026-10-20-review-queue-cleanup.md`.
 
-## Verified diagnosis
+## Implementation now on this branch
 
-- The development import completed with 1,092 candidate messages, 809 `review_required` outcomes, 283 `ignored` outcomes, and one existing application. The repeat incremental run completed with 0 new messages and unchanged stored counts. The Gmail checkpoint was saved and the active run cleared. See `docs/superpowers/plans/2026-10-20-resilient-sync.md`.
-- Pending reasons from a read-only DynamoDB aggregate: `conflicting_roles` 600, `subject_only_event` 85, `ambiguous_application` 65, `unparseable_message` 30, `unknown_stage` 15, `conflicting_requisitions` 8, `nonaffirmative_event` 3, `conflicting_cycles` 3.
-- A content-free read-only Gmail sample of 25 `conflicting_roles` items found 24 with no body or subject application-stage phrase and one with a body-stage phrase. A sample of 20 `ambiguous_application` items found 20 body-stage phrases; keep these pending unless individually proven irrelevant. No real email text or headers were printed or saved in Git.
-- Root cause: `classify_message` previously returned `conflicting_roles` when it found multiple role names **before** checking whether there was an application event. Review records also omitted subject/sender, and the UI rendered every item. The app intentionally does not auto-create an application without supported identity/status.
-- The first import paused several times; scheduled recovery resumed it once and operator-triggered recovery resumed later pauses. Queue handoff cause remains unknown. Do not claim fully unattended sync verification.
+- `backend/app/services/local_review_ai.py` prepares the bounded extraction prompt from the owner's pending review and Gmail message. On submission it re-fetches Gmail, validates model values and evidence quotes, reconciles candidates, and requests a **review-only** suggestion write.
+- `backend/app/api/reviews.py` exposes authenticated `GET /reviews/{message_id}/local-ai-input` and `POST /reviews/{message_id}/local-ai-suggestion`. Another owner's review is hidden; stale state, unavailable Gmail, and invalid output have distinct responses.
+- `backend/app/repositories/dynamodb_reviews.py` saves the suggestion conditionally with the Gmail connection generation and increments `review_version`. Accepting a proposal requires the review version the user saw, so a stale tab cannot accept a newly saved AI proposal. The API role has `dynamodb:ConditionCheckItem` on the Users table.
+- `frontend/src/reviews/localOllama.ts`, `LocalOllamaPanel.tsx`, and `ReviewQueue.tsx` provide model detection, sequential `/api/chat` calls to `127.0.0.1:11434`, Start/Stop, progress and errors, and a queue refresh. The browser does not receive the Gmail token or persist the prompt/model output in storage.
+- Local setup is in `docs/DEVELOPMENT.md`; design and checkboxes are in `docs/superpowers/specs/2026-10-21-local-ollama-review-design.md` and `docs/superpowers/plans/2026-10-21-local-ollama-review.md`.
 
-## Git and current implementation state
+Key commits: `08163a5` (API), `b7268a3` (browser flow), `53883ce` (disable model thinking for structured output), `de05505` (API IAM permission), `0a2edf3` (stale accept and batch refresh), `225e878` (verification record).
 
-- `2af0ea3 fix: ignore multi-role mail without application events` is committed. It adds synthetic regressions for no-event multi-role mail, real conflicting-role events, and a linked unknown-stage case. Focused tests: 42 passed; full backend suite: 216 passed, one existing Mangum deprecation warning; Ruff passed. This fix is **not yet deployed**.
-- The repair plan is `docs/superpowers/plans/2026-10-20-review-queue-cleanup.md`. Task 1 is checked. Tasks 2–4 remain.
-- Task 2 has partial code and tests for `ReviewItem.subject/sender`, persistence on review outcomes, API exposure, UI labels, reason copy, and an initial 20-card display with “Show more reviews.” These edits are included in the WIP handoff commit, but Task 2 is **not finished**.
-- Last focused backend check for Task 2: 3 tests passed. Last focused frontend check: 8 passed, 1 failed because the test searches for the bare sender while the UI displays `From: <sender>`. `npm run typecheck` failed because the `ReviewItem` fixture in `frontend/src/App.test.tsx` lacks the new `subject` and `sender` nullable fields. An attempted patch for these two test lines failed to apply, so they still need editing. No full suite was run after Task 2 edits.
-- The partial Task 2 code does **not** yet capture sender/subject for unparseable messages. Existing imported review items also still lack those fields until the backfill runs.
+## Verification boundary
 
-## Next steps
+- Full local checks passed: **803 backend tests**, **134 frontend tests**, Ruff, ESLint, TypeScript, Vite build, npm audit, SAM lint, and **14 offline deploy tests**. Focused frontend tests passed again after the final progress-copy edit. See the active plan for exact evidence and the one existing Mangum deprecation warning.
+- A synthetic local `gemma4:latest` request using the production prompt/schema returned a validated extraction. Ollama CORS accepted the exact Amplify origin and rejected an arbitrary origin; it remained bound to loopback.
+- The updated `app-tracker-dev` stack and Amplify frontend deployed successfully. The hosted app and API health returned HTTP 200; both new routes returned HTTP 401 without authentication. The deployed API role's Users-table `ConditionCheckItem` permission was checked in IAM.
+- In the signed-in hosted **Chrome** tab, **Needs review → Analyze with Ollama** listed `gemma4:latest` and enabled Start analysis after the owner approved local-service access. Development app: <https://main.d2pqicgf5e8l1p.amplifyapp.com/>.
+- **Still unverified:** Firefox access to Ollama and a hosted browser run that saves a suggestion from a synthetic Gmail message while leaving the application unchanged. The Firefox UI controller timed out; do not infer Firefox support from Chrome. No real Gmail message has been sent to Ollama in this feature test.
 
-1. Finish Task 2 test-first: fix the two test/fixture mismatches above, add a synthetic test and minimal header extraction for unparseable messages, then run focused and full backend/frontend checks. Commit the verified step and check it off in the plan.
-2. Implement Task 3 with synthetic tests and a preview-first operator command. Re-read pending messages using the connected account; only a **fresh corrected-rule `ignored`** decision may conditionally change `review_required` to `ignored`. Preserve the original reason/audit trail, scope by owner, guard the Gmail connection generation, and skip changed/resolved/unavailable items. Backfill bounded subject/sender on retained reviews. Print aggregate counts only. Preview and inspect counts before apply.
-3. Apply the authorized cleanup to the designated development mailbox; verify reason counts, application count/version, owner isolation, and that ambiguous messages remain. The user authorized this action in this chat; there is no need for another consent prompt.
-4. Run backend lint/tests, frontend lint/tests/typecheck/build, SAM lint, offline deploy tests, and diff checks. Deploy to the development stack, verify CloudFormation/hosted frontend and live aggregate counts. Record exact evidence in the plan and commit. Do not merge without asking the user.
+## What Claude Code should do next
 
-## Environment and privacy
-
-- Repo instructions: `AGENTS.md`. One driver edits; reviewer is read-only. Keep the branch scoped and commit verified steps. No real email content, sender, subject, credentials, or message IDs in Git, tests, logs, or terminal output.
-- The ignored `.env.deploy` holds the development AWS profile/region/stack and secret **names**. AWS profile `application-tracker-bootstrap` was authenticated through `aws login` in a Firefox Private Window; it may need renewal. Check identity and region before cloud writes.
-- Local boto3 needed `uv run --with "botocore[crt]==1.43.101" python ...` from `backend/` because the AWS CLI login-session provider requires CRT. This does not change `uv.lock`.
-- Development stack is `app-tracker-dev` in `us-east-1`; hosted app: https://main.d2pqicgf5e8l1p.amplifyapp.com. Real-mail diagnostics printed counts/categories only.
+1. Read `AGENTS.md`, the active local Ollama plan, `git status`, and recent commits. Treat this branch as the current driver checkout; avoid parallel edits in the same tree. The roadmap and `AGENTS.md` project-status paragraph predate this local Ollama branch.
+2. Close the remaining browser acceptance gap if a synthetic Gmail-backed review can be exercised safely. Record exactly which browser, API path, saved review, and unchanged application state were observed. If the test needs a real mailbox item, get an explicit user action before starting the batch; **do not click Start analysis on the 386-item queue as a smoke test**.
+3. Fix any concrete failure with a synthetic regression, run the relevant checks, and commit each verified change. Keep email bodies, tokens, personal sender/subject data, and message IDs out of Git, fixtures, logs, and terminal output.
+4. Ask the user before merging. The milestone branches are stacked and unmerged; inspect ancestry before any integration or rebase. The development deployment does not mean the branch is merged or production-ready.
