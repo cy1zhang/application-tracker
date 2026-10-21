@@ -4,12 +4,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_current_subject, get_review_repository
+from app.api.reviews import get_local_review_ai_service
 from app.domain.applications import ApplicationStatus
 from app.main import app
 from app.repositories.dynamodb_email import DynamoEmailRepository
 from app.repositories.dynamodb_reviews import DynamoReviewRepository
 from app.services.email_rules import RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
+from app.services.local_review_ai import LocalAiInput, LocalAiNotFound, LocalAiResult
 
 NOW = datetime(2026, 10, 18, tzinfo=UTC)
 
@@ -124,3 +126,49 @@ def test_review_list_exposes_ai_fields_only_to_the_owner(review_api, repository)
     assert rule_item["reason"] == "ambiguous_application"
     assert rule_item["ai_proposal"] is None
     assert rule_item["ai_note"] is None
+
+
+def test_local_ai_routes_use_authenticated_owner_and_return_suggestion(review_api):
+    class FakeLocalService:
+        def prepare(self, owner_id, message_id):
+            assert (owner_id, message_id) == ("user-a", "msg-1")
+            return LocalAiInput(
+                system_prompt="synthetic system", user_prompt="synthetic user",
+                format={"type": "object"}, generation=1,
+            )
+
+        def suggest(self, owner_id, message_id, *, generation, model, raw):
+            assert (owner_id, message_id, generation, model) == (
+                "user-a", "msg-1", 1, "gemma4:latest"
+            )
+            assert raw == {"synthetic": "output"}
+            return LocalAiResult(saved=True)
+
+    app.dependency_overrides[get_local_review_ai_service] = FakeLocalService
+    prepared = review_api.get("/reviews/msg-1/local-ai-input")
+    assert prepared.status_code == 200
+    assert prepared.json()["user_prompt"] == "synthetic user"
+    assert prepared.json()["generation"] == 1
+    saved = review_api.post("/reviews/msg-1/local-ai-suggestion", json={
+        "generation": 1, "model": "gemma4:latest",
+        "extraction": {"synthetic": "output"},
+    })
+    assert saved.status_code == 200
+    assert saved.json() == {"saved": True, "review": None}
+
+
+def test_local_ai_route_hides_other_owner_and_redacts_invalid_input(review_api):
+    class MissingService:
+        def prepare(self, owner_id, message_id):
+            raise LocalAiNotFound
+
+    app.dependency_overrides[get_local_review_ai_service] = MissingService
+    app.dependency_overrides[get_current_subject] = lambda: "user-b"
+    assert review_api.get("/reviews/msg-1/local-ai-input").status_code == 404
+
+    bad = review_api.post("/reviews/msg-1/local-ai-suggestion", json={
+        "generation": "private-email-fragment", "model": "gemma4:latest",
+        "extraction": {},
+    })
+    assert bad.status_code == 422
+    assert "private-email-fragment" not in bad.text

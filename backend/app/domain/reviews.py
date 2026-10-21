@@ -1,7 +1,7 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.domain.applications import (
     ApplicationPatch,
@@ -85,3 +85,11 @@ class ReviewResolutionResult(BaseModel):
     message_id: str
     action: Literal["accept", "edit", "reject", "attach", "create"]
     application_id: str | None = None
+
+
+class LocalAiSuggestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    generation: int = Field(ge=0)
+    model: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    extraction: dict[str, Any]

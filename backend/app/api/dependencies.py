@@ -106,6 +106,7 @@ def get_review_repository() -> DynamoReviewRepository:
         client=boto3.client("dynamodb", **client_options),
         applications_table=os.environ["APPLICATIONS_TABLE"],
         events_table=os.environ["EVENTS_TABLE"],
+        users_table=os.environ["USERS_TABLE"],
     )
 
 

@@ -2,6 +2,7 @@ import json
 from base64 import b64decode, urlsafe_b64encode
 from binascii import Error as Base64Error
 from datetime import datetime
+from enum import Enum
 from typing import Any
 from urllib.parse import quote
 
@@ -16,6 +17,11 @@ from app.domain.reviews import (
     ReviewResolutionResult,
 )
 from app.repositories.dynamodb import APPLICATION_FIELDS, _stored_value, field_times_for
+from app.services.email_rules import RuleDecision
+
+_PROPOSAL_FIELDS = (
+    "company", "role", "employment_type", "season", "year", "status", "requisition_id",
+)
 
 
 class ReviewNotFound(Exception):
@@ -39,10 +45,14 @@ class InvalidReviewResolution(Exception):
 
 
 class DynamoReviewRepository:
-    def __init__(self, *, client, applications_table: str, events_table: str) -> None:
+    def __init__(
+        self, *, client, applications_table: str, events_table: str,
+        users_table: str | None = None,
+    ) -> None:
         self._client = client
         self._applications_table = applications_table
         self._events_table = events_table
+        self._users_table = users_table
         self._serializer = TypeSerializer()
         self._deserializer = TypeDeserializer()
 
@@ -72,6 +82,94 @@ class DynamoReviewRepository:
             else None
         )
         return ReviewPage(items=items, next_cursor=next_cursor)
+
+    def get_pending(self, *, owner_id: str, message_id: str) -> dict[str, Any] | None:
+        review = self._get_review(owner_id, message_id)
+        if review is None or review.get("outcome") != "review_required":
+            return None
+        return review
+
+    def save_local_suggestion(
+        self, *, owner_id: str, message_id: str, generation: int,
+        decision: RuleDecision, model: str,
+    ) -> ReviewItem:
+        review = self.get_pending(owner_id=owner_id, message_id=message_id)
+        if review is None:
+            raise ReviewNotFound
+        if "resolution" in review:
+            raise ReviewAlreadyResolved
+        if "ai_proposal" in review or review["reason"] != decision.rule_reason:
+            raise ReviewVersionConflict
+        if self._users_table is None or decision.ai_proposal is None:
+            raise InvalidReviewResolution
+
+        proposal = decision.ai_proposal
+        saved = {
+            **review,
+            "reason": "ai_proposal",
+            "rule_reason": review["reason"],
+            "origin": "ai",
+            "ai_provider": "ollama",
+            "ai_model": model,
+            "ai_proposal": {
+                **{
+                    field: value.value if isinstance(value, Enum) else value
+                    for field in _PROPOSAL_FIELDS
+                    if (value := getattr(proposal, field)) is not None
+                },
+                "evidence": dict(proposal.evidence),
+                "status_in_subject_only": proposal.status_in_subject_only,
+            },
+            "evidence": decision.evidence[:500],
+        }
+        for field, value in (
+            ("application_id", decision.application_id),
+            ("proposed_status", decision.status),
+            ("proposed_season", decision.season),
+            ("proposed_year", decision.year),
+            ("requisition_id", decision.requisition_id),
+        ):
+            if value is None:
+                saved.pop(field, None)
+            else:
+                saved[field] = value.value if isinstance(value, Enum) else value
+        try:
+            self._client.transact_write_items(TransactItems=[
+                {"Put": {
+                    "TableName": self._events_table,
+                    "Item": self._encode(saved),
+                    "ConditionExpression": (
+                        "attribute_exists(event_id) AND outcome = :review "
+                        "AND reason = :reason AND attribute_not_exists(resolution) "
+                        "AND attribute_not_exists(ai_proposal)"
+                    ),
+                    "ExpressionAttributeValues": {
+                        ":review": self._serializer.serialize("review_required"),
+                        ":reason": self._serializer.serialize(review["reason"]),
+                    },
+                }},
+                {"ConditionCheck": {
+                    "TableName": self._users_table,
+                    "Key": self._encode({"owner_id": owner_id}),
+                    "ConditionExpression": (
+                        "generation = :generation AND attribute_exists(encrypted_token) "
+                        "AND attribute_not_exists(deletion_state)"
+                    ),
+                    "ExpressionAttributeValues": {
+                        ":generation": self._serializer.serialize(generation),
+                    },
+                }},
+            ])
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            latest = self._get_review(owner_id, message_id)
+            if latest is None:
+                raise ReviewNotFound from error
+            if "resolution" in latest:
+                raise ReviewAlreadyResolved from error
+            raise ReviewVersionConflict from error
+        return self._as_review(saved)
 
     def resolve(
         self,

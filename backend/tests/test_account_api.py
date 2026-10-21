@@ -237,6 +237,8 @@ GUARDED = [
     ("DELETE", "/applications/x", None),
     ("POST", "/applications/x/merge", {}),
     ("GET", "/reviews", None),
+    ("GET", "/reviews/m/local-ai-input", None),
+    ("POST", "/reviews/m/local-ai-suggestion", {}),
     ("POST", "/reviews/m/resolve", {}),
     ("GET", "/syncs/latest", None),
     ("POST", "/syncs", None),

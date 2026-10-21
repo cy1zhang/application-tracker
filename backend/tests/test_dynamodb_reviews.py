@@ -36,7 +36,10 @@ def store():
             aws_access_key_id="testing",
             aws_secret_access_key="testing",
         )
-        create_tables(client, applications_table="Applications", events_table="Events")
+        create_tables(
+            client, applications_table="Applications", events_table="Events",
+            users_table="Users",
+        )
         applications = DynamoApplicationRepository(
             client=client, applications_table="Applications", events_table="Events"
         )
@@ -44,7 +47,8 @@ def store():
             client=client, applications_table="Applications", events_table="Events"
         )
         reviews = DynamoReviewRepository(
-            client=client, applications_table="Applications", events_table="Events"
+            client=client, applications_table="Applications", events_table="Events",
+            users_table="Users",
         )
         yield applications, emails, reviews
 
@@ -78,6 +82,85 @@ def _review(emails, owner="user-a", message_id="msg-1", app_id="app-1", status="
             evidence="interview invitation",
         ),
     )
+
+
+def _local_decision():
+    return RuleDecision(
+        outcome="review_required", reason="ai_proposal", origin="ai",
+        rule_reason="ambiguous_application", application_id="app-1",
+        status=ApplicationStatus.INTERVIEWING,
+        evidence="invite you to interview",
+        ai_proposal=ValidatedExtraction(
+            company=None, role=None, employment_type=None, season=None,
+            year=None, status=ApplicationStatus.INTERVIEWING,
+            requisition_id=None, evidence={"status": "invite you to interview"},
+            status_in_subject_only=False,
+        ),
+    )
+
+
+def _connect_local_user(reviews, generation=1):
+    reviews._client.put_item(TableName="Users", Item={
+        "owner_id": {"S": "user-a"},
+        "generation": {"N": str(generation)},
+        "encrypted_token": {"S": "synthetic-token"},
+    })
+
+
+def test_local_suggestion_is_review_only_and_cannot_overwrite(store):
+    applications, emails, reviews = store
+    _application(applications)
+    _review(emails)
+    _connect_local_user(reviews)
+
+    saved = reviews.save_local_suggestion(
+        owner_id="user-a", message_id="msg-1", generation=1,
+        decision=_local_decision(), model="gemma4:latest",
+    )
+
+    assert saved.reason == "ai_proposal"
+    assert saved.rule_reason == "ambiguous_application"
+    assert saved.ai_provider == "ollama"
+    assert saved.ai_proposal.status is ApplicationStatus.INTERVIEWING
+    assert applications.get(owner_id="user-a", application_id="app-1").status is ApplicationStatus.APPLIED
+    with pytest.raises(ReviewVersionConflict):
+        reviews.save_local_suggestion(
+            owner_id="user-a", message_id="msg-1", generation=1,
+            decision=_local_decision(), model="gemma4:latest",
+        )
+
+
+def test_local_suggestion_rejects_other_owner_and_changed_gmail_generation(store):
+    _, emails, reviews = store
+    _review(emails)
+    _connect_local_user(reviews, generation=2)
+
+    assert reviews.get_pending(owner_id="user-b", message_id="msg-1") is None
+    with pytest.raises(ReviewNotFound):
+        reviews.save_local_suggestion(
+            owner_id="user-b", message_id="msg-1", generation=2,
+            decision=_local_decision(), model="gemma4:latest",
+        )
+    with pytest.raises(ReviewVersionConflict):
+        reviews.save_local_suggestion(
+            owner_id="user-a", message_id="msg-1", generation=1,
+            decision=_local_decision(), model="gemma4:latest",
+        )
+
+
+def test_local_suggestion_rejects_review_resolved_during_inference(store):
+    _, emails, reviews = store
+    _review(emails)
+    _connect_local_user(reviews)
+    reviews.resolve(
+        owner_id="user-a", message_id="msg-1",
+        resolution=ReviewResolution(action="reject"), occurred_at=NOW,
+    )
+    with pytest.raises(ReviewAlreadyResolved):
+        reviews.save_local_suggestion(
+            owner_id="user-a", message_id="msg-1", generation=1,
+            decision=_local_decision(), model="gemma4:latest",
+        )
 
 
 def test_pending_reviews_are_owner_scoped_paginated_and_hide_resolved(store) -> None:

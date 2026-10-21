@@ -29,9 +29,13 @@ Providers = Annotated[list[AiProvider], Depends(get_ai_available_providers)]
 async def request_validation_error_handler(
     request: Request, error: RequestValidationError
 ) -> Response:
-    if not request.url.path.startswith("/settings/ai"):
+    path = request.url.path
+    if not (
+        path.startswith("/settings/ai")
+        or (path.startswith("/reviews/") and path.endswith("/local-ai-suggestion"))
+    ):
         return await default_validation_handler(request, error)
-    # The body of /settings/ai carries an API key; never echo submitted values.
+    # Key-bearing and model-output bodies may contain private text; never echo them.
     detail = [
         {"type": item["type"], "loc": list(item["loc"]), "msg": item["msg"]}
         for item in error.errors()
