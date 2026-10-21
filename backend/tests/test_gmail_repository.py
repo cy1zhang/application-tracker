@@ -107,3 +107,27 @@ def test_disconnect_invalidates_in_flight_consent(repository) -> None:
         repository.save_connection("owner-a", 0, "a@example.test", TOKEN, NOW)
 
     assert repository.get_connection("owner-a").email is None
+
+
+def test_connection_ignores_ai_only_users_item_and_connect_succeeds(repository) -> None:
+    repository._client.put_item(
+        TableName="Users",
+        Item={
+            "owner_id": {"S": "owner-a"},
+            "ai_provider": {"S": "openai"},
+            "ai_settings_version": {"N": "1"},
+        },
+    )
+
+    connection = repository.get_connection("owner-a")
+    assert (connection.generation, connection.email, connection.encrypted_token) == (
+        0,
+        None,
+        None,
+    )
+    assert repository.get_active("owner-a", 0) is None
+
+    repository.save_connection("owner-a", 0, "a@example.test", TOKEN, NOW)
+
+    assert repository.get_connection("owner-a").generation == 1
+    assert repository.get_connection("owner-a").email == "a@example.test"

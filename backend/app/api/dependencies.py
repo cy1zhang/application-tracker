@@ -5,9 +5,11 @@ from typing import Annotated, Any
 import boto3
 from fastapi import Depends, HTTPException, Request
 
+from app.domain.ai import AiProvider
 from app.domain.gmail import TrackerIdentity
 from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb import DynamoApplicationRepository
+from app.repositories.dynamodb_ai import DynamoAiSettingsRepository
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_reviews import DynamoReviewRepository
 from app.repositories.dynamodb_sync import DynamoSyncRepository
@@ -125,6 +127,24 @@ def get_gmail_repository() -> DynamoGmailRepository:
         users_table=os.environ["USERS_TABLE"],
         oauth_states_table=os.environ["OAUTH_STATES_TABLE"],
     )
+
+
+def get_ai_settings_repository() -> DynamoAiSettingsRepository:
+    client_options = {}
+    if region := os.getenv("AWS_REGION"):
+        client_options["region_name"] = region
+    return DynamoAiSettingsRepository(
+        client=boto3.client("dynamodb", **client_options),
+        users_table=os.environ["USERS_TABLE"],
+    )
+
+
+def get_ai_available_providers() -> list[AiProvider]:
+    return [
+        provider
+        for provider in AiProvider
+        if os.getenv(f"AI_MODEL_{provider.name}", "").strip()
+    ]
 
 
 def get_credential_cipher() -> CredentialCipher:

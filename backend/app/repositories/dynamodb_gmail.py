@@ -70,7 +70,7 @@ class DynamoGmailRepository:
             return GmailConnection(generation=0, email=None, encrypted_token=None)
         item = self._decode(response["Item"])
         return GmailConnection(
-            generation=int(item["generation"]),
+            generation=int(item.get("generation", 0)),
             email=item.get("email"),
             encrypted_token=item.get("encrypted_token"),
             reconnect_required=bool(item.get("reconnect_required", False)),
@@ -95,7 +95,7 @@ class DynamoGmailRepository:
                     "latest_run_id, reconnect_required"
                 ),
                 ConditionExpression=(
-                    "attribute_not_exists(owner_id) OR generation = :expected"
+                    "attribute_not_exists(generation) OR generation = :expected"
                 ),
                 ExpressionAttributeValues={
                     ":expected": self._serializer.serialize(expected_generation),
