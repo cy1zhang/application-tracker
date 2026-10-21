@@ -55,13 +55,27 @@
 
 - [x] Add failing synthetic tests for ignored, ambiguous, unavailable, resolved, and connection-generation-change cases.
 - [x] Implement the command and test it with moto and a fake Gmail fetcher; commit.
-- [ ] Preview the designated mailbox and inspect aggregate counts and pending-run state.
-- [ ] Apply the reviewed cleanup; verify new reason counts, preserved audit items, and zero unintended application changes.
+- [x] Preview the designated mailbox and inspect aggregate counts and pending-run state.
+- [x] Apply the reviewed cleanup; verify new reason counts, preserved audit items, and zero unintended application changes.
 
 ### Task 4: Deploy and verify
 
 **Files:** deployment and plan status only.
 
-- [ ] Run backend lint/tests, frontend lint/tests/typecheck/build, SAM lint, offline deploy tests, and `git diff --check`.
-- [ ] Deploy the reviewed code to development, verify stack and hosted asset, and re-read owner-scoped aggregate review/application counts.
-- [ ] Record the measured results and limitations; commit with a clean worktree.
+- [x] Run backend lint/tests, frontend lint/tests/typecheck/build, SAM lint, offline deploy tests, and `git diff --check`.
+- [x] Deploy the reviewed code to development, verify stack and hosted asset, and re-read owner-scoped aggregate review/application counts.
+- [x] Record the measured results and limitations; commit with a clean worktree.
+
+## Results
+
+Measured 2026-10-20 (ET) on the designated development mailbox; aggregate counts only.
+
+- **Preview:** scanned 809 pending; the only ignore reason was `conflicting_roles->no_event` (424); would backfill 382; 3 transient fetch failures; 0 unavailable; 0 retained items newly actionable.
+- **Apply run 1:** ignored 424, headers backfilled 381, fetch_failed 4, skipped_changed 0, stopped_generation_changed 0.
+- **Apply run 2 (idempotent retry):** scanned 385, ignored 1, headers backfilled 3, fetch_failed 1. One message repeatedly fails to fetch and stays pending (likely an oversized response; unconfirmed).
+- **After:** outcomes ignored 708 / review_required 384 (was 283 / 809). Pending by reason: ambiguous_application 65 (unchanged), conflicting_cycles 3, conflicting_requisitions 8, conflicting_roles 175 (was 600), nonaffirmative_event 3, subject_only_event 85, unknown_stage 15, unparseable_message 30. All 384 pending items now have subject and sender. 425 items carry `rechecked_at` with `previous_outcome`/`previous_reason` preserved.
+- **Applications:** count 1; a hash of application id/version/deleted state was identical before and after.
+- **Isolation:** only one owner exists in development, so cross-owner isolation is verified by `test_recheck_reviews`, not live.
+- **Pre-deploy checks:** backend Ruff pass, pytest 237 passed (one existing Mangum deprecation warning); frontend `npm ci`, lint, test (84 passed), typecheck, build pass; `npm audit` first failed on a new vite 7.3.6 launch-editor advisory, fixed by pinning vite 7.3.7 (e36577d), then 0 vulnerabilities; `sam validate --lint` pass; `scripts/test_deploy.py` 7 OK; `git diff --check` clean.
+- **Deploy:** `./scripts/deploy.sh` succeeded; `app-tracker-dev` UPDATE_COMPLETE at 2026-10-21T01:27:39Z; api, sync-worker, and sync-dispatcher Lambdas updated. The hosted Amplify app serves `assets/index-GKDygV4e.js`, matching the local build and containing the "Show more reviews" UI. The corrected classifier (2af0ea3) is live for new mail.
+- **Not verified:** the live review UI was not exercised in a signed-in browser (no interactive auth); the queue handoff cause for earlier import pauses remains unknown.

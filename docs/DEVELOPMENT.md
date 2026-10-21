@@ -357,6 +357,13 @@ incremental update, revoked authorization and reconnect, and dead-letter alarm
 activation still need controlled live checks. Inspect Lambda logs for
 identifiers and counts only; do not log email bodies or credentials.
 
+On 2026-10-20 the review queue was cleaned up and redeployed to development:
+the corrected classifier is live, `scripts.recheck_reviews` moved 424 false-positive
+`conflicting_roles` reviews to `ignored` (pending 809 to 384, all with
+sender/subject), and the application record was unchanged. The live review UI
+was not exercised in a signed-in browser. Details are in
+`docs/superpowers/plans/2026-10-20-review-queue-cleanup.md`.
+
 For a repeat deploy, run the same script after making code changes. Lambda
 logs are in CloudWatch Logs. To remove the stack, run `sam delete --stack-name
 app-tracker-dev --region us-east-1 --profile application-tracker-bootstrap`.
