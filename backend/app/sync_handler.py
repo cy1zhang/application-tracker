@@ -6,10 +6,14 @@ from uuid import uuid4
 
 import boto3
 
+from app.domain.ai import AiProvider
 from app.repositories.dynamodb import DynamoApplicationRepository
+from app.repositories.dynamodb_ai import DynamoAiSettingsRepository
 from app.repositories.dynamodb_email import DynamoEmailRepository
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_sync import DynamoSyncRepository, StaleSyncRun
+from app.services.ai_escalation import AiEscalator
+from app.services.ai_providers import create_provider
 from app.services.credential_crypto import CredentialCipher
 from app.services.gmail_fetch import GmailFetchClient
 from app.services.google_oauth import GoogleOAuthClient, OAuthReconnectRequired
@@ -42,7 +46,27 @@ def _dependencies():
             events_table=os.environ["EVENTS_TABLE"],
         ),
         "publisher": boto3.client("sqs"),
+        "ai_settings": DynamoAiSettingsRepository(
+            client=client, users_table=os.environ["USERS_TABLE"]
+        ),
     }
+
+
+def _escalator_factory(dependencies, owner_id, generation, run_id):
+    settings = dependencies.get("ai_settings")
+    if settings is None:
+        return None
+    models = {
+        AiProvider.OPENAI: os.environ.get("AI_MODEL_OPENAI", ""),
+        AiProvider.ANTHROPIC: os.environ.get("AI_MODEL_ANTHROPIC", ""),
+        AiProvider.GEMINI: os.environ.get("AI_MODEL_GEMINI", ""),
+    }
+    return lambda: AiEscalator(
+        owner_id=owner_id, generation=generation, run_id=run_id,
+        settings=settings, cipher=dependencies["cipher"],
+        provider_factory=create_provider, models=models,
+        clock=lambda: datetime.now(UTC),
+    )
 
 
 def handler(event, context):
@@ -68,7 +92,13 @@ def handler(event, context):
                 owner_id=owner_id, run_id=run_id, generation=generation,
                 lease_id=lease_id, now=now, emails=emails,
                 queue_url=os.environ["SYNC_QUEUE_URL"],
-                **{key: value for key, value in dependencies.items() if key != "client"},
+                escalator_factory=_escalator_factory(
+                    dependencies, owner_id, generation, run_id
+                ),
+                **{
+                    key: value for key, value in dependencies.items()
+                    if key not in {"client", "ai_settings"}
+                },
             )
         except StaleSyncRun:
             # A disconnect, completed run, or superseded lease made this delivery obsolete.

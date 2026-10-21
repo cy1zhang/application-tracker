@@ -88,6 +88,17 @@ class ApplicationCandidate:
 
 
 @dataclass(frozen=True)
+class AiCall:
+    """Provenance of an AI decision; ``rule_decision`` is the fallback if the
+    AI settings change before the decision can be committed."""
+
+    provider: str
+    model: str
+    settings_version: int
+    rule_decision: "RuleDecision"
+
+
+@dataclass(frozen=True)
 class RuleDecision:
     outcome: Outcome
     reason: str
@@ -100,6 +111,8 @@ class RuleDecision:
     origin: Literal["rules", "ai"] = "rules"
     rule_reason: str | None = None
     ai_proposal: "ValidatedExtraction | None" = None
+    ai_note: str | None = None
+    ai_call: AiCall | None = None
 
 
 def classify_message(
