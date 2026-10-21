@@ -417,3 +417,40 @@ test("a global stop does not remember the interrupted review as failed", async (
   fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
   await waitFor(() => expect(vi.mocked(getLocalAiInput).mock.calls.map(([id]) => id)).toEqual(["msg-1", "msg-2"]));
 });
+
+test("the review limit defaults to 5, is capped by the eligible count and caps processing", async () => {
+  await openPanel(queue(7));
+  const limit = screen.getByLabelText("Reviews to analyze");
+  expect(limit).toHaveValue(5);
+  expect(limit).toHaveAttribute("min", "1");
+  expect(limit).toHaveAttribute("max", "7");
+  vi.mocked(runLocalModel).mockResolvedValue({ status: "interviewing" });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+
+  expect(await screen.findByText(/5 suggested/)).toBeInTheDocument();
+  expect(vi.mocked(getLocalAiInput).mock.calls.map(([id]) => id)).toEqual(["msg-1", "msg-2", "msg-3", "msg-4", "msg-5"]);
+});
+
+test("a limit of 1 analyzes exactly one review", async () => {
+  await openPanel(queue(3));
+  vi.mocked(runLocalModel).mockResolvedValue({ status: "interviewing" });
+  fireEvent.change(screen.getByLabelText("Reviews to analyze"), { target: { value: "1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+
+  expect(await screen.findByText(/1 suggested/)).toBeInTheDocument();
+  expect(getLocalAiInput).toHaveBeenCalledTimes(1);
+  expect(getLocalAiInput).toHaveBeenCalledWith("msg-1", expect.anything());
+});
+
+test("the limit counts only reviews that have not failed before", async () => {
+  await openPanel(queue(3));
+  vi.mocked(runLocalModel).mockRejectedValueOnce(new Error("Ollama returned invalid JSON.")).mockResolvedValue({ status: "interviewing" });
+  fireEvent.change(screen.getByLabelText("Reviews to analyze"), { target: { value: "1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await screen.findByText(/0 suggested, 0 skipped, 1 failed/);
+  vi.mocked(getLocalAiInput).mockClear();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await waitFor(() => expect(getLocalAiInput).toHaveBeenCalledTimes(1));
+  expect(getLocalAiInput).toHaveBeenCalledWith("msg-2", expect.anything());
+});

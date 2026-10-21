@@ -41,6 +41,8 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
   const [running, setRunning] = useState(false);
   const [counts, setCounts] = useState<{ suggested: number; skipped: number; failed: number } | null>(null);
   const [current, setCurrent] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [limit, setLimit] = useState("5");
   const [runError, setRunError] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
   const failedIds = useRef(new Set<string>());
@@ -65,14 +67,17 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
 
   async function start() {
     if (!model || controller.current) return;
-    const pending = reviews.filter(
+    const candidates = reviews.filter(
       (item) => ELIGIBLE_REASONS.has(item.reason) && !item.ai_proposal && !failedIds.current.has(item.message_id),
     );
-    const result = { suggested: 0, skipped: reviews.length - pending.length, failed: 0 };
+    const wanted = Math.min(Math.max(Math.floor(Number(limit)) || 1, 1), Math.max(eligibleCount, 1));
+    const pending = candidates.slice(0, wanted);
+    const result = { suggested: 0, skipped: reviews.length - candidates.length, failed: 0 };
     const abort = new AbortController();
     controller.current = abort;
     setCounts({ ...result });
     setCurrent(0);
+    setTotal(pending.length);
     setRunError(null);
     setRunning(true);
     for (const [index, item] of pending.entries()) {
@@ -131,11 +136,15 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
           {models.map((name) => <option value={name} key={name}>{name}</option>)}
         </select></label>
       )}
+      <label>Reviews to analyze <input
+        type="number" min={1} max={Math.max(eligibleCount, 1)} value={limit}
+        onChange={(event) => setLimit(event.target.value)} disabled={running}
+      /></label>
       <div className="review-actions">
         <button type="button" disabled={!model || running} onClick={() => void start()}>Start analysis</button>
         {running && <button type="button" onClick={() => controller.current?.abort()}>Stop</button>}
       </div>
-      {running && <p role="status">Analyzing {current} of {eligibleCount} eligible reviews…</p>}
+      {running && <p role="status">Analyzing {current} of {total} reviews…</p>}
       {counts && <p role="status">{counts.suggested} suggested, {counts.skipped} skipped, {counts.failed} failed</p>}
       {counts && <p className="muted">Skipped includes reviews outside the AI reasons, reviews that already have a suggestion, and reviews that failed earlier in this session. Failed reviews are not retried until you reload this page.</p>}
       {runError && <p role="alert" className="review-error">{runError}</p>}

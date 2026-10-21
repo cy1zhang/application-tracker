@@ -148,8 +148,13 @@ select {
   margin: 0;
 }
 
-.local-ollama select {
+.local-ollama select,
+.local-ollama input[type="number"] {
   margin-left: 8px;
+}
+
+.local-ollama input[type="number"] {
+  width: 5em;
 }
 
 .review-item,
