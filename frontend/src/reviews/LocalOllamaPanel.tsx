@@ -39,11 +39,12 @@ function globalStopMessage(caught: unknown): string | null {
 
 interface Props {
   reviews: ReviewItem[];
+  failedIds: Set<string>;
   onSuggested: (review: ReviewItem) => void;
   onFinished: () => Promise<void>;
 }
 
-export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
+export function LocalOllamaPanel({ reviews, failedIds, onSuggested, onFinished }: Props) {
   const [models, setModels] = useState<string[]>([]);
   const [model, setModel] = useState("");
   const [connectionError, setConnectionError] = useState(false);
@@ -55,7 +56,6 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
   const [limit, setLimit] = useState("5");
   const [runError, setRunError] = useState<string | null>(null);
   const controller = useRef<AbortController | null>(null);
-  const failedIds = useRef(new Set<string>());
   const eligibleCount = reviews.filter((item) => ELIGIBLE_REASONS.has(item.reason) && !item.ai_proposal).length;
 
   useEffect(() => {
@@ -78,7 +78,7 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
   async function start() {
     if (!model || controller.current) return;
     const candidates = reviews.filter(
-      (item) => ELIGIBLE_REASONS.has(item.reason) && !item.ai_proposal && !failedIds.current.has(item.message_id),
+      (item) => ELIGIBLE_REASONS.has(item.reason) && !item.ai_proposal && !failedIds.has(item.message_id),
     );
     const wanted = Math.min(Math.max(Math.floor(Number(limit)) || 1, 1), Math.max(eligibleCount, 1));
     const pending = candidates.slice(0, wanted);
@@ -118,7 +118,7 @@ export function LocalOllamaPanel({ reviews, onSuggested, onFinished }: Props) {
           result.skipped++;
         } else {
           result.failed++;
-          if (isReviewSpecificFailure(caught)) failedIds.current.add(item.message_id);
+          if (isReviewSpecificFailure(caught)) failedIds.add(item.message_id);
         }
       }
       setCounts({ ...result });

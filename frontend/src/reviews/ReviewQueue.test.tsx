@@ -498,3 +498,42 @@ test.each([
   await waitFor(() => expect(screen.getByRole("button", { name: "Start analysis" })).toBeEnabled());
   expect(getLocalAiInput).not.toHaveBeenCalledWith("msg-1", expect.anything());
 });
+
+test("a failed review is still skipped after the panel is closed and reopened", async () => {
+  await openPanel(queue(3));
+  vi.mocked(runLocalModel).mockRejectedValueOnce(new Error("Ollama returned invalid JSON.")).mockResolvedValue({ status: "interviewing" });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  expect(await screen.findByText(/2 suggested, 0 skipped, 1 failed/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Analyze with Ollama" }));
+  expect(screen.queryByRole("button", { name: "Start analysis" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Analyze with Ollama" }));
+  await screen.findByRole("option", { name: "gemma4:latest" });
+  vi.mocked(getLocalAiInput).mockClear();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start analysis" })).toBeEnabled());
+  expect(getLocalAiInput).not.toHaveBeenCalledWith("msg-1", expect.anything());
+});
+
+test("a 404 counts as skipped and is not remembered as failed", async () => {
+  await openPanel(queue(3));
+  vi.mocked(runLocalModel).mockResolvedValue({ status: "interviewing" });
+  vi.mocked(getLocalAiInput).mockRejectedValueOnce(new ApiError(404, "Review not found"));
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  expect(await screen.findByText(/2 suggested, 1 skipped, 0 failed/)).toBeInTheDocument();
+  vi.mocked(getLocalAiInput).mockClear();
+
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await waitFor(() => expect(getLocalAiInput).toHaveBeenCalledWith("msg-1", expect.anything()));
+});
+
+test.each(["0", ""])("a limit of %j analyzes exactly one review", async (value) => {
+  await openPanel(queue(3));
+  vi.mocked(runLocalModel).mockResolvedValue({ status: "interviewing" });
+  fireEvent.change(screen.getByLabelText("Reviews to analyze"), { target: { value } });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+
+  expect(await screen.findByText(/1 suggested/)).toBeInTheDocument();
+  expect(getLocalAiInput).toHaveBeenCalledTimes(1);
+});

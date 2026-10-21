@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError, getApplication, resolveReview } from "../api/client";
 import type {
@@ -63,6 +63,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
   const [busy, setBusy] = useState(false);
   const [linkedApplications, setLinkedApplications] = useState<Record<string, Application>>({});
   const [showLocalAi, setShowLocalAi] = useState(false);
+  const localFailedIds = useRef(new Set<string>());
   const [localSuggestions, setLocalSuggestions] = useState<Record<string, ReviewItem>>({});
   const displayedReviews = reviews.map((review) => localSuggestions[review.message_id] ?? review);
 
@@ -140,7 +141,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
         <span className="review-count">{reviews.length} pending</span>
       </div>
       {reviews.length > 0 && <button type="button" onClick={() => setShowLocalAi((shown) => !shown)}>Analyze with Ollama</button>}
-      {showLocalAi && <LocalOllamaPanel reviews={displayedReviews} onSuggested={(review) => setLocalSuggestions((current) => ({ ...current, [review.message_id]: review }))} onFinished={onResolved} />}
+      {showLocalAi && <LocalOllamaPanel reviews={displayedReviews} failedIds={localFailedIds.current} onSuggested={(review) => setLocalSuggestions((current) => ({ ...current, [review.message_id]: review }))} onFinished={onResolved} />}
       {error && <p role="alert" className="review-error">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       {reviews.length === 0 && <p className="empty">No emails need review.</p>}
