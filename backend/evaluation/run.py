@@ -279,7 +279,7 @@ class _Harness:
 
     @staticmethod
     def _update_correct(expected, stored, ids, before, after) -> bool:
-        """Right application, and every changed field equals the label.
+        """Right application, the labeled status, and every changed field equals the label.
 
         A cycle the email states but the update leaves unset is incomplete, not
         wrong: the PRD keeps uncertain fields unknown.
@@ -287,6 +287,9 @@ class _Harness:
         if stored.outcome != "applied" or expected["outcome"] != "applied":
             return False
         if stored.application_id != ids[expected["application"]]:
+            return False
+        label = expected.get("status")
+        if label is not None and _value(after[expected["application"]], "status") != label:
             return False
         for ref, item in after.items():
             changed = {n for n in _CHECKED if _value(item, n) != _value(before[ref], n)}

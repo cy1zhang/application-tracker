@@ -235,6 +235,29 @@ def test_wrong_status_updates_trip_check(baseline, monkeypatch) -> None:
     assert any("precision" in breach for breach in breaches)
 
 
+def test_cycle_only_update_on_a_status_change_scenario_is_incorrect() -> None:
+    from types import SimpleNamespace
+
+    def app(status, season=None, year=None):
+        return SimpleNamespace(
+            company="Acme", role="Intern", role_type=None, season=season,
+            year=year, status=status, application_date=None,
+        )
+
+    expected = {
+        "outcome": "applied", "application": "a", "status": "interviewing",
+        "season": "summer", "year": 2026,
+    }
+    stored = SimpleNamespace(outcome="applied", application_id="id-a")
+    before = {"a": app("applied")}
+    ids = {"a": "id-a"}
+    degraded = {"a": app("applied", "summer", 2026)}
+    correct = {"a": app("interviewing", "summer", 2026)}
+    check = runner._Harness._update_correct
+    assert check(expected, stored, ids, before, degraded) is False
+    assert check(expected, stored, ids, before, correct) is True
+
+
 def test_provider_returning_unsupported_status_with_validation_off_trips_check(
     baseline, monkeypatch
 ) -> None:
