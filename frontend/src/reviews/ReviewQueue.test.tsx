@@ -279,3 +279,23 @@ test("stops after an Ollama failure and can retry only unsaved reviews", async (
   await waitFor(() => expect(getLocalAiInput).toHaveBeenCalledTimes(3));
   expect(await screen.findByText(/0 suggested, 2 skipped, 0 failed/)).toBeInTheDocument();
 });
+
+test("Stop aborts the current local request before the next review", async () => {
+  const second = { ...review, message_id: "msg-2" };
+  vi.mocked(listLocalModels).mockResolvedValue(["gemma4:latest"]);
+  vi.mocked(getSettings).mockResolvedValue({ enabled: false } as Awaited<ReturnType<typeof getSettings>>);
+  vi.mocked(getLocalAiInput).mockResolvedValue({ generation: 1, system_prompt: "system", user_prompt: "email", format: {} });
+  vi.mocked(runLocalModel).mockImplementationOnce((_model, _input, signal) => new Promise((_resolve, reject) => {
+    signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+  }));
+  render(<ReviewQueue reviews={[review, second]} applications={[]} onResolved={vi.fn()} onBack={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Analyze with Ollama" }));
+  await screen.findByRole("option", { name: "gemma4:latest" });
+  fireEvent.click(screen.getByRole("button", { name: "Start analysis" }));
+  await waitFor(() => expect(runLocalModel).toHaveBeenCalledOnce());
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+
+  await waitFor(() => expect(screen.getByRole("button", { name: "Start analysis" })).toBeEnabled());
+  expect(getLocalAiInput).toHaveBeenCalledTimes(1);
+  expect(submitLocalAiSuggestion).not.toHaveBeenCalled();
+});
