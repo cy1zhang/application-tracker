@@ -142,17 +142,21 @@ class DeployScriptTests(unittest.TestCase):
             if line.startswith("sam deploy")
         )
 
-    def test_absent_model_ids_are_omitted_so_the_blank_default_applies(self):
+    def test_absent_model_ids_are_passed_as_explicit_empty_overrides(self):
         result = self.run_deploy()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("ModelId", self.deploy_call())
+        call = self.deploy_call()
+        for name in ("OpenAiModelId", "AnthropicModelId", "GeminiModelId"):
+            self.assertIn(f'{name}=""', call)
 
-    def test_blank_model_id_is_omitted(self):
+    def test_blank_model_id_is_passed_as_explicit_empty_override(self):
         config = self.root / ".env.deploy"
         config.write_text(config.read_text() + "OPENAI_MODEL_ID=\n")
         result = self.run_deploy()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("OpenAiModelId", self.deploy_call())
+        call = self.deploy_call()
+        self.assertIn('OpenAiModelId=""', call)
+        self.assertIn('AnthropicModelId=""', call)
 
     def test_present_model_ids_are_passed_as_parameters(self):
         config = self.root / ".env.deploy"
@@ -168,6 +172,7 @@ class DeployScriptTests(unittest.TestCase):
         self.assertIn("OpenAiModelId=synthetic-openai", call)
         self.assertIn("AnthropicModelId=synthetic-anthropic", call)
         self.assertIn("GeminiModelId=synthetic-gemini", call)
+        self.assertNotIn('ModelId=""', call)
         self.assertNotIn("synthetic-openai", result.stdout + result.stderr)
 
 
