@@ -79,3 +79,11 @@ Measured 2026-10-20 (ET) on the designated development mailbox; aggregate counts
 - **Pre-deploy checks:** backend Ruff pass, pytest 237 passed (one existing Mangum deprecation warning); frontend `npm ci`, lint, test (84 passed), typecheck, build pass; `npm audit` first failed on a new vite 7.3.6 launch-editor advisory, fixed by pinning vite 7.3.7 (e36577d), then 0 vulnerabilities; `sam validate --lint` pass; `scripts/test_deploy.py` 7 OK; `git diff --check` clean.
 - **Deploy:** `./scripts/deploy.sh` succeeded; `app-tracker-dev` UPDATE_COMPLETE at 2026-10-21T01:27:39Z; api, sync-worker, and sync-dispatcher Lambdas updated. The hosted Amplify app serves `assets/index-GKDygV4e.js`, matching the local build and containing the "Show more reviews" UI. The corrected classifier (2af0ea3) is live for new mail.
 - **Not verified:** the live review UI was not exercised in a signed-in browser (no interactive auth); the queue handoff cause for earlier import pauses remains unknown.
+
+## Branch review (Codex, read-only, against `main`)
+
+- **[P2] Review queue did not reload when opened:** fixed in e22058a.
+- **[P2] Sync status stopped polling after a terminal run:** fixed in e22058a. It now polls every 60s while connected and idle, and every 15s while a run is active.
+- **[P1] Keyword-only import query can miss stage-unknown mail** (for example "Next steps for …"): **open decision for the owner.** `TECHNICAL_DESIGN.md` documents the candidate filter as a recall limitation. Broadening it would increase review volume, the same noise this cleanup removed, so it is left unchanged pending the owner's choice. Incremental history sync already inspects every new message.
+- **Not done:** the review count does not refresh automatically when a sync finishes while the list view is open. It refreshes when the queue is opened. This would need a new `GmailConnection` callback.
+- **Redeploy:** e22058a is deployed to development; the hosted app serves `assets/index-34UTQvaa.js`, matching the local build.
