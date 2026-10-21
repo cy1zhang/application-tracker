@@ -5,10 +5,12 @@ from typing import Annotated, Any
 import boto3
 from fastapi import Depends, HTTPException, Request
 
+from app.domain.account import AccountState
 from app.domain.ai import AiProvider
 from app.domain.gmail import TrackerIdentity
 from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb import DynamoApplicationRepository
+from app.repositories.dynamodb_account import DynamoAccountRepository
 from app.repositories.dynamodb_ai import DynamoAiSettingsRepository
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_reviews import DynamoReviewRepository
@@ -45,6 +47,43 @@ def get_current_subject(request: Request) -> str:
     if subject and request.client is not None and request.client.host in LOOPBACK_HOSTS:
         return subject
     raise HTTPException(status_code=401, detail="Authentication required")
+
+
+def get_cognito_username(request: Request) -> str | None:
+    """The verified Cognito `username` claim; None outside API Gateway (local dev)."""
+    claims = (
+        request.scope.get("aws.event", {})
+        .get("requestContext", {})
+        .get("authorizer", {})
+        .get("jwt", {})
+        .get("claims", {})
+    )
+    username = claims.get("username")
+    if isinstance(username, str) and username.strip():
+        return username
+    return None
+
+
+def get_account_repository() -> DynamoAccountRepository:
+    client_options = {}
+    if region := os.getenv("AWS_REGION"):
+        client_options["region_name"] = region
+    return DynamoAccountRepository(
+        client=boto3.client("dynamodb", **client_options),
+        users_table=os.environ["USERS_TABLE"],
+    )
+
+
+def require_active_account(
+    subject: Annotated[str, Depends(get_current_subject)],
+    accounts: Annotated[DynamoAccountRepository, Depends(get_account_repository)],
+) -> None:
+    # One consistent Users read per authenticated request.
+    state = accounts.get_status(subject).state
+    if state == AccountState.DELETING:
+        raise HTTPException(status_code=423, detail="account_deleting")
+    if state == AccountState.DELETED:
+        raise HTTPException(status_code=410, detail="account_deleted")
 
 
 def get_application_repository() -> ApplicationRepository:

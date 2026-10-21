@@ -10,13 +10,17 @@ from app.api.dependencies import (
     get_gmail_repository,
     get_google_oauth_client,
 )
+from app.domain.account import AccountDeleting
 from app.domain.gmail import GmailConnectionStatus, TrackerIdentity
-from app.repositories.gmail import GmailRepository
+from app.repositories.gmail import GmailRepository, StaleGeneration
 from app.services.credential_crypto import CredentialCipher
 from app.services.gmail_connection import GmailConnectionError, GmailConnectionService
 from app.services.google_oauth import GoogleOAuthClient
 
 router = APIRouter(tags=["gmail"])
+# The Google redirect carries no bearer token, so it stays outside the
+# active-account dependency that main.py attaches to `router`.
+public_router = APIRouter(tags=["gmail"])
 
 Identity = Annotated[TrackerIdentity, Depends(get_current_identity)]
 
@@ -45,7 +49,7 @@ def connect(identity: Identity, service: Service) -> dict[str, str]:
         raise HTTPException(status_code=409, detail=str(error)) from None
 
 
-@router.get("/oauth/google/callback")
+@public_router.get("/oauth/google/callback")
 def callback(
     service: Service,
     state: str | None = None,
@@ -61,5 +65,9 @@ def callback(
 
 @router.delete("/gmail/connection", status_code=204)
 def disconnect(identity: Identity, service: Service) -> Response:
-    service.disconnect(identity)
+    try:
+        service.disconnect(identity)
+    except (AccountDeleting, StaleGeneration):
+        # The repository refuses disconnect once deletion has begun.
+        raise HTTPException(status_code=423, detail="account_deleting") from None
     return Response(status_code=204)

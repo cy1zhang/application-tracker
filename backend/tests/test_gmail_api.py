@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from moto import mock_aws
 
-from app.api.dependencies import get_current_identity
+from app.api.dependencies import get_current_identity, get_current_subject
 from app.api.gmail import get_gmail_service
 from app.domain.gmail import TrackerIdentity
 from app.main import app
@@ -72,6 +72,7 @@ def setup(monkeypatch):
         )
         app.dependency_overrides[get_gmail_service] = lambda: service
         app.dependency_overrides[get_current_identity] = lambda: identity
+        app.dependency_overrides[get_current_subject] = lambda: "owner-a"
         monkeypatch.setenv("FRONTEND_URL", "https://main.example.test")
         with TestClient(app) as api:
             yield api, repository, google, identity
@@ -114,6 +115,7 @@ def test_authorized_connect_status_and_disconnect(setup) -> None:
 def test_gmail_routes_require_authentication(setup, monkeypatch) -> None:
     api, _repository, _google, _identity = setup
     app.dependency_overrides.pop(get_current_identity)
+    app.dependency_overrides.pop(get_current_subject)
     monkeypatch.delenv("LOCAL_DEV_SUBJECT", raising=False)
 
     assert api.get("/gmail/connection").status_code == 401

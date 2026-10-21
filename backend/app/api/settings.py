@@ -14,6 +14,7 @@ from app.api.dependencies import (
     get_credential_cipher,
     get_current_subject,
 )
+from app.domain.account import AccountDeleting
 from app.domain.ai import AiProvider, AiSettingsResponse, AiSettingsUpdate
 from app.repositories.dynamodb_ai import AiKeyRequired, DynamoAiSettingsRepository
 from app.services.credential_crypto import AI_API_KEY, CredentialCipher, CredentialError
@@ -73,6 +74,8 @@ def put_ai_settings(
         hint = key[-4:]
     try:
         repository.save(owner_id, body.provider, encrypted, hint, body.enabled, now)
+    except AccountDeleting:
+        raise HTTPException(status_code=423, detail="account_deleting") from None
     except AiKeyRequired:
         raise HTTPException(
             status_code=422, detail="An API key is required for this provider"
@@ -82,5 +85,8 @@ def put_ai_settings(
 
 @router.delete("/settings/ai", status_code=204)
 def delete_ai_settings(owner_id: Owner, repository: Repository) -> Response:
-    repository.delete(owner_id)
+    try:
+        repository.delete(owner_id)
+    except AccountDeleting:
+        raise HTTPException(status_code=423, detail="account_deleting") from None
     return Response(status_code=204)

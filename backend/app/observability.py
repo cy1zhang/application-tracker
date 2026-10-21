@@ -13,6 +13,7 @@ LOG_EVENTS = frozenset({
     "deletion_job_failed",
     "deletion_completed",
     "deletion_continued",
+    "deletion_enqueue_failed",
 })
 
 _FIELDS = frozenset({

@@ -6,9 +6,25 @@ import boto3
 import pytest
 from moto import mock_aws
 
+from app.api.dependencies import get_account_repository
+from app.domain.account import AccountState, AccountStatus
 from app.domain.applications import ApplicationCreate, ApplicationStatus
+from app.main import app
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_tables import create_tables
+
+
+class _ActiveAccounts:
+    def get_status(self, owner_id: str) -> AccountStatus:
+        return AccountStatus(AccountState.ACTIVE)
+
+
+@pytest.fixture(autouse=True)
+def active_account_by_default() -> Iterator[None]:
+    """API tests see an active account unless they install their own repository."""
+    app.dependency_overrides[get_account_repository] = lambda: _ActiveAccounts()
+    yield
+    app.dependency_overrides.pop(get_account_repository, None)
 
 
 @pytest.fixture

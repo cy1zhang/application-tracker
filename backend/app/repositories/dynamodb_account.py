@@ -20,7 +20,7 @@ class DynamoAccountRepository:
         self._deserializer = TypeDeserializer()
 
     def begin_deletion(
-        self, owner_id: str, cognito_username: str, now: datetime
+        self, owner_id: str, cognito_username: str | None, now: datetime
     ) -> AccountStatus:
         try:
             self._client.update_item(

@@ -129,11 +129,11 @@
 - `require_active_account(subject, accounts)` is attached with `dependencies=[Depends(...)]` on every other router in `main.py` (applications, reviews, gmail, syncs, settings). It does one consistent `GetItem` and raises `423 {"detail": "account_deleting"}` or `410 {"detail": "account_deleted"}`. The public OAuth callback is not behind it (its repository conditions from Task 2 apply). Task 5 adds `DELETION_QUEUE_URL` and the Users read already allowed to the API role.
 - Document the cost: one extra consistent read per API request.
 
-- [ ] Write API tests: 401 without auth and 403 for a user outside the approved group; wrong, lowercase, empty, extra-field, and missing bodies are 422 and leave the Users record and queue untouched; success sets the flag, bumps generation, enqueues one message with `DelaySeconds=30` and the correct owner, and returns 202; a retry returns 202 and does not bump again; a send failure still returns 202 and leaves the state durable; a tombstone returns 200.
-- [ ] Write enforcement tests: while `deleting`, every router (`/applications`, `/reviews`, `/syncs`, `/settings`, `/gmail/*`) returns 423 for a read and a write and changes nothing; after `deleted` they return 410; `/health` and `/oauth/google/callback` are unaffected by the dependency; `GET /account` and `DELETE /account` still work.
-- [ ] Write cross-user tests: A's deletion does not lock B (B's reads and writes succeed, B's `GET /account` is `active`); B cannot delete or read A's status by any parameter (no endpoint accepts an owner); a token for A after completion (tombstone) cannot create an application, and no row for A exists afterward.
-- [ ] Write an end-to-end offline test: create data for A and B, call `DELETE /account` as A, run the deleter to completion, and assert A has zero rows and B is intact.
-- [ ] Confirm the tests fail; implement; run focused and full backend tests, lint, and `git diff --check`; commit.
+- [x] Write API tests: 401 without auth and 403 for a user outside the approved group; wrong, lowercase, empty, extra-field, and missing bodies are 422 and leave the Users record and queue untouched; success sets the flag, bumps generation, enqueues one message with `DelaySeconds=30` and the correct owner, and returns 202; a retry returns 202 and does not bump again; a send failure still returns 202 and leaves the state durable; a tombstone returns 200.
+- [x] Write enforcement tests: while `deleting`, every router (`/applications`, `/reviews`, `/syncs`, `/settings`, `/gmail/*`) returns 423 for a read and a write and changes nothing; after `deleted` they return 410; `/health` and `/oauth/google/callback` are unaffected by the dependency; `GET /account` and `DELETE /account` still work.
+- [x] Write cross-user tests: A's deletion does not lock B (B's reads and writes succeed, B's `GET /account` is `active`); B cannot delete or read A's status by any parameter (no endpoint accepts an owner); a token for A after completion (tombstone) cannot create an application, and no row for A exists afterward.
+- [x] Write an end-to-end offline test: create data for A and B, call `DELETE /account` as A, run the deleter to completion, and assert A has zero rows and B is intact.
+- [x] Confirm the tests fail; implement; run focused and full backend tests, lint, and `git diff --check`; commit.
 
 ---
 
