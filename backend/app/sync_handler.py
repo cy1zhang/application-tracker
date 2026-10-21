@@ -1,12 +1,13 @@
 import json
-import logging
 import os
+import time
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import boto3
 
 from app.domain.ai import AiProvider
+from app.observability import category_of, get_logger, log_event
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_ai import DynamoAiSettingsRepository
 from app.repositories.dynamodb_email import DynamoEmailRepository
@@ -19,7 +20,7 @@ from app.services.gmail_fetch import GmailFetchClient
 from app.services.google_oauth import GoogleOAuthClient, OAuthReconnectRequired
 from app.services.sync_worker import process_sync_page
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _dependencies():
@@ -76,6 +77,7 @@ def handler(event, context):
         lease_id = uuid4().hex
         now = datetime.now(UTC)
         owner_id = run_id = generation = None
+        started = time.monotonic()
         try:
             job = json.loads(record["body"])
             owner_id = job["owner_id"]
@@ -88,7 +90,7 @@ def handler(event, context):
                 users_table=os.environ["USERS_TABLE"],
                 guard_generation=generation, guard_run_id=run_id,
             )
-            process_sync_page(
+            run = process_sync_page(
                 owner_id=owner_id, run_id=run_id, generation=generation,
                 lease_id=lease_id, now=now, emails=emails,
                 queue_url=os.environ["SYNC_QUEUE_URL"],
@@ -100,6 +102,12 @@ def handler(event, context):
                     if key not in {"client", "ai_settings"}
                 },
             )
+            if run is not None:
+                log_event(
+                    logger, "info", "sync_page_completed", run_id=run_id,
+                    mode=run.mode, processed=run.processed_count,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
         except StaleSyncRun:
             # A disconnect, completed run, or superseded lease made this delivery obsolete.
             continue
@@ -108,17 +116,29 @@ def handler(event, context):
                 dependencies["syncs"].fail(
                     owner_id, run_id, generation, lease_id, "reconnect_required", now
                 )
+                log_event(
+                    logger, "warning", "sync_run_failed", run_id=run_id,
+                    category="reconnect_required",
+                )
             except StaleSyncRun:
                 pass
         except Exception as error:  # noqa: BLE001 - every worker failure must signal SQS to retry
-            logger.warning("Sync worker retryable failure: %s", type(error).__name__)
+            attempt = int(record.get("attributes", {}).get("ApproximateReceiveCount", "1"))
+            log_event(
+                logger, "warning", "sync_worker_failure",
+                category=category_of(error), attempt=attempt,
+            )
             if (
-                int(record.get("attributes", {}).get("ApproximateReceiveCount", "1")) >= 5
+                attempt >= 5
                 and owner_id is not None and run_id is not None and generation is not None
             ):
                 try:
                     dependencies["syncs"].fail(
                         owner_id, run_id, generation, lease_id, "partial", now
+                    )
+                    log_event(
+                        logger, "warning", "sync_run_failed", run_id=run_id,
+                        category="partial",
                     )
                 except StaleSyncRun:
                     pass

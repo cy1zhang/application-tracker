@@ -1,9 +1,9 @@
-import logging
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import datetime
 
 from app.domain.ai import AiProvider, AiRuntime
+from app.observability import get_logger, log_event
 from app.repositories.dynamodb_ai import (
     AiBudgetExhausted,
     AiKeyInvalid,
@@ -27,7 +27,7 @@ from app.services.email_rules import (
 )
 from app.services.gmail_message import ParsedGmailMessage
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 MAX_ATTEMPTS = 2
 _FIELDS = (
@@ -163,9 +163,9 @@ class AiEscalator:
 
     @staticmethod
     def _log(runtime: AiRuntime, category: str) -> None:
-        logger.warning(
-            "AI escalation failed: provider=%s category=%s",
-            runtime.provider.value, category,
+        log_event(
+            logger, "warning", "ai_escalation_failed",
+            provider=runtime.provider.value, category=category,
         )
 
 

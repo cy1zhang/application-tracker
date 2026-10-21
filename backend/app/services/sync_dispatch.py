@@ -36,6 +36,7 @@ def _scan_pages(client, table, page_size, **filters):
 def dispatch_daily(
     client, syncs, publisher, users_table, queue_url, now: datetime, *, page_size=100
 ):
+    started = 0
     for user in _scan_pages(
         client, users_table, page_size,
         FilterExpression="attribute_exists(email) AND attribute_exists(encrypted_token)",
@@ -46,12 +47,15 @@ def dispatch_daily(
         except SyncUnavailable:
             continue
         _publish(publisher, queue_url, run.owner_id, run.run_id, run.generation)
+        started += 1
+    return started
 
 
 def recover_unfinished(
     client, publisher, users_table, sync_runs_table, queue_url, now: datetime,
     *, page_size=100,
 ):
+    republished = 0
     for run in _scan_pages(
         client, sync_runs_table, page_size,
         FilterExpression=(
@@ -101,3 +105,5 @@ def recover_unfinished(
                     raise
             continue
         _publish(publisher, queue_url, run["owner_id"], run["run_id"], int(run["generation"]))
+        republished += 1
+    return republished

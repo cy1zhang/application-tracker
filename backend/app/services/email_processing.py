@@ -1,15 +1,15 @@
-import logging
 import re
 from dataclasses import replace
 from datetime import UTC, datetime
 
+from app.observability import category_of, get_logger, log_event
 from app.repositories.dynamodb_email import DynamoEmailRepository, StoredOutcome
 from app.repositories.dynamodb_sync import StaleSyncRun
 from app.services.ai_reconcile import ESCALATION_REASONS
 from app.services.email_rules import ApplicationCandidate, classify_message
 from app.services.gmail_message import MessageParseError, parse_gmail_message
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def extract_headers(gmail_message) -> tuple[str | None, str | None]:
@@ -74,7 +74,9 @@ def process_message(
         except StaleSyncRun:
             raise
         except Exception as error:  # noqa: BLE001 - AI must never fail the sync
-            logger.warning("AI escalation failed: category=%s", type(error).__name__)
+            log_event(
+                logger, "warning", "ai_escalation_failed", category=category_of(error)
+            )
             decision = replace(decision, ai_note="ai_unavailable")
     version = next(
         (
