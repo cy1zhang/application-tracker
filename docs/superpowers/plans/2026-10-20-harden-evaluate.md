@@ -226,11 +226,11 @@ Owner follow-ups (out of scope for this milestone): public-launch privacy policy
 - [x] Write the tombstone tests; confirm they pass or fix a found defect test-first; commit.
 - [x] Write the matrix guard test against a first draft of `docs/VERIFICATION.md` and fix the draft until every cited test exists; commit.
 - [x] Add the live checklist and owner follow-ups; commit.
-- [ ] Run every CI command locally (backend sync/lint/pytest and the evaluation step, frontend audit/lint/test/typecheck/build, SAM lint, offline deploy tests, `git diff --check`).
-- [ ] Request the read-only Codex review against `milestone-9-byok-ai`; pass findings to the user; resolve those the user accepts test-first, one commit each.
-- [ ] After user approval: review the CloudFormation change set (expect no replacements; new queue, DLQ, function, role, log group, SNS topic and subscription only when enabled, alarms, metric filters, Users TTL, new IAM statements, new environment variables) and deploy to development with `AlarmNotifications` as the owner chooses. Verify `UPDATE_COMPLETE`, health 200, a protected route 401 without a token, the deletion function and queue exist with 14-day log retention, and a normal incremental sync still completes. Do not invoke `DELETE /account`.
-- [ ] Run L4, L5 (after 09:00 UTC), L8 (if approved), and L9; record results with dates in `docs/VERIFICATION.md`. Mark L6, L7, L10, and L11 pending for the owner.
-- [ ] Update the roadmap status, `AGENTS.md`, and `docs/DEVELOPMENT.md` to the verified state only; commit the clean Milestone 10 handoff.
+- [x] Run every CI command locally (backend sync/lint/pytest and the evaluation step, frontend audit/lint/test/typecheck/build, SAM lint, offline deploy tests, `git diff --check`).
+- [x] Request the read-only Codex review against `milestone-9-byok-ai`; pass findings to the user; resolve those the user accepts test-first, one commit each.
+- [x] After user approval: review the CloudFormation change set (expect no replacements; new queue, DLQ, function, role, log group, SNS topic and subscription only when enabled, alarms, metric filters, Users TTL, new IAM statements, new environment variables) and deploy to development with `AlarmNotifications` as the owner chooses. Verify `UPDATE_COMPLETE`, health 200, a protected route 401 without a token, the deletion function and queue exist with 14-day log retention, and a normal incremental sync still completes. Do not invoke `DELETE /account`.
+- [x] Run L4, L5 (after 09:00 UTC), L8 (if approved), and L9; record results with dates in `docs/VERIFICATION.md`. Mark L6, L7, L10, and L11 pending for the owner.
+- [x] Update the roadmap status, `AGENTS.md`, and `docs/DEVELOPMENT.md` to the verified state only; commit the clean Milestone 10 handoff.
 
 ## Verification Boundary
 
@@ -298,3 +298,37 @@ Read-only Codex review of this branch against `main`. Both P2 findings were acce
 
 1. **[P2] Check the expected status in evaluation results.** `_update_correct` checked only fields that changed, so an `applied` result that updated the expected application's cycle but left its status unchanged counted as correct. It now also requires the final status to equal the labeled status; a stated cycle left unset still counts as incomplete, not wrong. Fixed in `50efca5`. The committed fixtures were unaffected: every measured number is identical before and after.
 2. **[P2] Keep account deletion available when applications fail to load.** A failed initial applications request left `applications` null and hid the Gmail, AI and Delete account controls. They now also show after a non-403 load error (still hidden while loading and on 403 access denied). Fixed in `0ec45cd`.
+
+## Results (2026-10-21, UTC times)
+
+- **Checks before deploy:**
+  - Backend: Ruff passed, pytest 775 passed (one existing Mangum deprecation warning), and `evaluation.run --check` passed.
+  - Frontend: `npm ci`, lint, 123 tests, typecheck, build and `npm audit` (0 vulnerabilities) all passed.
+  - Infrastructure: `sam validate --lint` passed and `scripts/test_deploy.py` passed.
+  - `git diff --check` against `milestone-9-byok-ai` was clean.
+- **Synthetic evaluation:**
+  - Rules: precision 100% (27/27 automatic updates), coverage 46.4%, detection recall 98.6%.
+  - AI stub providers: OpenAI, Anthropic and Gemini each scored 100% precision on 6–8 updates, so the intervals are wide.
+  - This is synthetic only. Real-inbox accuracy is unmeasured (L11).
+- **Codex review:** the first review raised 2 P2s, both fixed (see "Branch review (Codex)").
+  - Before that, the evaluation found two wrong-update defects, a cycle-range year and AI instruction-text injection. Both are fixed in 2094341 and 0679300.
+  - The diagnosed Lambda recursive-loop termination is fixed in 627103a.
+- **Change set** (previewed, then deleted unexecuted):
+  - Only additions and in-place modifications, with no replacements or deletions.
+  - Additions: deletion queue, DLQ, function, role and log group; alarms and metric filters.
+  - In-place: `UsersTable` TTL.
+  - No SNS resources were created, because `AlarmNotifications=false`.
+- **Deploy:** `./scripts/deploy.sh` finished with `app-tracker-dev` at UPDATE_COMPLETE at 04:42:01Z.
+  - API, worker, dispatcher and account-deletion functions are Active.
+  - Recursion config: worker and deletion `Allow`, API `Terminate`.
+  - Users TTL is ENABLED on `expires_at`.
+  - `/health` returns 200; `/account` and `/applications` return 401 without a token.
+  - The hosted app serves `assets/index-Bkp5-rJQ.js`, which matches the local build and contains the "Danger zone" control.
+- **Live checks:** L4 and L9 are verified, and L8 alarm activation was observed (see `docs/VERIFICATION.md`).
+  - No `DELETE /account` was invoked.
+  - L5 (the next 09:00 UTC scheduled run), L6, L7, L10, L11 and L12 remain pending as documented.
+- **Owner follow-ups:**
+  - Purge the 6 obsolete sync DLQ messages to clear `SyncDeadLetterAlarm`.
+  - Decide on a fresh import or rescan to verify L12 with the recursion fix.
+  - Confirm the AI auto-apply status restriction and the new evaluation labels.
+  - Review and merge the three stacked branches.

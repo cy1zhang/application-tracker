@@ -150,7 +150,7 @@ injection, tools, or credentials.
 
 ### 10. Harden and evaluate
 
-**Status: in progress on `milestone-10-harden-evaluate` (plan: `docs/superpowers/plans/2026-10-20-harden-evaluate.md`)**
+**Status: implemented on `milestone-10-harden-evaluate` (stacked on unmerged Milestones 8 and 9) and deployed in development; synthetic evaluation gates in CI; owner-run deletion, revocation, live AI, real-inbox quality, and public-launch checks pending (see `docs/VERIFICATION.md`)**
 
 - Complete account deletion and stale-work protection.
 - Add sanitized logs, alarms, dead-letter handling, and retention.

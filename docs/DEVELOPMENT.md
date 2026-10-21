@@ -243,6 +243,22 @@ without review.
   before they are run, and live provider results never enter CI or the
   repository.
 
+### Development deploy note (2026-10-21, Milestone 10)
+
+Milestone 10 was deployed to `app-tracker-dev` with `AlarmNotifications=false`,
+so no SNS topic or subscription exists. It adds:
+- the account-deletion function, queue and DLQ;
+- alarms, metric filters and Users-table TTL;
+- `RecursiveLoop: Allow` on the self-continuing worker and deletion functions.
+
+A post-deploy incremental sync completed and changed no application.
+`SyncDeadLetterAlarm` shows ALARM because of 6 obsolete continuation messages
+left from the first import. Purge the sync DLQ to clear it. Never invoke
+`DELETE /account` against the development owner. Live deletion checks use a
+separate test identity, and the owner runs them. Results and pending checks are
+in `docs/superpowers/plans/2026-10-20-harden-evaluate.md` and
+`docs/VERIFICATION.md`.
+
 ### Development deploy note (2026-10-20)
 
 Milestone 9 was deployed to `app-tracker-dev` with all three model IDs blank

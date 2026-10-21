@@ -17,9 +17,13 @@ import, empty incremental repeat, and scheduled recovery were verified;
 remaining Gmail and review-flow checks are pending. Milestone 9 BYOK AI
 escalation (OpenAI, Anthropic, and Gemini providers) is implemented on
 `milestone-9-byok-ai` and deployed in development with AI disabled (no model
-IDs configured); live provider checks are pending the owner's own key. Both
-milestone branches are unmerged, awaiting the owner. The dashboard offers
-review, merge, sync, and AI settings controls.
+IDs configured); live provider checks are pending the owner's own key. Milestone 10
+(sanitized logging, account deletion, alarms, synthetic evaluation in CI) is
+implemented on `milestone-10-harden-evaluate` and deployed in development;
+owner-run deletion and revocation checks, live AI, and real-inbox quality are
+pending (`docs/VERIFICATION.md`). The three milestone branches are stacked and
+unmerged, awaiting the owner. The dashboard offers review, merge, sync, AI
+settings, and account deletion controls.
 
 Key docs: `docs/PRD.md` (product behavior), `docs/TECHNICAL_DESIGN.md` (target AWS
 architecture, tables, API surface, sync/classification rules),
