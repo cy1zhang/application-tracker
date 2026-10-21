@@ -89,6 +89,9 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
   const [localSuggestions, setLocalSuggestions] = useState<Record<string, ReviewItem>>({});
   const displayedReviews = reviews.map((review) => localSuggestions[review.message_id] ?? review);
 
+  const suggested = displayedReviews.filter((review) => review.ai_proposal);
+  const orderedReviews = [...suggested, ...displayedReviews.filter((review) => !review.ai_proposal)];
+
   useEffect(() => { setLocalSuggestions({}); }, [reviews]);
 
   useEffect(() => {
@@ -166,9 +169,10 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
       {showLocalAi && <LocalOllamaPanel reviews={displayedReviews} failedIds={localFailedIds.current} onSuggested={(review) => setLocalSuggestions((current) => ({ ...current, [review.message_id]: review }))} onFinished={onResolved} />}
       {error && <p role="alert" className="review-error">{error}</p>}
       {notice && <p role="status">{notice}</p>}
+      {suggested.length > 0 && <p className="muted">{suggested.length} {suggested.length === 1 ? "review has" : "reviews have"} AI suggestions (shown first)</p>}
       {reviews.length === 0 && <p className="empty">No emails need review.</p>}
       <div className="review-list">
-        {displayedReviews.slice(0, visibleCount).map((review) => {
+        {orderedReviews.slice(0, visibleCount).map((review) => {
           const application = applications.find(
             (item) => item.application_id === review.application_id,
           ) ?? linkedApplications[review.application_id ?? ""];

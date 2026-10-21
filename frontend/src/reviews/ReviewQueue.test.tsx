@@ -609,3 +609,32 @@ test("ignores AI proposal values that are not valid form options", () => {
   expect(screen.getByLabelText("Role type")).toHaveValue("unknown");
   expect(screen.getByLabelText("Year")).toHaveValue(null);
 });
+
+const withProposal = (item: ReviewItem): ReviewItem => ({
+  ...item, reason: "ai_proposal", rule_reason: "ambiguous_application",
+  ai_proposal: { status: "interviewing", evidence: {} },
+});
+
+function renderQueue(reviews: ReviewItem[]) {
+  render(<ReviewQueue reviews={reviews} applications={[]} onResolved={vi.fn().mockResolvedValue(undefined)} onBack={() => {}} />);
+}
+
+test("shows a suggested review beyond the first page without paging", () => {
+  const reviews = queue(30).map((item) => (item.message_id === "msg-27" ? { ...withProposal(item), subject: "Suggested one" } : item));
+  renderQueue(reviews);
+  expect(screen.getByText("Suggested one")).toBeInTheDocument();
+  expect(screen.getByText("1 review has AI suggestions (shown first)")).toBeInTheDocument();
+});
+
+test("keeps relative order within suggested and unsuggested groups", () => {
+  const reviews = queue(5).map((item, index) => ({ ...(index % 2 === 1 ? withProposal(item) : item), subject: `Subject ${index + 1}` }));
+  renderQueue(reviews);
+  const titles = screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent);
+  expect(titles).toEqual(["Subject 2", "Subject 4", "Subject 1", "Subject 3", "Subject 5"]);
+  expect(screen.getByText("2 reviews have AI suggestions (shown first)")).toBeInTheDocument();
+});
+
+test("omits the suggestion count line when no review has a suggestion", () => {
+  renderQueue(queue(3));
+  expect(screen.queryByText(/AI suggestions \(shown first\)/)).not.toBeInTheDocument();
+});
