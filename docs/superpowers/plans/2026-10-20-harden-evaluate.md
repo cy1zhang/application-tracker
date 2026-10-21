@@ -223,7 +223,7 @@
 
 Owner follow-ups (out of scope for this milestone): public-launch privacy policy and deletion pages; Google restricted-scope verification and any security assessment; Limited Use review including AI-provider handling; verified OAuth domain and redirects; provider data-use terms review; Testing-mode seven-day refresh-token expiry; backups and their expiry if ever enabled; budget and concurrency settings for launch; owner review of the status cue lexicon before any live key is enabled.
 
-- [ ] Write the tombstone tests; confirm they pass or fix a found defect test-first; commit.
+- [x] Write the tombstone tests; confirm they pass or fix a found defect test-first; commit.
 - [ ] Write the matrix guard test against a first draft of `docs/VERIFICATION.md` and fix the draft until every cited test exists; commit.
 - [ ] Add the live checklist and owner follow-ups; commit.
 - [ ] Run every CI command locally (backend sync/lint/pytest and the evaluation step, frontend audit/lint/test/typecheck/build, SAM lint, offline deploy tests, `git diff --check`).
