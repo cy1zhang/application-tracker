@@ -47,6 +47,7 @@ uv run --env-file ../.env uvicorn app.main:app --reload   # http://127.0.0.1:800
 uv run ruff check .
 uv run pytest -q
 uv run pytest tests/test_applications_api.py::test_name -q   # single test
+uv run python -m evaluation.run --check    # synthetic classification gates
 ```
 
 Frontend (run from `frontend/`):
