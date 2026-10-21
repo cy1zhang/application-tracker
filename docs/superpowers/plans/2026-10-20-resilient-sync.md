@@ -112,7 +112,12 @@ of this check.
 The first run paused in `pending` several times despite an enabled SQS mapping
 and no worker errors or throttles in the inspected metrics. The scheduled
 15-minute recovery invocation resumed it once; operator-triggered recovery
-invocations resumed later pauses. The cause of the queue handoff pauses is not
-established. A new-message incremental update, the 09:00 UTC daily start,
+invocations resumed later pauses. Cause (diagnosed 2026-10-21): Lambda
+recursive-loop detection. The worker continues Lambda -> SQS -> same Lambda, and
+after about 16 hops in one trace Lambda drops the message. CloudWatch showed 30
+`RecursiveInvocationsDropped` on the sync worker (23 in one hour, 7 in the next)
+and AWS sent a recursive-loop Health notice. Fixed by setting `RecursiveLoop:
+Allow` on the sync worker and account deletion functions; pending deployment.
+A new-message incremental update, the 09:00 UTC daily start,
 revocation/reconnect, dead-letter alarm activation, and live review actions
 still need controlled verification.

@@ -517,8 +517,8 @@ controls, browser preflight, schedules, SQS trigger, and dead-letter alarm
 passed deployment checks. A designated test mailbox completed a 90-day import
 of 1,092 candidate messages; a repeat incremental run completed with 0 new
 messages and unchanged stored counts. Scheduled recovery resumed a paused
-import once, while later pauses needed operator-triggered recovery. The queue
-handoff cause remains unresolved. The 09:00 UTC daily start, new-message
+import once, while later pauses needed operator-triggered recovery. The
+pauses were Lambda recursive-loop termination (see below). The 09:00 UTC daily start, new-message
 incremental update, revoked authorization and reconnect, and dead-letter alarm
 activation still need controlled live checks. Inspect Lambda logs for
 identifiers and counts only; do not log email bodies or credentials.
@@ -529,6 +529,15 @@ the corrected classifier is live, `scripts.recheck_reviews` moved 424 false-posi
 sender/subject), and the application record was unchanged. The live review UI
 was not exercised in a signed-in browser. Details are in
 `docs/superpowers/plans/2026-10-20-review-queue-cleanup.md`.
+
+Troubleshooting a paused import: the sync worker and account deletion function
+continue themselves through SQS (Lambda -> SQS -> same Lambda). Lambda's
+recursive-loop detection drops a message after about 16 hops in one trace, which
+paused the first live import (30 `RecursiveInvocationsDropped` datapoints on the
+worker, plus an AWS Health notice). The template now sets `RecursiveLoop: Allow`
+on those two functions only. If an import pauses again, check the
+`RecursiveInvocationsDropped` metric first; the 15-minute recovery pass still
+resumes stalled runs.
 
 For a repeat deploy, run the same script after making code changes. Lambda
 logs are in CloudWatch Logs. To remove the stack, run `sam delete --stack-name

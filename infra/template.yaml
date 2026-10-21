@@ -403,6 +403,11 @@ Resources:
       Runtime: python3.12
       Architectures: [arm64]
       Timeout: 600
+      # Intentional Lambda -> SQS -> same Lambda continuation. Lambda's default
+      # recursive-loop detection stops a trace after ~16 hops, which dropped
+      # continuations during long imports. The loop is bounded by one active
+      # run/deletion per owner, leases, checkpoints and run completion.
+      RecursiveLoop: Allow
       MemorySize: 256
       Environment:
         Variables:
@@ -545,6 +550,11 @@ Resources:
       Runtime: python3.12
       Architectures: [arm64]
       Timeout: 300
+      # Intentional Lambda -> SQS -> same Lambda continuation. Lambda's default
+      # recursive-loop detection stops a trace after ~16 hops, which dropped
+      # continuations during long imports. The loop is bounded by one active
+      # run/deletion per owner, leases, checkpoints and run completion.
+      RecursiveLoop: Allow
       MemorySize: 256
       Environment:
         Variables:

@@ -223,3 +223,12 @@ def test_alarm_notifications_default_off_and_gate_every_sns_resource() -> None:
     # No other place may reference the topic outside the guarded alarm actions.
     others = {k: v for k, v in template["Resources"].items() if k not in alarms and k != "AlarmTopic"}
     assert "AlarmTopic" not in json.dumps(others)
+
+
+def test_only_self_continuing_functions_allow_recursive_loop() -> None:
+    allowed = {
+        name
+        for name, resource in _resources("AWS::Serverless::Function").items()
+        if resource["Properties"].get("RecursiveLoop") == "Allow"
+    }
+    assert allowed == {"SyncWorkerFunction", DELETION}
