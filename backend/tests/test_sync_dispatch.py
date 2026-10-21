@@ -8,7 +8,11 @@ from moto import mock_aws
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_sync import DynamoSyncRepository
 from app.repositories.dynamodb_tables import create_tables
-from app.services.sync_dispatch import dispatch_daily, recover_unfinished
+from app.services.sync_dispatch import (
+    dispatch_daily,
+    recover_deletions,
+    recover_unfinished,
+)
 
 NOW = datetime(2026, 10, 20, 9, tzinfo=UTC)
 TOKEN = {"ciphertext": "opaque", "nonce": "opaque", "encrypted_data_key": "opaque"}
@@ -90,3 +94,59 @@ def test_recovery_does_not_reenqueue_disconnected_run(setup) -> None:
     assert client.get_item(TableName="SyncRuns", Key={
         "owner_id": {"S": "owner-a"}, "run_id": {"S": "run-1"},
     })["Item"]["status"]["S"] == "failed"
+
+
+def test_recover_deletions_republishes_only_stalled_deleting_users(setup) -> None:
+    from app.repositories.dynamodb_account import DynamoAccountRepository
+
+    client, gmail, _, publisher = setup
+    accounts = DynamoAccountRepository(client=client, users_table="Users")
+    for owner in ("expired", "live", "fresh", "done", "active"):
+        gmail.save_connection(owner, 0, f"{owner}@example.test", TOKEN, NOW)
+    for owner in ("expired", "live", "fresh", "done"):
+        accounts.begin_deletion(owner, "name", NOW)
+    accounts.claim_deletion("expired", "lease", NOW - timedelta(minutes=11))
+    accounts.claim_deletion("live", "lease", NOW)
+    accounts.claim_deletion("done", "lease", NOW)
+    accounts.finalize("done", "lease", NOW)
+
+    count = recover_deletions(client, publisher, "Users", "queue", NOW, page_size=1)
+
+    assert count == 2
+    assert sorted(m["owner_id"] for m in publisher.messages) == ["expired", "fresh"]
+    assert all(m["kind"] == "delete_account" for m in publisher.messages)
+
+
+def test_daily_dispatch_still_skips_deleting_users(setup) -> None:
+    from app.repositories.dynamodb_account import DynamoAccountRepository
+
+    client, gmail, syncs, publisher = setup
+    for owner in ("owner-0", "owner-1"):
+        gmail.save_connection(owner, 0, f"{owner}@example.test", TOKEN, NOW)
+    DynamoAccountRepository(client=client, users_table="Users").begin_deletion(
+        "owner-1", "name", NOW
+    )
+
+    dispatch_daily(client, syncs, publisher, "Users", "queue", NOW)
+
+    assert [m["owner_id"] for m in publisher.messages] == ["owner-0"]
+
+
+def test_dispatch_handler_recover_also_recovers_deletions(setup, monkeypatch) -> None:
+    from app import dispatch_handler
+    from app.repositories.dynamodb_account import DynamoAccountRepository
+
+    client, _, _, publisher = setup
+    DynamoAccountRepository(client=client, users_table="Users").begin_deletion(
+        "owner-x", "name", NOW
+    )
+    for key, value in {
+        "SYNC_QUEUE_URL": "queue", "USERS_TABLE": "Users",
+        "SYNC_RUNS_TABLE": "SyncRuns", "DELETION_QUEUE_URL": "queue",
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(dispatch_handler.boto3, "client", lambda name: client if name == "dynamodb" else publisher)
+
+    dispatch_handler.handler({"mode": "recover"}, None)
+
+    assert publisher.messages == [{"kind": "delete_account", "owner_id": "owner-x"}]

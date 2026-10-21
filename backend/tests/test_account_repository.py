@@ -171,3 +171,31 @@ def test_begin_after_finalize_stays_deleted(env) -> None:
 
     assert status.state is AccountState.DELETED
     assert user_item(client, "owner-a") == before
+
+
+def test_release_deletion_lets_another_holder_claim_immediately() -> None:
+    from datetime import UTC, datetime
+
+    from moto import mock_aws
+
+    with mock_aws():
+        import boto3
+
+        from app.repositories.dynamodb_account import DynamoAccountRepository
+        from app.repositories.dynamodb_tables import create_tables
+
+        now = datetime(2026, 10, 20, 9, tzinfo=UTC)
+        client = boto3.client("dynamodb", region_name="us-east-1")
+        create_tables(
+            client, applications_table="A", events_table="E", users_table="Users"
+        )
+        repo = DynamoAccountRepository(client=client, users_table="Users")
+        repo.begin_deletion("owner-a", "name", now)
+        assert repo.claim_deletion("owner-a", "one", now) is not None
+        assert repo.claim_deletion("owner-a", "two", now) is None
+
+        repo.release_deletion("owner-a", "two")  # not the holder: no effect
+        assert repo.claim_deletion("owner-a", "two", now) is None
+        repo.release_deletion("owner-a", "one")
+
+        assert repo.claim_deletion("owner-a", "two", now) is not None

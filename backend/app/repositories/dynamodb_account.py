@@ -87,6 +87,26 @@ class DynamoAccountRepository:
             raise
         return self._decode(response["Attributes"]).get("deletion_phase")
 
+    def release_deletion(self, owner_id: str, lease_id: str) -> None:
+        """Expire our own lease so a continuation or retry can claim it at once."""
+        try:
+            self._client.update_item(
+                TableName=self._users_table,
+                Key=self._encode({"owner_id": owner_id}),
+                UpdateExpression="SET deletion_lease_expires_at = :zero",
+                ConditionExpression=(
+                    "deletion_state = :deleting AND deletion_lease_id = :lease"
+                ),
+                ExpressionAttributeValues=self._encode({
+                    ":deleting": AccountState.DELETING.value,
+                    ":lease": lease_id,
+                    ":zero": 0,
+                }),
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+
     def advance_phase(
         self, owner_id: str, lease_id: str, from_phase: str, to_phase: str
     ) -> bool:

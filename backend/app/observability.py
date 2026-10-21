@@ -9,6 +9,10 @@ LOG_EVENTS = frozenset({
     "dispatch_summary",
     "ai_escalation_failed",
     "api_unhandled_error",
+    "deletion_revoke_failed",
+    "deletion_job_failed",
+    "deletion_completed",
+    "deletion_continued",
 })
 
 _FIELDS = frozenset({

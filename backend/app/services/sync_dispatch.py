@@ -110,3 +110,34 @@ def recover_unfinished(
         _publish(publisher, queue_url, run["owner_id"], run["run_id"], int(run["generation"]))
         republished += 1
     return republished
+
+
+def recover_deletions(
+    client, publisher, users_table, deletion_queue_url, now: datetime, *, page_size=100
+):
+    republished = 0
+    for user in _scan_pages(
+        client, users_table, page_size,
+        FilterExpression=(
+            "deletion_state = :deleting AND "
+            "(attribute_not_exists(deletion_lease_expires_at) "
+            "OR deletion_lease_expires_at < :now)"
+        ),
+        ExpressionAttributeValues={
+            ":deleting": {"S": "deleting"},
+            ":now": {"N": str(int(now.timestamp()))},
+        },
+        ProjectionExpression="owner_id",
+    ):
+        try:
+            publisher.send_message(
+                QueueUrl=deletion_queue_url,
+                MessageBody=json.dumps({
+                    "kind": "delete_account", "owner_id": user["owner_id"],
+                }),
+            )
+        except ClientError:
+            # The record stays durable; the next recovery pass retries.
+            continue
+        republished += 1
+    return republished
