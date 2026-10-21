@@ -549,3 +549,26 @@ def test_known_stage_cannot_regress_to_applied() -> None:
     )
 
     assert decision.outcome == "review_required"
+
+
+@pytest.mark.parametrize("cycle", ["Winter 2026-27", "Fall 2026/2027", "Winter 2026–27"])
+def test_year_range_is_not_extracted_as_a_cycle(cycle) -> None:
+    decision = classify_message(
+        _message(f"Acme invites you to interview for Software Engineer Intern in {cycle} at Acme."),
+        [_candidate(threads={"thread-1"})],
+    )
+
+    assert decision.outcome == "applied"
+    assert decision.status == ApplicationStatus.INTERVIEWING
+    assert decision.season is None
+    assert decision.year is None
+
+
+def test_single_year_cycle_before_punctuation_is_still_extracted() -> None:
+    decision = classify_message(
+        _message("Acme invites you to interview for Software Engineer Intern in Summer 2026."),
+        [_candidate(threads={"thread-1"})],
+    )
+
+    assert decision.season == Season.SUMMER
+    assert decision.year == 2026

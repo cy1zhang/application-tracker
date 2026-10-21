@@ -1570,9 +1570,13 @@
    "received_at": "2026-10-05T14:00:00Z"
   },
   "expected": {
-   "outcome": "review_required"
+   "outcome": "applied",
+   "application": "a1",
+   "status": "interviewing",
+   "season": null,
+   "year": null
   },
-  "note": "Winter spans two years; the year is ambiguous, so ask rather than guess."
+  "note": "Winter spans two years, so the cycle stays null. PRD: \"Evaluate fields separately: an interview may be clear while its cycle remains unknown\"; the status update still applies."
  },
  {
   "id": "R-cycle_explicit_september-01",

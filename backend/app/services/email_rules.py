@@ -56,7 +56,11 @@ _UNCERTAIN = re.compile(
 HYPOTHETICAL = _HYPOTHETICAL
 UNCERTAIN = _UNCERTAIN
 _FUTURE_OR_NEGATED = re.compile(r"\b(?:will|not)\b", re.IGNORECASE)
-_CYCLE = re.compile(r"\b(summer|fall|spring|winter)\s+(20\d{2})\b", re.IGNORECASE)
+# A year range such as "Winter 2026-27" or "Fall 2026/2027" names no single year.
+_CYCLE = re.compile(
+    r"\b(summer|fall|spring|winter)\s+(20\d{2})\b(?!\s?[-–/]\s?\d{2,4})",
+    re.IGNORECASE,
+)
 _REQUISITION = re.compile(
     r"\b(?:req(?:uisition)?\s*(?:id|#)?|job\s*id)\s*[:#-]?\s*"
     r"([a-z0-9][a-z0-9-]{2,})\b",
