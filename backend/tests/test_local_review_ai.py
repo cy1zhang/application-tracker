@@ -222,3 +222,36 @@ def test_thread_mismatch_is_a_per_review_stale_not_a_connection_change():
     with pytest.raises(LocalAiStale) as caught:
         service.prepare("user-a", "synthetic-1")
     assert not isinstance(caught.value, LocalAiConnectionChanged)
+
+
+def test_generation_change_during_save_is_a_connection_change():
+    from app.repositories.dynamodb_reviews import GmailConnectionChanged
+    from app.services.local_review_ai import LocalAiConnectionChanged
+
+    service, reviews = _service()
+
+    def save(**kwargs):
+        raise GmailConnectionChanged
+
+    reviews.save_local_suggestion = save
+    with pytest.raises(LocalAiConnectionChanged):
+        service.suggest(
+            "user-a", "synthetic-1", generation=1, model="m", raw=_output(),
+        )
+
+
+def test_review_conflict_during_save_stays_a_review_conflict():
+    from app.repositories.dynamodb_reviews import ReviewVersionConflict
+    from app.services.local_review_ai import LocalAiConnectionChanged
+
+    service, reviews = _service()
+
+    def save(**kwargs):
+        raise ReviewVersionConflict
+
+    reviews.save_local_suggestion = save
+    with pytest.raises(ReviewVersionConflict) as caught:
+        service.suggest(
+            "user-a", "synthetic-1", generation=1, model="m", raw=_output(),
+        )
+    assert not isinstance(caught.value, LocalAiConnectionChanged)

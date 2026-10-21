@@ -36,6 +36,10 @@ class ReviewVersionConflict(Exception):
     pass
 
 
+class GmailConnectionChanged(Exception):
+    """The Gmail connection changed while a local suggestion was in flight."""
+
+
 class InvalidReviewCursor(Exception):
     pass
 
@@ -164,6 +168,9 @@ class DynamoReviewRepository:
         except ClientError as error:
             if error.response["Error"]["Code"] != "TransactionCanceledException":
                 raise
+            reasons = error.response.get("CancellationReasons", [])
+            if len(reasons) > 1 and reasons[1].get("Code") == "ConditionalCheckFailed":
+                raise GmailConnectionChanged from error
             latest = self._get_review(owner_id, message_id)
             if latest is None:
                 raise ReviewNotFound from error

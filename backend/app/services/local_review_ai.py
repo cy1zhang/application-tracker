@@ -4,6 +4,7 @@ from typing import Any
 from app.domain.ai import EXTRACTION_JSON_SCHEMA
 from app.domain.applications import ApplicationStatus, Season
 from app.domain.reviews import ReviewItem
+from app.repositories.dynamodb_reviews import GmailConnectionChanged
 from app.services.ai_extraction import build_prompt, validate_extraction
 from app.services.ai_reconcile import ESCALATION_REASONS, reconcile_extraction
 from app.services.credential_crypto import CredentialError
@@ -87,10 +88,13 @@ class LocalReviewAiService:
         decision = build_local_suggestion(review, message, candidates, raw)
         if decision is None:
             return LocalAiResult(saved=False)
-        saved = self._reviews.save_local_suggestion(
-            owner_id=owner_id, message_id=message_id, generation=generation,
-            decision=decision, model=model,
-        )
+        try:
+            saved = self._reviews.save_local_suggestion(
+                owner_id=owner_id, message_id=message_id, generation=generation,
+                decision=decision, model=model,
+            )
+        except GmailConnectionChanged:
+            raise LocalAiConnectionChanged from None
         return LocalAiResult(saved=True, review=saved)
 
     def _load(self, owner_id: str, message_id: str, expected_generation: int | None = None):

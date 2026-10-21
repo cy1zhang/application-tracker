@@ -15,6 +15,7 @@ from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_email import DynamoEmailRepository
 from app.repositories.dynamodb_reviews import (
     DynamoReviewRepository,
+    GmailConnectionChanged,
     ReviewAlreadyResolved,
     ReviewNotFound,
     ReviewVersionConflict,
@@ -141,11 +142,27 @@ def test_local_suggestion_rejects_other_owner_and_changed_gmail_generation(store
             owner_id="user-b", message_id="msg-1", generation=2,
             decision=_local_decision(), model="gemma4:latest",
         )
-    with pytest.raises(ReviewVersionConflict):
+    with pytest.raises(GmailConnectionChanged):
         reviews.save_local_suggestion(
             owner_id="user-a", message_id="msg-1", generation=1,
             decision=_local_decision(), model="gemma4:latest",
         )
+
+
+def test_local_suggestion_reports_review_conflict_not_connection_change(store):
+    _, emails, reviews = store
+    _review(emails)
+    _connect_local_user(reviews)
+    reviews.save_local_suggestion(
+        owner_id="user-a", message_id="msg-1", generation=1,
+        decision=_local_decision(), model="gemma4:latest",
+    )
+    with pytest.raises(ReviewVersionConflict) as caught:
+        reviews.save_local_suggestion(
+            owner_id="user-a", message_id="msg-1", generation=1,
+            decision=_local_decision(), model="gemma4:latest",
+        )
+    assert not isinstance(caught.value, GmailConnectionChanged)
 
 
 def test_local_suggestion_rejects_review_resolved_during_inference(store):
