@@ -271,6 +271,14 @@ test("hides the danger zone when access is denied", async () => {
   expect(screen.queryByRole("heading", { name: "Danger zone" })).not.toBeInTheDocument();
 });
 
+test("keeps account deletion available when applications fail to load", async () => {
+  vi.mocked(listAllApplications).mockRejectedValue(new ApiError(500, "Server error"));
+  render(<App email="a@example.test" onSignOut={vi.fn()} onAccountDeleted={vi.fn()} />);
+  await screen.findByText("Could not load applications: Server error");
+  expect(screen.getByRole("heading", { name: "Danger zone" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Delete account" })).toBeInTheDocument();
+});
+
 test("a 423 from any call shows the deleting state, not access denied", async () => {
   vi.mocked(listAllApplications).mockResolvedValue([internship]);
   vi.mocked(getAccountStatus).mockResolvedValue({ state: "deleting" });

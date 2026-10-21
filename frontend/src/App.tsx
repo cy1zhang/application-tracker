@@ -140,7 +140,7 @@ function App({ email, onSignOut, onAccountDeleted }: AppProps) {
         {deleting && (
           <DeleteAccount resumed onAccountDeleted={() => onAccountDeleted?.()} />
         )}
-        {!deleting && !accessDenied && applications !== null && email && onSignOut && (
+        {!deleting && !accessDenied && (applications !== null || loadError !== null) && email && onSignOut && (
           <>
             <GmailConnection />
             <AiSettings />
