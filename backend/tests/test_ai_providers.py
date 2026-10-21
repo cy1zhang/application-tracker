@@ -17,6 +17,7 @@ from app.services.ai_providers import (
     create_provider,
 )
 from app.services.ai_providers.anthropic_adapter import AnthropicProvider
+from app.services.ai_providers.gemini_adapter import GeminiProvider
 from app.services.ai_providers.openai_adapter import OpenAiProvider
 
 KEY = "sk-synthetic-key-0123456789"
@@ -93,10 +94,26 @@ def anthropic_ok(text: str | None = None) -> dict:
     }
 
 
+def gemini_ok(text: str | None = None) -> dict:
+    text = json.dumps(EXTRACTION) if text is None else text
+    return {
+        "candidates": [
+            {
+                "finishReason": "STOP",
+                "content": {
+                    "role": "model",
+                    "parts": [{"text": "hidden", "thought": True}, {"text": text}],
+                },
+            }
+        ]
+    }
+
+
 # name -> (provider class, response builder for a valid extraction)
 ADAPTERS = {
     "openai": (OpenAiProvider, openai_ok),
     "anthropic": (AnthropicProvider, anthropic_ok),
+    "gemini": (GeminiProvider, gemini_ok),
 }
 
 
@@ -320,3 +337,82 @@ def test_anthropic_overloaded_and_billing_are_unavailable() -> None:
     for status in (402, 413, 529):
         provider, _ = make("anthropic", http_error(status, {"type": "error"}))
         assert category(provider) == "provider_unavailable"
+
+
+# --- Gemini -----------------------------------------------------------------
+
+
+def test_gemini_request_shape_key_in_header_only() -> None:
+    provider, stub = make("gemini", gemini_ok())
+    run(provider)
+    url = urlparse(stub.requests[0].full_url)
+    assert (url.scheme, url.netloc, url.query) == (
+        "https", "generativelanguage.googleapis.com", "",
+    )
+    assert url.path == "/v1beta/models/any-model-id:generateContent"
+    assert stub.requests[0].get_method() == "POST"
+    assert stub.headers["x-goog-api-key"] == KEY
+    assert KEY not in stub.requests[0].full_url
+    assert KEY not in stub.requests[0].data.decode()
+    body = stub.body
+    assert body["systemInstruction"] == {"parts": [{"text": "SYSTEM-SECRET-TEXT"}]}
+    assert body["contents"] == [{"role": "user", "parts": [{"text": "USER-SECRET-TEXT"}]}]
+    assert body["generationConfig"] == {
+        "maxOutputTokens": 1024,
+        "responseMimeType": "application/json",
+        "responseJsonSchema": EXTRACTION_JSON_SCHEMA,
+    }
+    assert not {"tools", "toolConfig"} & body.keys()
+
+
+def test_gemini_model_id_cannot_alter_the_url_path() -> None:
+    stub = Stub(gemini_ok())
+    GeminiProvider(urlopen=stub).extract(KEY, "x/../evil?k=1", PROMPT)
+    url = urlparse(stub.requests[0].full_url)
+    assert url.netloc == "generativelanguage.googleapis.com"
+    assert url.query == ""
+    assert url.path.endswith(":generateContent")
+    assert url.path.count("/") == 3
+
+
+def test_gemini_400_api_key_invalid_is_invalid_key() -> None:
+    body = {
+        "error": {
+            "code": 400,
+            "message": "API key not valid. Please pass a valid API key.",
+            "status": "INVALID_ARGUMENT",
+            "details": [{"@type": "type.googleapis.com/google.rpc.ErrorInfo", "reason": "API_KEY_INVALID"}],
+        }
+    }
+    provider, _ = make("gemini", http_error(400, body))
+    assert category(provider) == "invalid_key"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"not json", {"error": {"details": "x"}}, {"error": {"details": [{"reason": "OTHER"}]}}, []],
+)
+def test_gemini_other_400_is_unavailable(body) -> None:
+    provider, _ = make("gemini", http_error(400, body))
+    assert category(provider) == "provider_unavailable"
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        {"promptFeedback": {"blockReason": "SAFETY"}},
+        {"promptFeedback": {"blockReason": "PROHIBITED_CONTENT"}, "candidates": []},
+        {"candidates": []},
+        {},
+        {"candidates": [{"finishReason": "SAFETY"}]},
+        {"candidates": [{"finishReason": "MAX_TOKENS", "content": {"parts": [{"text": "{}"}]}}]},
+        {"candidates": [{"finishReason": "RECITATION", "content": {"parts": [{"text": "{}"}]}}]},
+        {"candidates": [{"finishReason": "STOP", "content": {"parts": []}}]},
+        {"candidates": [{"finishReason": "STOP", "content": {}}]},
+        {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": "x", "thought": True}]}}]},
+        {"candidates": "oops"},
+    ],
+)
+def test_gemini_blocked_or_unusable_generation_is_invalid_output(response) -> None:
+    provider, _ = make("gemini", response)
+    assert category(provider) == "invalid_output"

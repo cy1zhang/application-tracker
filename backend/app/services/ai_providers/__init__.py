@@ -116,4 +116,8 @@ def create_provider(provider: AiProvider) -> ExtractionProvider:
         from app.services.ai_providers.anthropic_adapter import AnthropicProvider
 
         return AnthropicProvider()
+    if provider is AiProvider.GEMINI:
+        from app.services.ai_providers.gemini_adapter import GeminiProvider
+
+        return GeminiProvider()
     raise ProviderError("provider_unavailable")

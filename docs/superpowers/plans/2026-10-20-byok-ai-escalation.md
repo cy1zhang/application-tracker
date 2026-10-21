@@ -109,9 +109,9 @@ Never escalated, with the reason in the code that decides it:
 - OpenAI and Gemini: check each provider's current official documentation for the request path, auth header, structured-output option (and the schema subset it accepts, such as strict-mode required/nullable rules), refusal/finish-reason fields, and error codes. Record the docs consulted and their dates in the commit message body.
 - Do not hardcode model IDs anywhere; tests pass an arbitrary string.
 
-- [ ] Write per-adapter tests with a stub `urlopen`: the request goes to the expected host over HTTPS with the key only in the auth header, the body contains the schema and no tools/functions, the timeout is 20 seconds, a valid response returns the parsed object, and each error class above maps to the right category, including a 302, an oversized body, invalid JSON, and a refusal/truncated finish reason.
-- [ ] Write a test that the default opener's redirect handler refuses redirects, and a log-capture test proving no key, prompt, or response text appears in logs or exception strings on any error path.
-- [ ] Confirm the tests fail; implement the interface plus OpenAI, run tests, lint, and commit. Repeat for Anthropic (commit), then Gemini (commit), each with its own focused tests.
+- [x] Write per-adapter tests with a stub `urlopen`: the request goes to the expected host over HTTPS with the key only in the auth header, the body contains the schema and no tools/functions, the timeout is 20 seconds, a valid response returns the parsed object, and each error class above maps to the right category, including a 302, an oversized body, invalid JSON, and a refusal/truncated finish reason.
+- [x] Write a test that the default opener's redirect handler refuses redirects, and a log-capture test proving no key, prompt, or response text appears in logs or exception strings on any error path.
+- [x] Confirm the tests fail; implement the interface plus OpenAI, run tests, lint, and commit. Repeat for Anthropic (commit), then Gemini (commit), each with its own focused tests.
 
 ---
 
