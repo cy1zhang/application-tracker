@@ -191,7 +191,7 @@ Never escalated, with the reason in the code that decides it:
 
 - [x] Write the template guard test and the `test_deploy.py` cases first; confirm they fail.
 - [x] Implement template, deploy script, example env, lease change; run `sam validate --template-file infra/template.yaml --lint`, `python3 scripts/test_deploy.py -q`, and backend sync tests; commit.
-- [ ] Update `DEVELOPMENT.md`; run every CI command (backend sync/lint/pytest, frontend lint/test/typecheck/build/`npm audit`, SAM lint, offline deploy tests); commit.
+- [x] Update `DEVELOPMENT.md`; run every CI command (backend sync/lint/pytest, frontend lint/test/typecheck/build/`npm audit`, SAM lint, offline deploy tests); commit.
 - [ ] Request read-only branch review (`codex exec review -c sandbox_mode='"read-only"' --base main`, or against `codex/milestone-8-resilient-sync` while stacked), pass findings to the user, resolve those the user accepts, and commit.
 - [ ] After user approval: review the CloudFormation change set (expect no replacements; new parameters, CORS method, KMS statements, worker timeout, queue visibility), deploy to development with all three model IDs blank, and verify `UPDATE_COMPLETE`, health 200, protected `/settings` 401 without a token, CORS preflight allows `PUT`, Gmail connect and sync still work, and `GET /settings` shows no available providers.
 - [ ] Update the roadmap status and `AGENTS.md` to the verified state, and commit the clean Milestone 9 handoff.

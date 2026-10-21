@@ -148,6 +148,105 @@ value and a later clear email can update it. These behaviors are covered by
 synthetic offline tests. Milestone 7 is deployed, but its live review controls
 have not yet been checked.
 
+## Bring-your-own-key AI escalation
+
+Milestone 9 lets an owner supply their own OpenAI, Anthropic, or Gemini API key.
+Deterministic rules always run first. Only messages the rules leave ambiguous
+(the reasons in `ESCALATION_REASONS`) are sent to the owner's chosen provider;
+the model's answer is validated against the email text and reconciled by the
+server before anything can change an application. Everything is covered offline
+with stub providers: `uv run pytest tests/test_ai_*.py tests/test_settings_api.py
+-q` from `backend/` needs no network, key, or AWS account.
+
+### Model-ID parameters
+
+The template has three SAM parameters, `OpenAiModelId`, `AnthropicModelId`, and
+`GeminiModelId`, each defaulting to blank. They become the `AI_MODEL_OPENAI`,
+`AI_MODEL_ANTHROPIC`, and `AI_MODEL_GEMINI` environment variables on the API and
+sync worker Lambdas. **A blank ID means that provider is unavailable**: it is
+not offered in `GET /settings`, and the worker will not call it. With all three
+blank, which is the shipped default, AI is off and sync behaves exactly as
+before. No model ID is written in code or committed config. To enable one, set
+`OPENAI_MODEL_ID`, `ANTHROPIC_MODEL_ID`, or `GEMINI_MODEL_ID` in the ignored
+`.env.deploy` (see `.env.deploy.example`) to an exact ID your provider account
+can call. `deploy.sh` passes only non-blank values; omitted parameters take the
+blank template default, and `sam deploy` does not reuse earlier values, so
+deleting a variable and redeploying turns that provider off. Lambda environment
+values are not secrets; never put an API key in a parameter.
+
+Models that spend output tokens on hidden reasoning ("thinking") may use up the
+fixed 1024-output-token cap before producing the JSON. The adapters report that
+as `invalid_output`, and the message stays in review. If that happens, choose a
+non-thinking model or a lower reasoning setting rather than raising the cap
+without review.
+
+### Provider-key lifecycle
+
+- **Save:** `PUT /settings/ai` takes a provider, the key, and consent. The API
+  encrypts the key with the stack KMS key (encryption context `owner_id` plus
+  `credential_type=ai_api_key`) and stores only the ciphertext and the last four
+  characters as a hint on the owner's Users record. The key is never returned.
+- **Use:** the worker decrypts it into memory for one invocation, sends it only
+  in the provider's auth header over HTTPS, and discards it. Each attempt
+  reserves from a 50-requests-per-UTC-day counter first. This is a request cap,
+  not a monetary cap; the provider bills the owner separately.
+- **Rejected key:** a provider authentication failure marks the key `invalid`
+  (guarded by the settings version, so a stale failure cannot invalidate a
+  freshly replaced key). Later messages stay in review with an `ai_note` until
+  the owner replaces the key.
+- **Disable, replace, delete:** disabling keeps the encrypted key but stops use;
+  replacing or deleting bumps the settings version, so any in-flight AI result
+  is discarded at commit time. Delete removes the ciphertext, hint, and consent.
+  Disconnecting Gmail does not delete the AI key.
+- **Access:** the KMS policies on the API and worker roles are conditioned on
+  `kms:EncryptionContext:credential_type` for `gmail_refresh_token` and
+  `ai_api_key`; the dispatcher has no KMS access.
+
+### Privacy
+
+- **Sent to the provider:** for one candidate message, its subject, sender, and
+  up to 8,000 characters of parsed body text, plus up to 20 lines of
+  `company | role` for the owner's own applications that the message mentions
+  or links to. Nothing else is sent: no attachments, other messages, other
+  owners' data, or account identifiers. Requests have no tools, use structured
+  output, and never follow redirects.
+- **Stored:** the encrypted key, hint, provider, consent time, key status,
+  settings version, and daily usage counter on the Users record. On a review item:
+  the provider name, model ID, the validated proposal fields, and short
+  evidence quotes (at most 70 characters each) that were checked against the
+  email text. Raw provider responses and prompts are not stored.
+- **Never logged:** the API key, prompts, email text, provider response or error
+  bodies, and evidence quotes. Logs carry identifiers, counts, and error
+  categories only. Tests assert this for every adapter error path.
+- The settings panel requires an explicit consent checkbox before a key can be
+  saved: email text from candidate messages goes to the chosen provider, which
+  bills and retains it under its own terms.
+
+### Verification boundary
+
+- **Verified offline (CI and local):** request/response handling of all three
+  adapters against stubs, schema and prompt construction, validation of quotes
+  and cue words, budget and key-state transitions in moto, server-side
+  reconciliation, pipeline and failure handling, the settings and review APIs,
+  the settings and review UI, template lint, the deploy-script parameter
+  handling, and the guards in `backend/tests/test_infra_timing.py` (lease longer
+  than the worker timeout, queue visibility at least six times the timeout, PUT
+  in CORS, model-ID wiring, and KMS conditions).
+- **Not verified until the owner supplies their own key and model IDs:** a live
+  call to each provider and its real structured-output behavior, a real
+  invalid-key response, real rate limiting, whether the real KMS condition
+  works for both Gmail connect and AI key save, and an observed auto-apply or
+  proposal on a designated test mailbox. These must not be described as tested
+  before they are run, and live provider results never enter CI or the
+  repository.
+
+### Timing
+
+The worker timeout is 600 seconds, the SQS visibility timeout is 3600 seconds,
+and the sync lease is 12 minutes, so a recovery pass cannot start a second
+worker while a slow page is still running. The recovery pass reads the stored
+`lease_expires_at`, so it follows the lease automatically.
+
 ## Deploying the development app
 
 The manual deploy targets one SAM stack, `app-tracker-dev`, in `us-east-1`.
