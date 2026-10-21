@@ -211,3 +211,18 @@ Complete offline: schema, prompt, validation, three adapters against stubs, budg
 - **Queue visibility.** 3600 seconds follows AWS's 6x guidance but delays SQS-level retries after a worker exception; the 15-minute recovery pass and 12-minute lease compensate. 720 seconds is the alternative (valid because it is at least the timeout).
 - **Out of scope, listed as follow-ups:** an explicit "retry with AI" action for existing pending reviews (not small enough to include safely: it needs its own owner-scoped endpoint, the same budget and generation guards, and replay semantics); synthetic classification evaluation in CI and alarms (Milestone 10); a Users-table GSI for connected accounts; renaming the Gmail-named KMS key and env var; prefilling the create-application form from an AI suggestion.
 - **Who drives.** The user has not named the Milestone 9 driver and reviewer; AGENTS.md requires one of each.
+
+## Manager Resolutions (2026-10-20)
+
+The owner delegated execution while away. These resolutions are reversible defaults; the owner can revisit any of them.
+
+- **Driver/reviewer:** Claude Code drives, with implementation delegated to subagents that are graded per task. Codex reviews read-only.
+- **Review reason shape:** accepted. `reason` keeps the rule reason, AI conditions go in `ai_note`, and only `ai_proposal` replaces `reason` (with `rule_reason` kept).
+- **Auto-apply reasons:** accepted as drafted. Only `ambiguous_application` and `unknown_stage` may auto-apply.
+- **Name-only matching:** accepted only as specified. It requires an exact case-folded company **and** role, both with valid evidence, exactly one match, and no season/year conflict.
+- **Status cue lexicon:** accept the drafted lists for now. The owner should review them before any live key is enabled.
+- **Retry policy:** accepted. Only `provider_unavailable` is retried, once.
+- **Quote length:** keep 70 characters and tune later against synthetic fixtures in Milestone 10.
+- **Budget-limited reviews:** accepted. They stay in review until the follow-up retry action exists.
+- **Queue visibility:** 3600 seconds, relying on the 15-minute recovery pass and 12-minute lease.
+- **Deploy:** deploy to development with all model IDs blank, so AI is unavailable. That is the same environment the owner already authorized, and it leaves behavior unchanged for the live mailbox. Codex findings are triaged by the manager: clear defects are fixed, and design choices are recorded for the owner.
