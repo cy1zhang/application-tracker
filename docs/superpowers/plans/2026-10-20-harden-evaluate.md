@@ -224,8 +224,8 @@
 Owner follow-ups (out of scope for this milestone): public-launch privacy policy and deletion pages; Google restricted-scope verification and any security assessment; Limited Use review including AI-provider handling; verified OAuth domain and redirects; provider data-use terms review; Testing-mode seven-day refresh-token expiry; backups and their expiry if ever enabled; budget and concurrency settings for launch; owner review of the status cue lexicon before any live key is enabled.
 
 - [x] Write the tombstone tests; confirm they pass or fix a found defect test-first; commit.
-- [ ] Write the matrix guard test against a first draft of `docs/VERIFICATION.md` and fix the draft until every cited test exists; commit.
-- [ ] Add the live checklist and owner follow-ups; commit.
+- [x] Write the matrix guard test against a first draft of `docs/VERIFICATION.md` and fix the draft until every cited test exists; commit.
+- [x] Add the live checklist and owner follow-ups; commit.
 - [ ] Run every CI command locally (backend sync/lint/pytest and the evaluation step, frontend audit/lint/test/typecheck/build, SAM lint, offline deploy tests, `git diff --check`).
 - [ ] Request the read-only Codex review against `milestone-9-byok-ai`; pass findings to the user; resolve those the user accepts test-first, one commit each.
 - [ ] After user approval: review the CloudFormation change set (expect no replacements; new queue, DLQ, function, role, log group, SNS topic and subscription only when enabled, alarms, metric filters, Users TTL, new IAM statements, new environment variables) and deploy to development with `AlarmNotifications` as the owner chooses. Verify `UPDATE_COMPLETE`, health 200, a protected route 401 without a token, the deletion function and queue exist with 14-day log retention, and a normal incremental sync still completes. Do not invoke `DELETE /account`.
