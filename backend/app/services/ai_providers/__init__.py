@@ -112,4 +112,8 @@ def create_provider(provider: AiProvider) -> ExtractionProvider:
         from app.services.ai_providers.openai_adapter import OpenAiProvider
 
         return OpenAiProvider()
+    if provider is AiProvider.ANTHROPIC:
+        from app.services.ai_providers.anthropic_adapter import AnthropicProvider
+
+        return AnthropicProvider()
     raise ProviderError("provider_unavailable")

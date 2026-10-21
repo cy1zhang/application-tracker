@@ -16,6 +16,7 @@ from app.services.ai_providers import (
     _NoRedirect,
     create_provider,
 )
+from app.services.ai_providers.anthropic_adapter import AnthropicProvider
 from app.services.ai_providers.openai_adapter import OpenAiProvider
 
 KEY = "sk-synthetic-key-0123456789"
@@ -82,8 +83,21 @@ def openai_ok(text: str | None = None) -> dict:
     }
 
 
+def anthropic_ok(text: str | None = None) -> dict:
+    text = json.dumps(EXTRACTION) if text is None else text
+    return {
+        "type": "message",
+        "role": "assistant",
+        "stop_reason": "end_turn",
+        "content": [{"type": "thinking", "thinking": ""}, {"type": "text", "text": text}],
+    }
+
+
 # name -> (provider class, response builder for a valid extraction)
-ADAPTERS = {"openai": (OpenAiProvider, openai_ok)}
+ADAPTERS = {
+    "openai": (OpenAiProvider, openai_ok),
+    "anthropic": (AnthropicProvider, anthropic_ok),
+}
 
 
 def make(name: str, outcome) -> tuple[object, Stub]:
@@ -235,3 +249,74 @@ def test_openai_unusable_generation_is_invalid_output(response) -> None:
 def test_openai_failed_status_is_unavailable() -> None:
     provider, _ = make("openai", {"status": "failed", "error": {"message": "x"}})
     assert category(provider) == "provider_unavailable"
+
+
+# --- Anthropic --------------------------------------------------------------
+
+
+def test_anthropic_request_shape() -> None:
+    provider, stub = make("anthropic", anthropic_ok())
+    run(provider)
+    url = urlparse(stub.requests[0].full_url)
+    assert (url.scheme, url.netloc, url.path, url.query) == (
+        "https", "api.anthropic.com", "/v1/messages", "",
+    )
+    assert stub.requests[0].get_method() == "POST"
+    assert stub.headers["x-api-key"] == KEY
+    assert stub.headers["anthropic-version"] == "2023-06-01"
+    assert "authorization" not in stub.headers
+    assert KEY not in stub.requests[0].full_url
+    assert KEY not in stub.requests[0].data.decode()
+    body = stub.body
+    assert body["model"] == "any-model-id"
+    assert body["max_tokens"] == 1024
+    assert body["system"] == "SYSTEM-SECRET-TEXT"
+    assert body["messages"] == [{"role": "user", "content": "USER-SECRET-TEXT"}]
+    assert body["output_config"]["format"]["type"] == "json_schema"
+    assert not {"tools", "tool_choice", "thinking"} & body.keys()
+
+
+def _keys(node) -> set[str]:
+    if isinstance(node, dict):
+        return set(node) | {k for v in node.values() for k in _keys(v)}
+    if isinstance(node, list):
+        return {k for v in node for k in _keys(v)}
+    return set()
+
+
+def test_anthropic_schema_drops_only_numeric_bounds() -> None:
+    provider, stub = make("anthropic", anthropic_ok())
+    run(provider)
+    sent = stub.body["output_config"]["format"]["schema"]
+    assert not {"minimum", "maximum"} & _keys(sent)
+    assert _keys(EXTRACTION_JSON_SCHEMA) - _keys(sent) == {"minimum", "maximum"}
+    assert sent["properties"]["year"] == {"type": ["integer", "null"]}
+    assert sent["required"] == EXTRACTION_JSON_SCHEMA["required"]
+    assert sent["additionalProperties"] is False
+    # The shared schema is not mutated.
+    assert EXTRACTION_JSON_SCHEMA["properties"]["year"]["minimum"] == 2000
+
+
+@pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens", "tool_use", "pause_turn", None])
+def test_anthropic_non_end_turn_is_invalid_output(stop_reason) -> None:
+    response = anthropic_ok()
+    response["stop_reason"] = stop_reason
+    provider, _ = make("anthropic", response)
+    assert category(provider) == "invalid_output"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [[], [{"type": "thinking", "thinking": ""}], "oops", [{"type": "text"}], None],
+)
+def test_anthropic_empty_or_malformed_content_is_invalid_output(content) -> None:
+    response = anthropic_ok()
+    response["content"] = content
+    provider, _ = make("anthropic", response)
+    assert category(provider) == "invalid_output"
+
+
+def test_anthropic_overloaded_and_billing_are_unavailable() -> None:
+    for status in (402, 413, 529):
+        provider, _ = make("anthropic", http_error(status, {"type": "error"}))
+        assert category(provider) == "provider_unavailable"
