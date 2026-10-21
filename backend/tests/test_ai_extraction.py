@@ -298,6 +298,10 @@ def test_body_is_capped_and_sections_match_what_was_sent():
         ("interviewing", "if you are selected for an interview", False),
         ("rejected", "we will not be moving forward with your application", True),
         ("offer", "we are pleased to offer you the role", True),
+        ("offer", "Your offer letter is not ready", False),
+        ("interviewing", "we haven't scheduled your interview", False),
+        ("interviewing", "we have not yet invite you to interview", False),
+        ("rejected", "you have not been selected", True),
     ],
 )
 def test_status_cues_reject_boilerplate_and_hedging(status, quote, kept):
