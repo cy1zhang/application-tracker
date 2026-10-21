@@ -41,6 +41,16 @@ printf 'Building Lambda package in a Linux container...\n'
 (cd backend && uv export --locked --no-dev --format requirements.txt --output-file requirements.txt >/dev/null)
 sam build --use-container --template-file infra/template.yaml
 
+# Model IDs are optional. An unset or blank variable is omitted from the overrides,
+# so the template default (blank, provider unavailable) applies; sam deploy does not
+# reuse previous parameter values, so removing a variable also blanks the stack value.
+parameters=("BudgetEmail=$BUDGET_EMAIL" "GoogleOAuthSecretName=$GOOGLE_SECRET_NAME" "GmailOAuthSecretName=$GMAIL_SECRET_NAME")
+for pair in OpenAiModelId:OPENAI_MODEL_ID AnthropicModelId:ANTHROPIC_MODEL_ID GeminiModelId:GEMINI_MODEL_ID; do
+  variable="${pair#*:}"
+  value="${!variable:-}"
+  [[ -z "$value" ]] || parameters+=("${pair%%:*}=$value")
+done
+
 mkdir -p .aws-sam
 printf 'Deploying CloudFormation stack %s...\n' "$STACK_NAME"
 if ! sam deploy \
@@ -52,7 +62,7 @@ if ! sam deploy \
   --no-confirm-changeset \
   --no-fail-on-empty-changeset \
   --no-progressbar \
-  --parameter-overrides "BudgetEmail=$BUDGET_EMAIL" "GoogleOAuthSecretName=$GOOGLE_SECRET_NAME" "GmailOAuthSecretName=$GMAIL_SECRET_NAME" \
+  --parameter-overrides "${parameters[@]}" \
   >.aws-sam/deploy.log 2>&1; then
   fail "SAM deploy failed; inspect the private .aws-sam/deploy.log on this laptop"
 fi

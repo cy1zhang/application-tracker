@@ -136,6 +136,40 @@ class DeployScriptTests(unittest.TestCase):
         self.assertIn("https://main.example.invalid", result.stdout)
         self.assertNotIn("test/gmail-oauth", result.stdout)
 
+    def deploy_call(self):
+        return next(
+            line for line in self.calls.read_text().splitlines()
+            if line.startswith("sam deploy")
+        )
+
+    def test_absent_model_ids_are_omitted_so_the_blank_default_applies(self):
+        result = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("ModelId", self.deploy_call())
+
+    def test_blank_model_id_is_omitted(self):
+        config = self.root / ".env.deploy"
+        config.write_text(config.read_text() + "OPENAI_MODEL_ID=\n")
+        result = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("OpenAiModelId", self.deploy_call())
+
+    def test_present_model_ids_are_passed_as_parameters(self):
+        config = self.root / ".env.deploy"
+        config.write_text(
+            config.read_text()
+            + "OPENAI_MODEL_ID=synthetic-openai\n"
+            + "ANTHROPIC_MODEL_ID=synthetic-anthropic\n"
+            + "GEMINI_MODEL_ID=synthetic-gemini\n"
+        )
+        result = self.run_deploy()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        call = self.deploy_call()
+        self.assertIn("OpenAiModelId=synthetic-openai", call)
+        self.assertIn("AnthropicModelId=synthetic-anthropic", call)
+        self.assertIn("GeminiModelId=synthetic-gemini", call)
+        self.assertNotIn("synthetic-openai", result.stdout + result.stderr)
+
 
 class DeploymentGuideTests(unittest.TestCase):
     def test_google_secret_command_outputs_clean_json(self):

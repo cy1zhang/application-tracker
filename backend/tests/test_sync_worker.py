@@ -153,7 +153,7 @@ def test_interrupted_page_replays_without_skipping_durable_outcomes(setup) -> No
         Key={"owner_id": {"S": "owner-a"}, "event_id": {"S": "gmail#msg-1"}},
     )
 
-    run = invoke(setup, lease_id="lease-2", now=NOW + timedelta(minutes=4))
+    run = invoke(setup, lease_id="lease-2", now=NOW + timedelta(minutes=13))
 
     assert run.status == "pending"
     assert run.processed_count == 2

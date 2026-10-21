@@ -139,7 +139,7 @@ def test_expired_lease_can_be_reclaimed_and_old_holder_cannot_checkpoint(reposit
     sync.claim("owner-a", "run-1", 1, "lease-1", STARTED_AT)
 
     reclaimed = sync.claim(
-        "owner-a", "run-1", 1, "lease-2", STARTED_AT + timedelta(minutes=4)
+        "owner-a", "run-1", 1, "lease-2", STARTED_AT + timedelta(minutes=13)
     )
 
     assert reclaimed is not None

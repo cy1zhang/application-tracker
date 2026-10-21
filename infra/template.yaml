@@ -17,6 +17,18 @@ Parameters:
     Default: 'false'
     AllowedValues: ['true', 'false']
     Description: Set true only when the account has enough unreserved Lambda concurrency
+  OpenAiModelId:
+    Type: String
+    Default: ''
+    Description: OpenAI model ID; blank leaves the OpenAI provider unavailable
+  AnthropicModelId:
+    Type: String
+    Default: ''
+    Description: Anthropic model ID; blank leaves the Anthropic provider unavailable
+  GeminiModelId:
+    Type: String
+    Default: ''
+    Description: Gemini model ID; blank leaves the Gemini provider unavailable
 
 Conditions:
   UseReservedConcurrency: !Equals [!Ref ReserveConcurrency, 'true']
@@ -116,7 +128,7 @@ Resources:
   SyncQueue:
     Type: AWS::SQS::Queue
     Properties:
-      VisibilityTimeout: 720
+      VisibilityTimeout: 3600
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt SyncDeadLetterQueue.Arn
         maxReceiveCount: 5
@@ -231,7 +243,7 @@ Resources:
         AllowOrigins:
           - !Sub 'https://main.${AmplifyApp.DefaultDomain}'
         AllowHeaders: [Authorization, Content-Type]
-        AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
+        AllowMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
       DefaultRouteSettings:
         ThrottlingRateLimit: 10
         ThrottlingBurstLimit: 20
@@ -268,6 +280,9 @@ Resources:
           GMAIL_KMS_KEY_ARN: !GetAtt GmailKmsKey.Arn
           GMAIL_OAUTH_SECRET_NAME: !Ref GmailOAuthSecretName
           FRONTEND_URL: !Sub 'https://main.${AmplifyApp.DefaultDomain}'
+          AI_MODEL_OPENAI: !Ref OpenAiModelId
+          AI_MODEL_ANTHROPIC: !Ref AnthropicModelId
+          AI_MODEL_GEMINI: !Ref GeminiModelId
       Policies:
         - Version: '2012-10-17'
           Statement:
@@ -299,6 +314,15 @@ Resources:
             - Effect: Allow
               Action: [kms:GenerateDataKey, kms:Decrypt]
               Resource: !GetAtt GmailKmsKey.Arn
+              Condition:
+                StringEquals:
+                  'kms:EncryptionContext:credential_type': gmail_refresh_token
+            - Effect: Allow
+              Action: [kms:GenerateDataKey, kms:Decrypt]
+              Resource: !GetAtt GmailKmsKey.Arn
+              Condition:
+                StringEquals:
+                  'kms:EncryptionContext:credential_type': ai_api_key
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GmailOAuthSecretName}-*'
@@ -352,7 +376,7 @@ Resources:
       Handler: app.sync_handler.handler
       Runtime: python3.12
       Architectures: [arm64]
-      Timeout: 120
+      Timeout: 600
       MemorySize: 256
       Environment:
         Variables:
@@ -364,6 +388,9 @@ Resources:
           SYNC_QUEUE_URL: !Ref SyncQueue
           GMAIL_KMS_KEY_ARN: !GetAtt GmailKmsKey.Arn
           GMAIL_OAUTH_SECRET_NAME: !Ref GmailOAuthSecretName
+          AI_MODEL_OPENAI: !Ref OpenAiModelId
+          AI_MODEL_ANTHROPIC: !Ref AnthropicModelId
+          AI_MODEL_GEMINI: !Ref GeminiModelId
       Policies:
         - Version: '2012-10-17'
           Statement:
@@ -385,6 +412,15 @@ Resources:
             - Effect: Allow
               Action: kms:Decrypt
               Resource: !GetAtt GmailKmsKey.Arn
+              Condition:
+                StringEquals:
+                  'kms:EncryptionContext:credential_type': gmail_refresh_token
+            - Effect: Allow
+              Action: kms:Decrypt
+              Resource: !GetAtt GmailKmsKey.Arn
+              Condition:
+                StringEquals:
+                  'kms:EncryptionContext:credential_type': ai_api_key
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
               Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${GmailOAuthSecretName}-*'

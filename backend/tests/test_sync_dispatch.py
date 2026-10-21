@@ -66,9 +66,9 @@ def test_recovery_pages_pending_and_expired_runs_without_restarting_completed(se
         gmail.save_connection(
             f"owner-{index}", 0, f"{index}@example.test", TOKEN, NOW
         )
-        syncs.start(f"owner-{index}", f"run-{index}", NOW - timedelta(minutes=4))
-    syncs.claim("owner-1", "run-1", 1, "lease", NOW - timedelta(minutes=4))
-    syncs.claim("owner-2", "run-2", 1, "lease", NOW - timedelta(minutes=4))
+        syncs.start(f"owner-{index}", f"run-{index}", NOW - timedelta(minutes=13))
+    syncs.claim("owner-1", "run-1", 1, "lease", NOW - timedelta(minutes=13))
+    syncs.claim("owner-2", "run-2", 1, "lease", NOW - timedelta(minutes=13))
     syncs.complete("owner-2", "run-2", 1, "lease", 0, NOW)
 
     recover_unfinished(client, publisher, "Users", "SyncRuns", "queue", NOW, page_size=1)

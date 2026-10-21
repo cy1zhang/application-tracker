@@ -144,7 +144,7 @@ class DynamoSyncRepository:
                             ":pending": self._serializer.serialize("pending"),
                             ":lease": self._serializer.serialize(lease_id),
                             ":expiry": self._serializer.serialize(
-                                (now + timedelta(minutes=3)).isoformat()
+                                (now + timedelta(minutes=12)).isoformat()
                             ),
                             ":now": self._serializer.serialize(now.isoformat()),
                         },
