@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
 
+from app.domain.account import AccountDeleting
 from app.domain.ai import (
     AI_DAILY_LIMIT,
     AiProvider,
@@ -88,7 +89,7 @@ class DynamoAiSettingsRepository:
                 "ai_key_hint = :hint, ai_enabled = :enabled, ai_key_status = :ok, "
                 "ai_consent_at = :consent_at ADD ai_settings_version :one"
             )
-            condition = None
+            condition = "attribute_not_exists(deletion_state)"
             values |= {
                 ":key": encrypted_key,
                 ":hint": hint,
@@ -97,19 +98,23 @@ class DynamoAiSettingsRepository:
             }
         else:
             update = "SET ai_enabled = :enabled ADD ai_settings_version :one"
-            condition = "ai_provider = :provider AND attribute_exists(ai_encrypted_key)"
+            condition = (
+                "ai_provider = :provider AND attribute_exists(ai_encrypted_key) "
+                "AND attribute_not_exists(deletion_state)"
+            )
         request = {
             "TableName": self._users_table,
             "Key": self._encode({"owner_id": owner_id}),
             "UpdateExpression": update,
+            "ConditionExpression": condition,
             "ExpressionAttributeValues": self._encode(values),
         }
-        if condition:
-            request["ConditionExpression"] = condition
         try:
             self._client.update_item(**request)
         except ClientError as error:
             if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                if self._is_deleting(owner_id):
+                    raise AccountDeleting from None
                 raise AiKeyRequired from None
             raise
 
@@ -122,12 +127,17 @@ class DynamoAiSettingsRepository:
                     "REMOVE ai_provider, ai_encrypted_key, ai_key_hint, ai_enabled, "
                     "ai_key_status, ai_consent_at ADD ai_settings_version :one"
                 ),
-                ConditionExpression="attribute_exists(ai_settings_version)",
+                ConditionExpression=(
+                    "attribute_exists(ai_settings_version) "
+                    "AND attribute_not_exists(deletion_state)"
+                ),
                 ExpressionAttributeValues={":one": self._serializer.serialize(1)},
             )
         except ClientError as error:
             if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
                 raise
+            if self._is_deleting(owner_id):
+                raise AccountDeleting from None
 
     def reserve_request(
         self,
@@ -263,6 +273,9 @@ class DynamoAiSettingsRepository:
             daily_limit=AI_DAILY_LIMIT,
             usage_day=today,
         )
+
+    def _is_deleting(self, owner_id: str) -> bool:
+        return "deletion_state" in (self._get_item(owner_id) or {})
 
     def _get_item(self, owner_id: str) -> dict | None:
         response = self._client.get_item(

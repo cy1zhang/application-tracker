@@ -86,7 +86,8 @@ class DynamoSyncRepository:
                                 "generation = :generation AND attribute_exists(email) "
                                 "AND attribute_exists(encrypted_token) "
                                 "AND attribute_not_exists(reconnect_required) "
-                                "AND attribute_not_exists(active_run_id)"
+                                "AND attribute_not_exists(active_run_id) "
+                                "AND attribute_not_exists(deletion_state)"
                             ),
                             "ExpressionAttributeValues": {
                                 ":run": self._serializer.serialize(run_id),

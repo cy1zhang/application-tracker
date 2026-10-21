@@ -95,7 +95,8 @@ class DynamoGmailRepository:
                     "latest_run_id, reconnect_required"
                 ),
                 ConditionExpression=(
-                    "attribute_not_exists(generation) OR generation = :expected"
+                    "(attribute_not_exists(generation) OR generation = :expected) "
+                    "AND attribute_not_exists(deletion_state)"
                 ),
                 ExpressionAttributeValues={
                     ":expected": self._serializer.serialize(expected_generation),
@@ -111,19 +112,25 @@ class DynamoGmailRepository:
             raise
 
     def disconnect(self, owner_id: str) -> None:
-        self._client.update_item(
-            TableName=self._users_table,
-            Key=self._encode({"owner_id": owner_id}),
-            UpdateExpression=(
-                "SET generation = if_not_exists(generation, :zero) + :one "
-                "REMOVE email, encrypted_token, connected_at, history_id, "
-                "last_success_at, active_run_id, latest_run_id, reconnect_required"
-            ),
-            ExpressionAttributeValues={
-                ":zero": self._serializer.serialize(0),
-                ":one": self._serializer.serialize(1),
-            },
-        )
+        try:
+            self._client.update_item(
+                TableName=self._users_table,
+                Key=self._encode({"owner_id": owner_id}),
+                UpdateExpression=(
+                    "SET generation = if_not_exists(generation, :zero) + :one "
+                    "REMOVE email, encrypted_token, connected_at, history_id, "
+                    "last_success_at, active_run_id, latest_run_id, reconnect_required"
+                ),
+                ConditionExpression="attribute_not_exists(deletion_state)",
+                ExpressionAttributeValues={
+                    ":zero": self._serializer.serialize(0),
+                    ":one": self._serializer.serialize(1),
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                raise StaleGeneration from None
+            raise
 
     def get_active(
         self, owner_id: str, expected_generation: int

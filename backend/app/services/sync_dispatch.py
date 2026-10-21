@@ -39,7 +39,10 @@ def dispatch_daily(
     started = 0
     for user in _scan_pages(
         client, users_table, page_size,
-        FilterExpression="attribute_exists(email) AND attribute_exists(encrypted_token)",
+        FilterExpression=(
+            "attribute_exists(email) AND attribute_exists(encrypted_token) "
+            "AND attribute_not_exists(deletion_state)"
+        ),
         ProjectionExpression="owner_id",
     ):
         try:
