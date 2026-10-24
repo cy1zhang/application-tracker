@@ -1,4 +1,5 @@
 import json
+import stat
 from collections import Counter
 
 import pytest
@@ -128,3 +129,94 @@ def test_export_refuses_out_dir_inside_git_tracked_path(tmp_path):
     with pytest.raises(ValueError):
         export(api, tmp_path / ".local" / ".." / "answer-key")
     assert not (tmp_path / "answer-key").exists()
+
+
+def test_sample_order_is_mixed_across_strata():
+    ids = select_sample(_summaries(FULL), size=200, seed=1)
+    assert len(_strata(ids[:20])) > 1
+
+
+def test_export_files_are_private(tmp_path):
+    out = tmp_path / ".local" / "key"
+    export(FakeApi(_small()), out, size=10, seed=1)
+    for directory in (out, out / "emails"):
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+    files = [out / "index.json", out / "strata.json", *(out / "emails").glob("*.json")]
+    assert len(files) == 12
+    for path in files:
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+
+
+def test_export_writes_strata_separately(tmp_path):
+    out = tmp_path / ".local" / "key"
+    summaries = _summaries(
+        {("ignored", "no_event"): 5, ("review_required", "ai_proposal"): 5,
+         ("review_required", "ambiguous"): 5, ("applied", "rule"): 5}
+    )
+    export(FakeApi(summaries), out, size=20, seed=1)
+    index = json.loads((out / "index.json").read_text())
+    strata = json.loads((out / "strata.json").read_text())
+    assert set(strata) == set(index)
+    assert set(strata.values()) == {
+        "ignored_no_event", "ai_proposal", "review_other", "other"
+    }
+    expected = {
+        "ignored-no_event": "ignored_no_event",
+        "review_required-ai_proposal": "ai_proposal",
+        "review_required-ambiguous": "review_other",
+        "applied-rule": "other",
+    }
+    for label, message_id in index.items():
+        assert strata[label] == expected[message_id.rsplit("-", 1)[0]]
+
+
+def test_export_refuses_non_empty_emails_dir(tmp_path):
+    out = tmp_path / ".local" / "key"
+    (out / "emails").mkdir(parents=True)
+    (out / "emails" / "E001.json").write_text("{}")
+
+    class NoCalls:
+        def get(self, *args, **kwargs):
+            raise AssertionError("no API call before the check")
+
+    with pytest.raises(ValueError):
+        export(NoCalls(), out)
+
+
+def test_export_writes_index_before_emails(tmp_path):
+    out = tmp_path / ".local" / "key"
+
+    class Crashing(FakeApi):
+        def get(self, path, params=None):
+            if path.endswith("/content"):
+                raise ApiError(500, "boom")
+            return super().get(path, params)
+
+    with pytest.raises(ApiError):
+        export(Crashing(_small()), out, size=10, seed=1)
+    assert json.loads((out / "index.json").read_text()) == {}
+    assert json.loads((out / "strata.json").read_text()) == {}
+
+
+@pytest.mark.parametrize("status,detail", [(500, "message_unavailable"), (503, "other")])
+def test_export_reraises_other_api_errors(tmp_path, status, detail):
+    class Failing(FakeApi):
+        def get(self, path, params=None):
+            if path.endswith("/content"):
+                raise ApiError(status, detail)
+            return super().get(path, params)
+
+    with pytest.raises(ApiError):
+        export(Failing(_small()), tmp_path / ".local" / "key", size=10, seed=1)
+
+
+def test_list_all_follows_cursor_across_pages():
+    from evaluation.answer_key.export import _list_all
+
+    summaries = _summaries({("ignored", "no_event"): 250})
+    assert len(_list_all(FakeApi(summaries))) == 250
+
+
+def test_select_sample_scales_quotas_for_other_sizes():
+    ids = select_sample(_summaries(FULL), size=40, seed=1)
+    assert _strata(ids) == {"ignored": 18, "ai": 16, "review": 4, "other": 2}
