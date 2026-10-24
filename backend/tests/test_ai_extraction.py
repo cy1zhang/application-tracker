@@ -402,3 +402,8 @@ def test_stored_proposal_without_kind_still_reads():
     assert old.kind is None
     new = AiProposalView.model_validate({"kind": "job_alert", "evidence": {}})
     assert new.kind is ApplicationKind.JOB_ALERT
+
+
+def test_prompt_exempts_kind_from_quote_rule():
+    system = _prompt("body").system
+    assert "For every non-null field except kind, copy a short exact quote" in system

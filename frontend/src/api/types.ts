@@ -102,6 +102,7 @@ export interface AiProposal {
   status?: ApplicationStatus | null;
   requisition_id?: string | null;
   kind?:
+    | null
     | "application_update"
     | "job_alert"
     | "recruiter_outreach"
