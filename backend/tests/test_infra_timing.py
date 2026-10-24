@@ -103,3 +103,27 @@ def test_kms_access_is_scoped_by_credential_type() -> None:
         assert types == {"gmail_refresh_token", "ai_api_key"}
     dispatcher = _template()["Resources"]["SyncDispatcherFunction"]["Properties"]
     assert "kms" not in str(dispatcher["Policies"])
+
+
+def test_local_tools_client_has_loopback_callback_and_30_day_refresh() -> None:
+    template = _template()
+    resources = template["Resources"]
+    client = resources["LocalToolsClient"]
+    props = client["Properties"]
+    assert client["Type"] == "AWS::Cognito::UserPoolClient"
+    assert props["GenerateSecret"] is False
+    assert props["AllowedOAuthFlows"] == ["code"]
+    assert props["AllowedOAuthScopes"] == ["openid", "email"]
+    assert props["CallbackURLs"] == ["http://localhost:8765/callback"]
+    assert props["LogoutURLs"] == ["http://localhost:8765/"]
+    assert props["RefreshTokenValidity"] == 30
+    assert props["TokenValidityUnits"]["RefreshToken"] == "days"
+    assert props["UserPoolId"] == resources["UserPoolClient"]["Properties"]["UserPoolId"]
+    audience = resources["HttpApi"]["Properties"]["Auth"]["Authorizers"]["CognitoJwt"][
+        "JwtConfiguration"
+    ]["audience"]
+    assert {"Ref": "UserPoolClient"} in audience
+    assert {"Ref": "LocalToolsClient"} in audience
+    assert template["Outputs"]["LocalToolsClientId"]["Value"] == {
+        "Ref": "LocalToolsClient"
+    }

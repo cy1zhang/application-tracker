@@ -248,6 +248,29 @@ Resources:
         IdToken: hours
         RefreshToken: days
 
+  LocalToolsClient:
+    Type: AWS::Cognito::UserPoolClient
+    DependsOn: GoogleIdentityProvider
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub '${AWS::StackName}-local-tools'
+      GenerateSecret: false
+      SupportedIdentityProviders: [Google]
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email]
+      CallbackURLs:
+        - http://localhost:8765/callback
+      LogoutURLs:
+        - http://localhost:8765/
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
@@ -281,7 +304,7 @@ Resources:
             AuthorizationScopes: [openid]
             JwtConfiguration:
               issuer: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${UserPool}'
-              audience: [!Ref UserPoolClient]
+              audience: [!Ref UserPoolClient, !Ref LocalToolsClient]
 
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -865,6 +888,8 @@ Outputs:
     Value: !Sub 'https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${UserPool}'
   CognitoClientId:
     Value: !Ref UserPoolClient
+  LocalToolsClientId:
+    Value: !Ref LocalToolsClient
   CognitoDomain:
     Value: !Sub 'https://${UserPoolDomain}.auth.${AWS::Region}.amazoncognito.com'
   AmplifyAppId:

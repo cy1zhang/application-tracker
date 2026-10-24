@@ -2,6 +2,9 @@
 .env.*
 !.env.example
 !.env.deploy.example
+.env.local-tools
+!.env.local-tools.example
+.local/
 *.pem
 *.key
 credentials*.json
