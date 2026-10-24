@@ -11,7 +11,6 @@ from app.api.dependencies import (
 )
 from app.domain.applications import ApplicationPatch, ApplicationStatus
 from app.main import app
-from app.repositories.applications import VersionConflict
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_auto_apply import DynamoAutoApplySettings
 from app.repositories.dynamodb_email import DynamoEmailRepository, extraction_from_plan
@@ -215,19 +214,48 @@ def test_undo_double_click_patches_once(env) -> None:
     assert len(updates) == 1
 
 
-def test_undo_releases_claim_when_write_loses_a_race(env, monkeypatch) -> None:
-    created_and_updated(env)
+def test_undo_is_atomic_when_application_write_fails(env, monkeypatch) -> None:
+    row = created_and_updated(env)
+    real = env.applications._write_mutation
 
-    def conflict(**kwargs):
-        raise VersionConflict
+    def stale(**kwargs):
+        # Another writer bumps the version after our read, so the condition fails.
+        env.applications._client.update_item(
+            TableName="Applications",
+            Key={"owner_id": {"S": "user-a"}, "application_id": {"S": row.application_id}},
+            UpdateExpression="SET version = :v",
+            ExpressionAttributeValues={":v": {"N": "99"}},
+        )
+        return real(**kwargs)
 
-    monkeypatch.setattr(env.applications, "update", conflict)
-
+    monkeypatch.setattr(env.applications, "_write_mutation", stale)
     response = env.api.post("/ai-changes/m2/undo")
 
     assert response.status_code == 409
     assert response.json() == {"detail": "changed_since"}
     assert "undone_at" not in env.item("m2")
+    assert env.apps()[0].status == ApplicationStatus.INTERVIEWING
+
+    monkeypatch.setattr(env.applications, "_write_mutation", real)
+    assert env.api.post("/ai-changes/m2/undo").status_code == 200
+    assert env.apps()[0].status == ApplicationStatus.APPLIED
+    assert env.item("m2")["undone_at"]
+
+
+def test_older_applied_ai_event_is_labelled_by_event_type(env) -> None:
+    env.raw(
+        "user-a", "old1", 3, "ai_extraction", outcome="applied", origin="ai",
+        event_type="updated", application_id="a1", changes={},
+    )
+    env.raw(
+        "user-a", "old2", 4, "ai_extraction", outcome="applied", origin="ai",
+        event_type="created", application_id="a2", changes={},
+    )
+
+    items = {i["message_id"]: i for i in env.api.get("/ai-changes").json()["items"]}
+
+    assert items["old1"]["action"] == "updated"
+    assert items["old2"]["action"] == "created"
 
 
 def test_undo_ignored_409_not_undoable(env) -> None:

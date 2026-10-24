@@ -197,6 +197,7 @@ class DynamoApplicationRepository:
         patch: ApplicationPatch,
         event_id: str,
         occurred_at: datetime,
+        extra_items: builtins.list[dict[str, Any]] | None = None,
     ) -> Application:
         current = self._get_active_item(
             owner_id=owner_id,
@@ -244,6 +245,7 @@ class DynamoApplicationRepository:
             expected_version=patch.expected_version,
             application_item=updated_item,
             event_item=event_item,
+            extra_items=extra_items,
         )
         return self._application_from_item(updated_item)
 
@@ -255,6 +257,7 @@ class DynamoApplicationRepository:
         expected_version: int,
         event_id: str,
         occurred_at: datetime,
+        extra_items: builtins.list[dict[str, Any]] | None = None,
     ) -> None:
         current = self._get_active_item(
             owner_id=owner_id,
@@ -286,6 +289,7 @@ class DynamoApplicationRepository:
             expected_version=expected_version,
             application_item=tombstone,
             event_item=event_item,
+            extra_items=extra_items,
         )
 
     def merge(
@@ -428,6 +432,7 @@ class DynamoApplicationRepository:
         expected_version: int,
         application_item: dict[str, Any],
         event_item: dict[str, Any],
+        extra_items: builtins.list[dict[str, Any]] | None = None,
     ) -> None:
         try:
             self._client.transact_write_items(
@@ -455,6 +460,7 @@ class DynamoApplicationRepository:
                             "ConditionExpression": "attribute_not_exists(event_id)",
                         }
                     },
+                    *(extra_items or []),
                 ]
             )
         except ClientError as error:

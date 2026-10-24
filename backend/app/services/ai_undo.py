@@ -6,9 +6,15 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
+from botocore.exceptions import ClientError
+
 from app.domain.ai import ApplicationKind
 from app.domain.applications import ApplicationPatch
-from app.repositories.applications import ApplicationRepository, VersionConflict
+from app.repositories.applications import (
+    ApplicationNotFound,
+    ApplicationRepository,
+    VersionConflict,
+)
 from app.repositories.dynamodb_email import (
     AlreadyUndone,
     DynamoEmailRepository,
@@ -75,7 +81,7 @@ class AiUndoService:
         )
         if application is None:
             raise ChangedSince
-        created = item.get("reason") == "ai_create"
+        created = item.get("event_type") == "created"
         changes = item.get("changes", {})
         if created:
             if application.version != 1:
@@ -88,15 +94,15 @@ class AiUndoService:
             ):
                 raise ChangedSince
 
-        # Claim first so a double click cannot patch twice; release if the write fails.
+        # One transaction: application write, user audit event, and undone_at.
         now = self._clock()
-        self._emails.mark_undone(owner_id, message_id, now)
+        claim = [self._emails.undo_claim_item(owner_id, message_id, now)]
         try:
             if created:
                 self._applications.delete(
                     owner_id=owner_id, application_id=application.application_id,
                     expected_version=application.version, event_id=uuid4().hex,
-                    occurred_at=now,
+                    occurred_at=now, extra_items=claim,
                 )
             else:
                 patch = ApplicationPatch(
@@ -109,12 +115,17 @@ class AiUndoService:
                 self._applications.update(
                     owner_id=owner_id, application_id=application.application_id,
                     patch=patch, event_id=uuid4().hex, occurred_at=now,
+                    extra_items=claim,
                 )
-        except Exception as error:
-            self._emails.clear_undone(owner_id, message_id, now)
-            if isinstance(error, VersionConflict):
-                raise ChangedSince from None
-            raise
+        except (VersionConflict, ApplicationNotFound):
+            raise ChangedSince from None
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            latest = self._emails.get_event_item(owner_id, message_id)
+            if latest is not None and "undone_at" in latest:
+                raise AlreadyUndone from None
+            raise ChangedSince from None
 
     def reconsider(self, owner_id: str, message_id: str) -> ReconsiderResult:
         item = self._item(owner_id, message_id)

@@ -366,40 +366,21 @@ class DynamoEmailRepository:
         )
         return page, next_cursor
 
-    def mark_undone(self, owner_id: str, message_id: str, at: datetime) -> None:
-        """Claim the undo; only one caller can set undone_at."""
-        try:
-            self._client.update_item(
-                TableName=self._events_table,
-                Key=self._encode(
+    def undo_claim_item(self, owner_id: str, message_id: str, at: datetime) -> dict:
+        """Transaction item that sets undone_at, only once, with the undo write."""
+        return {
+            "Update": {
+                "TableName": self._events_table,
+                "Key": self._encode(
                     {"owner_id": owner_id, "event_id": f"gmail#{message_id}"}
                 ),
-                UpdateExpression="SET undone_at = :at",
-                ConditionExpression=(
+                "UpdateExpression": "SET undone_at = :at",
+                "ConditionExpression": (
                     "attribute_exists(event_id) AND attribute_not_exists(undone_at)"
                 ),
-                ExpressionAttributeValues=self._encode({":at": at.isoformat()}),
-            )
-        except ClientError as error:
-            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                raise
-            raise AlreadyUndone from None
-
-    def clear_undone(self, owner_id: str, message_id: str, at: datetime) -> None:
-        """Release our own undo claim after the application write failed."""
-        try:
-            self._client.update_item(
-                TableName=self._events_table,
-                Key=self._encode(
-                    {"owner_id": owner_id, "event_id": f"gmail#{message_id}"}
-                ),
-                UpdateExpression="REMOVE undone_at",
-                ConditionExpression="undone_at = :at",
-                ExpressionAttributeValues=self._encode({":at": at.isoformat()}),
-            )
-        except ClientError as error:
-            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                raise
+                "ExpressionAttributeValues": self._encode({":at": at.isoformat()}),
+            }
+        }
 
     def queue_reconsider(self, owner_id: str, message_id: str) -> None:
         """Send a plan-less ignored item back to the local AI queue."""

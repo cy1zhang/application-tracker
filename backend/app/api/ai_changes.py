@@ -53,14 +53,15 @@ class AiChangePage(BaseModel):
 
 def _as_change(item: dict[str, Any]) -> AiChange:
     reason = item["reason"]
+    if item["outcome"] == "applied":
+        action = "created" if item.get("event_type") == "created" else "updated"
+    else:
+        action = "ignored"
     thread_id = item.get("thread_id")
     return AiChange(
         message_id=item["source_message_id"],
         received_at=item["received_at"],
-        action=(
-            "created" if reason == "ai_create"
-            else "updated" if reason == "ai_update" else "ignored"
-        ),
+        action=action,
         reason=reason,
         application_id=item.get("application_id"),
         changes={
