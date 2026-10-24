@@ -20,6 +20,7 @@
 - Mac tools never use AWS admin credentials.
 - Local Ollama is called only at `http://127.0.0.1:11434`, with `think: false`, `stream: false`, `temperature: 0` and `num_predict: 512`, matching `frontend/src/reviews/localOllama.ts`.
 - Tests use synthetic data only.
+- `MessageContent.text` is capped at 8000 characters, while the production rules see up to 16384. Answer-key scoring therefore sees truncated bodies, a rare fidelity gap.
 
 ## Review Focus
 
@@ -164,7 +165,7 @@ RUBRIC.md must state these points:
   ```
   Then run `labels validate`. Re-run any rejected batch.
 - [ ] **Step 8 (operator): grouping pass.** Write `{id, company, role, season, year}` for the `application_update` labels only, with no email text, to `.local/answer-key/group-input.json`. Ask Codex for `groups.json` (`{"E001": "app-1", ...}`), so that the same job gets the same key. Validate again.
-- [ ] **Step 9 (operator):** delete `.local/answer-key/emails/`. Keep `index.json`, `labels/` and `groups.json`. Record the counts (per kind, per status, number of application keys) under "Results" below. Do not record any values.
+- [ ] **Step 9 (operator):** after labeling and scoring, delete both `.local/answer-key/emails/` and `.local/answer-key/cache/`. Keep `index.json`, `strata.json`, `labels/` and `groups.json`. If an export fails midway, delete `emails/` before re-running. Record the counts (per kind, per status, number of application keys) under "Results" below. Do not record any values.
 
 ### Task 5: Scorer and baseline
 
@@ -209,7 +210,7 @@ RUBRIC.md must state these points:
 - [ ] **Step 3: Implement** the code.
 - [ ] **Step 4: Run** `uv run --group local pytest -q && uv run ruff check . && uv run python -m evaluation.run --check`. Expected: pass, with the existing CI gates unchanged.
 - [ ] **Step 5: Commit** `feat: score pipelines against the local answer key`.
-- [ ] **Step 6 (operator):** run `score --pipeline current` and record the numbers under "Results". The run takes about 90 minutes uncached. Recall is expected to be very low, which is the baseline.
+- [ ] **Step 6 (operator):** run `score --pipeline current` and record the numbers under "Results". The run takes about 90 minutes uncached. Recall is expected to be very low, which is the baseline. After the baseline is recorded, delete `.local/answer-key/cache/`; a later re-score re-fetches the content.
 
 ## Results
 
