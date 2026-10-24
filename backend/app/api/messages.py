@@ -9,7 +9,11 @@ from app.api.dependencies import (
 )
 from app.domain.messages import MessageContent, MessagePage, MessageSummary
 from app.repositories.dynamodb_email import DynamoEmailRepository, InvalidMessageCursor
-from app.services.local_review_ai import LocalAiMessageUnavailable, LocalAiUnavailable
+from app.services.local_review_ai import (
+    LocalAiMessageUnavailable,
+    LocalAiStale,
+    LocalAiUnavailable,
+)
 from app.services.message_content import MessageContentService, MessageNotFound
 
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -54,5 +58,5 @@ def message_content(
         raise HTTPException(status_code=404, detail="Message not found") from None
     except LocalAiMessageUnavailable:
         raise HTTPException(status_code=503, detail="message_unavailable") from None
-    except LocalAiUnavailable:
+    except (LocalAiUnavailable, LocalAiStale):
         raise HTTPException(status_code=503, detail="gmail_connection_unavailable") from None

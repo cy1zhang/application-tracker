@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+import re
 import secrets
 import threading
 import time
@@ -61,6 +62,7 @@ def login(config: AuthConfig, *, open_browser: Callable = webbrowser.open) -> No
     state = secrets.token_urlsafe(24)
     redirect = urllib.parse.urlparse(config.redirect_uri)
     received: dict[str, str] = {}
+    done = threading.Event()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -71,6 +73,7 @@ def login(config: AuthConfig, *, open_browser: Callable = webbrowser.open) -> No
                 return
             params = urllib.parse.parse_qs(query.query)
             received.update({k: v[0] for k, v in params.items()})
+            done.set()
             body = b"Signed in. You can close this tab."
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -84,7 +87,13 @@ def login(config: AuthConfig, *, open_browser: Callable = webbrowser.open) -> No
     server = HTTPServer(
         (redirect.hostname or "localhost", redirect.port or 80), Handler
     )
-    server.timeout = LOGIN_TIMEOUT_SECONDS
+    server.timeout = 0.2
+
+    def serve() -> None:
+        # Stray requests (favicon, probes) must not consume the one-shot callback.
+        deadline = time.monotonic() + LOGIN_TIMEOUT_SECONDS
+        while not done.is_set() and time.monotonic() < deadline:
+            server.handle_request()
     try:
         url = f"{config.cognito_domain}/oauth2/authorize?" + urllib.parse.urlencode(
             {
@@ -98,18 +107,21 @@ def login(config: AuthConfig, *, open_browser: Callable = webbrowser.open) -> No
             }
         )
         # Serve in the background so open_browser may block or call back itself.
-        thread = threading.Thread(target=server.handle_request, daemon=True)
+        thread = threading.Thread(target=serve, daemon=True)
         thread.start()
         open_browser(url)
         thread.join(LOGIN_TIMEOUT_SECONDS)
     finally:
         server.server_close()
 
+    code = received.get("code")
+    if "error" in received or not code:
+        reason = received.get("error", "")
+        if not re.fullmatch(r"[a-z_]{1,40}", reason):
+            reason = "unknown"
+        raise ValueError(f"sign-in was cancelled or failed: {reason}")
     if not secrets.compare_digest(received.get("state", ""), state):
         raise ValueError("sign-in callback state did not match")
-    code = received.get("code")
-    if not code:
-        raise ValueError("sign-in callback had no authorization code")
     tokens = _token_request(
         config,
         {

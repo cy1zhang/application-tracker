@@ -2,6 +2,7 @@ import base64
 import hashlib
 import json
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -76,10 +77,12 @@ def _free_port() -> int:
 
 @pytest.fixture
 def memory_keyring():
+    previous = keyring.get_keyring()
     backend = MemoryKeyring()
     keyring.set_keyring(backend)
     auth._cache.clear()
-    return backend
+    yield backend
+    keyring.set_keyring(previous)
 
 
 @pytest.fixture
@@ -160,3 +163,58 @@ def test_access_token_raises_login_required_without_stored_token(
 ):
     with pytest.raises(auth.LoginRequired):
         auth.access_token(_config(token_server))
+
+
+def _browser_sending(params, strays=()):
+    def open_browser(url):
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        redirect = query["redirect_uri"][0]
+        base = redirect.rsplit("/callback", 1)[0]
+        for path in strays:
+            try:
+                urllib.request.urlopen(base + path, timeout=10).read()
+            except urllib.error.HTTPError:
+                pass
+        urllib.request.urlopen(
+            f"{redirect}?{urllib.parse.urlencode(params)}", timeout=10
+        ).read()
+
+    return open_browser
+
+
+@pytest.mark.parametrize(
+    "params,expected",
+    [
+        ({"error": "access_denied"}, "access_denied"),
+        ({"error": "Bad Value <script>"}, "unknown"),
+        ({"state": "s"}, "unknown"),
+    ],
+)
+def test_login_reports_cancelled_callback_without_leaking(
+    memory_keyring, token_server, params, expected
+):
+    config = _config(token_server, _free_port())
+    with pytest.raises(ValueError) as caught:
+        auth.login(config, open_browser=_browser_sending(params))
+    assert str(caught.value) == f"sign-in was cancelled or failed: {expected}"
+    assert token_server.requests == []
+
+
+def test_login_ignores_stray_requests_before_callback(memory_keyring, token_server):
+    config = _config(token_server, _free_port())
+
+    def open_browser(url):
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+        _browser_sending(
+            {"code": "the-code", "state": query["state"][0]}, strays=["/favicon.ico"]
+        )(url)
+
+    auth.login(config, open_browser=open_browser)
+    assert memory_keyring.store == {("application-tracker", "client-1"): "refresh-1"}
+
+
+def test_login_times_out_without_callback(memory_keyring, token_server, monkeypatch):
+    monkeypatch.setattr(auth, "LOGIN_TIMEOUT_SECONDS", 0.5)
+    config = _config(token_server, _free_port())
+    with pytest.raises(ValueError, match="cancelled or failed: unknown"):
+        auth.login(config, open_browser=lambda url: None)

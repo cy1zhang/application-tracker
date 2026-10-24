@@ -12,7 +12,12 @@ from app.api.dependencies import (
 from app.domain.messages import MessageContent
 from app.main import app
 from app.services.email_rules import RuleDecision
-from app.services.local_review_ai import LocalAiMessageUnavailable, LocalAiUnavailable
+from app.services.local_review_ai import (
+    LocalAiConnectionChanged,
+    LocalAiMessageUnavailable,
+    LocalAiStale,
+    LocalAiUnavailable,
+)
 from app.services.message_content import MessageContentService, MessageNotFound
 from tests.ai_support import Env, FakeCipher, parsed
 
@@ -118,3 +123,12 @@ def test_content_503_codes(env):
     )
     app.dependency_overrides[get_message_content_service] = lambda: _Service(MessageNotFound())
     assert env.client_api.get("/messages/a/content").status_code == 404
+
+
+@pytest.mark.parametrize("error", [LocalAiConnectionChanged(), LocalAiStale()])
+def test_content_maps_stale_connection_to_503(env, error):
+    app.dependency_overrides[get_message_content_service] = lambda: _Service(error)
+    response = env.client_api.get("/messages/a/content")
+    assert (response.status_code, response.json()["detail"]) == (
+        503, "gmail_connection_unavailable",
+    )
