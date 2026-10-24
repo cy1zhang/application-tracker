@@ -6,19 +6,29 @@ from typing import Any, Literal
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
 
-from app.repositories.dynamodb import field_times_for
+from app.repositories.dynamodb import APPLICATION_FIELDS, field_times_for
 from app.repositories.dynamodb_reviews import (
     InvalidReviewCursor,
     _decode_cursor,
     _encode_cursor,
 )
 from app.repositories.dynamodb_sync import StaleSyncRun
+from app.services.ai_extraction import ValidatedExtraction
+from app.services.auto_apply import AutoDecision, MessageRef
 from app.services.email_rules import RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
 
 StoredOutcomeName = Literal["applied", "ignored", "review_required", "retryable"]
 _TERMINAL = {"applied", "ignored", "review_required"}
 _MAX_HEADER = 300
+_RECORD_CONDITION = "attribute_not_exists(event_id) OR outcome = :retryable"
+# execute() may also replace an item that holds a planned, unexecuted, unresolved,
+# not-undone automatic plan.
+_EXECUTE_CONDITION = (
+    "attribute_not_exists(event_id) OR outcome IN (:pending_ai, :retryable) OR "
+    "(attribute_exists(ai_plan) AND attribute_not_exists(ai_plan.executed_at) "
+    "AND attribute_not_exists(resolution) AND attribute_not_exists(undone_at))"
+)
 _PROPOSAL_FIELDS = (
     "company", "role", "employment_type", "season", "year", "status",
     "requisition_id",
@@ -134,32 +144,12 @@ class DynamoEmailRepository:
         proposed = {"status": decision.status.value}
         for field in ("season", "year"):
             value = getattr(decision, field)
-            if value is None:
-                continue
-            value = value.value if isinstance(value, Enum) else value
-            if application[field] not in {None, value}:
-                return self._save_outcome(
-                    owner_id, message, "review_required", "cycle_conflict", decision
-                )
-            proposed[field] = value
-        changes = {
-            field: {"before": application[field], "after": value}
-            for field, value in proposed.items()
-            if application[field] != value
-        }
-        if not changes:
-            return self._save_outcome(
-                owner_id, message, "ignored", "no_change", decision
-            )
-        field_times = field_times_for(application)
-        if any(
-            datetime.fromisoformat(field_times[field]) >= message.received_at
-            for field in changes
-            if field in field_times
-        ):
-            return self._save_outcome(
-                owner_id, message, "review_required", "older_evidence", decision
-            )
+            if value is not None:
+                proposed[field] = value.value if isinstance(value, Enum) else value
+        evaluated = self._evaluate_changes(application, proposed, message.received_at)
+        if isinstance(evaluated[0], str):
+            return self._save_outcome(owner_id, message, *evaluated, decision)
+        changes, field_times = evaluated
 
         event = self._outcome_item(owner_id, message, "applied", decision.reason, decision)
         event.update(
@@ -175,47 +165,14 @@ class DynamoEmailRepository:
                 "changes": changes,
             }
         )
-        updated = {
-            **application,
-            **proposed,
-            "updated_at": max(
-                datetime.fromisoformat(application["updated_at"]), message.received_at
-            ).isoformat(),
-            "version": application_version + 1,
-            "field_updated_at": {
-                **field_times,
-                **{field: message.received_at.isoformat() for field in changes},
-            },
-        }
+        updated = self._updated_application(
+            application, proposed, changes, field_times, message.received_at
+        )
         try:
             self._client.transact_write_items(
                 TransactItems=[
-                    {
-                        "Put": {
-                            "TableName": self._applications_table,
-                            "Item": self._encode(updated),
-                            "ConditionExpression": (
-                                "attribute_exists(application_id) AND "
-                                "attribute_not_exists(deleted_at) AND "
-                                "version = :version"
-                            ),
-                            "ExpressionAttributeValues": {
-                                ":version": self._serializer.serialize(application_version)
-                            },
-                        }
-                    },
-                    {
-                        "Put": {
-                            "TableName": self._events_table,
-                            "Item": self._encode(event),
-                            "ConditionExpression": (
-                                "attribute_not_exists(event_id) OR outcome = :retryable"
-                            ),
-                            "ExpressionAttributeValues": {
-                                ":retryable": self._serializer.serialize("retryable")
-                            },
-                        }
-                    },
+                    self._application_update_put(updated, application_version),
+                    self._event_put(event),
                 ] + self._guard(owner_id, decision)
             )
         except ClientError as error:
@@ -242,6 +199,237 @@ class DynamoEmailRepository:
             reason=decision.reason,
             application_id=decision.application_id,
         )
+
+    def execute(
+        self,
+        owner_id: str,
+        *,
+        message: MessageRef,
+        subject: str,
+        sender: str,
+        decision: AutoDecision,
+        extraction: ValidatedExtraction,
+        application_version: int | None,
+        new_application_id: str | None,
+        occurred_at: datetime,
+    ) -> StoredOutcome:
+        """Apply one automatic decision; the gmail# item is the audit event."""
+        existing = self._get_event_item(owner_id, message.message_id)
+        if existing is not None and not self._replaceable(existing):
+            return self._as_outcome(existing)
+
+        def review(outcome: StoredOutcomeName, reason: str, **extra: Any):
+            item = self._execute_item(
+                owner_id, message, subject, sender, outcome, reason, decision,
+                extraction, existing, occurred_at,
+            )
+            item.update(extra)
+            return self._put_outcome(item, execute=True)
+
+        if decision.action == "ignore":
+            return review("ignored", decision.reason)
+        if decision.action == "needs_look":
+            return review("review_required", "needs_look", rule_reason=decision.reason)
+        if decision.action == "create":
+            if new_application_id is None:
+                raise ValueError("Create decision requires a new application ID")
+            return self._execute_create(
+                owner_id, message, subject, sender, decision, extraction,
+                new_application_id, existing, occurred_at,
+            )
+        if decision.application_id is None or application_version is None:
+            raise ValueError("Update decision requires application and version")
+
+        def demote(reason: str):
+            return review("review_required", reason)
+
+        application = self._get_application(owner_id, decision.application_id)
+        if application is None or "deleted_at" in application:
+            return demote("missing_application")
+        if application["version"] != application_version:
+            return demote("ai_proposal")
+        proposed = {
+            field: value.value if isinstance(value, Enum) else value
+            for field, value in decision.fields.items()
+        }
+        evaluated = self._evaluate_changes(application, proposed, message.received_at)
+        if isinstance(evaluated[0], str):
+            outcome, reason = evaluated
+            return review(outcome, reason)
+        changes, field_times = evaluated
+        event = self._execute_item(
+            owner_id, message, subject, sender, "applied", decision.reason, decision,
+            extraction, existing, occurred_at,
+        )
+        event.update(self._audit_fields(
+            owner_id, decision.application_id, "updated", message, changes
+        ))
+        updated = self._updated_application(
+            application, proposed, changes, field_times, message.received_at
+        )
+        try:
+            self._client.transact_write_items(
+                TransactItems=[
+                    self._application_update_put(updated, application_version),
+                    self._event_put(event, execute=True),
+                    *self._guard(owner_id),
+                ]
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            replayed = self._after_cancel(owner_id, message.message_id)
+            if replayed is not None:
+                return replayed
+            latest = self._get_application(owner_id, decision.application_id)
+            if latest is None or "deleted_at" in latest:
+                return demote("missing_application")
+            if latest["version"] != application_version:
+                return demote("ai_proposal")
+            raise
+        return self._as_outcome(event)
+
+    def _execute_create(
+        self, owner_id: str, message: MessageRef, subject: str, sender: str,
+        decision: AutoDecision, extraction: ValidatedExtraction,
+        application_id: str, existing: dict[str, Any] | None, occurred_at: datetime,
+    ) -> StoredOutcome:
+        values = {field: None for field in APPLICATION_FIELDS}
+        values.update({
+            field: value.value if isinstance(value, Enum) else value
+            for field, value in decision.fields.items()
+        })
+        received = message.received_at.isoformat()
+        application = {
+            "owner_id": owner_id,
+            "application_id": application_id,
+            **values,
+            "created_at": occurred_at.isoformat(),
+            "updated_at": occurred_at.isoformat(),
+            "version": 1,
+            "field_updated_at": {
+                field: received for field in decision.fields if field in values
+            },
+        }
+        event = self._execute_item(
+            owner_id, message, subject, sender, "applied", decision.reason, decision,
+            extraction, existing, occurred_at,
+        )
+        event["application_id"] = application_id
+        event.update(self._audit_fields(
+            owner_id, application_id, "created", message,
+            {
+                field: {"before": None, "after": values[field]}
+                for field in decision.fields if field in values
+            },
+        ))
+        try:
+            self._client.transact_write_items(
+                TransactItems=[
+                    {
+                        "Put": {
+                            "TableName": self._applications_table,
+                            "Item": self._encode(application),
+                            "ConditionExpression": "attribute_not_exists(application_id)",
+                        }
+                    },
+                    self._event_put(event, execute=True),
+                    *self._guard(owner_id),
+                ]
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            replayed = self._after_cancel(owner_id, message.message_id)
+            if replayed is not None:
+                return replayed
+            raise
+        return self._as_outcome(event)
+
+    def _after_cancel(self, owner_id: str, message_id: str) -> StoredOutcome | None:
+        """Stale guard raises; a message that is already settled returns as stored."""
+        if not self._guard_valid(owner_id):
+            raise StaleSyncRun from None
+        current = self._get_event_item(owner_id, message_id)
+        if current is not None and not self._replaceable(current):
+            return self._as_outcome(current)
+        return None
+
+    @staticmethod
+    def _replaceable(item: dict[str, Any]) -> bool:
+        """Python mirror of _EXECUTE_CONDITION for an existing event item."""
+        plan = item.get("ai_plan")
+        return item["outcome"] in {"pending_ai", "retryable"} or (
+            plan is not None
+            and "executed_at" not in plan
+            and "resolution" not in item
+            and "undone_at" not in item
+        )
+
+    @staticmethod
+    def _audit_fields(
+        owner_id: str, application_id: str, event_type: str,
+        message: MessageRef, changes: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "owner_application_id": f"{owner_id}#{application_id}",
+            "occurred_at_event_id": (
+                f"{message.received_at.isoformat()}#gmail#{message.message_id}"
+            ),
+            "event_type": event_type,
+            "occurred_at": message.received_at.isoformat(),
+            "changes": changes,
+        }
+
+    @staticmethod
+    def _execute_item(
+        owner_id: str, message: MessageRef, subject: str, sender: str,
+        outcome: StoredOutcomeName, reason: str, decision: AutoDecision,
+        extraction: ValidatedExtraction, existing: dict[str, Any] | None,
+        occurred_at: datetime,
+    ) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "owner_id": owner_id,
+            "event_id": f"gmail#{message.message_id}",
+            "source_message_id": message.message_id,
+            "thread_id": message.thread_id,
+            "received_at": message.received_at.isoformat(),
+            "outcome": outcome,
+            "reason": reason,
+            "origin": "ai",
+            "ai_proposal": DynamoEmailRepository._proposal(extraction),
+        }
+        if subject:
+            item["subject"] = subject[:_MAX_HEADER]
+        if sender:
+            item["sender"] = sender[:_MAX_HEADER]
+        if decision.application_id is not None:
+            item["application_id"] = decision.application_id
+        if decision.requisition_id is not None:
+            item["requisition_id"] = decision.requisition_id
+        if outcome == "review_required":
+            for key, value in (
+                ("proposed_status", extraction.status),
+                ("proposed_season", extraction.season),
+                ("proposed_year", extraction.year),
+            ):
+                if value is not None:
+                    item[key] = value.value if isinstance(value, Enum) else value
+        if existing is not None and "ai_plan" in existing:
+            item["ai_plan"] = {
+                **existing["ai_plan"], "executed_at": occurred_at.isoformat()
+            }
+        return item
+
+    def _get_event_item(self, owner_id: str, message_id: str) -> dict[str, Any] | None:
+        response = self._client.get_item(
+            TableName=self._events_table,
+            Key=self._encode(
+                {"owner_id": owner_id, "event_id": f"gmail#{message_id}"}
+            ),
+            ConsistentRead=True,
+        )
+        return self._decode(response["Item"]) if "Item" in response else None
 
     def record_unparseable(
         self, *, owner_id: str, message_id: str,
@@ -316,18 +504,10 @@ class DynamoEmailRepository:
         return self._put_outcome(item, fallback)
 
     def _put_outcome(
-        self, item: dict[str, Any], decision: RuleDecision | None = None
+        self, item: dict[str, Any], decision: RuleDecision | None = None,
+        *, execute: bool = False,
     ) -> StoredOutcome:
-        put = {
-            "TableName": self._events_table,
-            "Item": self._encode(item),
-            "ConditionExpression": (
-                "attribute_not_exists(event_id) OR outcome = :retryable"
-            ),
-            "ExpressionAttributeValues": {
-                ":retryable": self._serializer.serialize("retryable")
-            },
-        }
+        put = self._event_put(item, execute=execute)["Put"]
         try:
             if self._users_table is None:
                 self._client.put_item(**put)
@@ -360,6 +540,82 @@ class DynamoEmailRepository:
                 raise
             return prior
         return self._as_outcome(item)
+
+    def _event_put(self, item: dict[str, Any], *, execute: bool = False) -> dict:
+        values = {":retryable": "retryable"}
+        if execute:
+            values[":pending_ai"] = "pending_ai"
+        return {
+            "Put": {
+                "TableName": self._events_table,
+                "Item": self._encode(item),
+                "ConditionExpression": (
+                    _EXECUTE_CONDITION if execute else _RECORD_CONDITION
+                ),
+                "ExpressionAttributeValues": {
+                    key: self._serializer.serialize(value)
+                    for key, value in values.items()
+                },
+            }
+        }
+
+    def _application_update_put(self, updated: dict[str, Any], version: int) -> dict:
+        return {
+            "Put": {
+                "TableName": self._applications_table,
+                "Item": self._encode(updated),
+                "ConditionExpression": (
+                    "attribute_exists(application_id) AND "
+                    "attribute_not_exists(deleted_at) AND "
+                    "version = :version"
+                ),
+                "ExpressionAttributeValues": {
+                    ":version": self._serializer.serialize(version)
+                },
+            }
+        }
+
+    @staticmethod
+    def _evaluate_changes(
+        application: dict[str, Any], proposed: dict[str, Any], received_at: datetime
+    ) -> tuple[str, str] | tuple[dict[str, Any], dict[str, str]]:
+        """Return a demotion (outcome, reason) or (changes, field_times)."""
+        for field in ("season", "year"):
+            if field in proposed and application[field] not in {None, proposed[field]}:
+                return "review_required", "cycle_conflict"
+        changes = {
+            field: {"before": application[field], "after": value}
+            for field, value in proposed.items()
+            if application[field] != value
+        }
+        if not changes:
+            return "ignored", "no_change"
+        field_times = field_times_for(application)
+        if any(
+            datetime.fromisoformat(field_times[field]) >= received_at
+            for field in changes
+            if field in field_times
+        ):
+            return "review_required", "older_evidence"
+        return changes, field_times
+
+    @staticmethod
+    def _updated_application(
+        application: dict[str, Any], proposed: dict[str, Any],
+        changes: dict[str, Any], field_times: dict[str, str], received_at: datetime,
+    ) -> dict[str, Any]:
+        return {
+            **application,
+            **proposed,
+            "updated_at": max(
+                datetime.fromisoformat(application["updated_at"]), received_at
+            ).isoformat(),
+            "version": application["version"] + 1,
+            "field_updated_at": {
+                **field_times,
+                **{field: received_at.isoformat() for field in changes},
+            },
+        }
 
     def _guard(self, owner_id: str, decision: RuleDecision | None = None) -> list[dict]:
         if self._users_table is None:
