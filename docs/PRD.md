@@ -66,9 +66,11 @@ Connect/disconnect Gmail; select, replace, or delete an AI key; enable/disable A
 
 An email received in September 2026 can describe Summer 2027. Do not infer the cycle from the email date. For winter spanning two years, retain explicit source wording and request a year when ambiguous. Full-time roles need not have a seasonal cycle.
 
-If an email identifies a company and role but does not establish an application stage, send it to review without assuming Applied. Do not create a new application with an invented status. When an email does establish a stage, AI may create the application (see Tier 2).
+The owner's definition of an application: any email that states a status for a job the owner applied to counts, even when no confirmation email is on file. Outreach about jobs the owner did not apply to never creates a row. Three cases are distinct:
 
-The owner's definition of an application: any email that states a status for a job the owner applied to creates a row, even when no confirmation email is on file. Outreach about jobs the owner did not apply to never creates one. If it matches an existing application, preserve its current status; independently supported non-status details may still be updated.
+- No match: a qualifying email, meaning one with a stated status and a company backed by quotes from the email, creates a row. AI may do this when the email establishes a stage (see Tier 2).
+- Matches an existing application: the row is updated under the ordering rules. Older evidence does not regress newer state, older evidence does not undo a manual correction, and reopening a terminal status goes to review.
+- States no stage: send it to review without assuming Applied and do not create an application with an invented status. If it matches an existing application, preserve its current status; independently supported non-status details may still be updated.
 
 Company alone is never a unique application identifier: the same company may have multiple roles and cycles. Prefer requisition identifiers and existing thread associations; otherwise require enough corroborating evidence or ask for review.
 
