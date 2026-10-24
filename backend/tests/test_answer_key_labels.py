@@ -46,6 +46,14 @@ def test_label_rejects_unknown_kind_and_extra_fields():
         Label(**{**BASE, "year": "2026"})
 
 
+def test_status_rejected_for_non_application_kinds():
+    for kind in ("job_alert", "recruiter_outreach", "newsletter_or_event", "other"):
+        with pytest.raises(ValidationError):
+            Label(**{**BASE, "kind": kind, "status": "applied"})
+    assert Label(**{**BASE, "kind": "job_alert", "status": None}).status is None
+    assert Label(**{**BASE, "status": None}).status is None
+
+
 def test_load_labels_reports_file_and_line_on_bad_json(tmp_path):
     _setup(tmp_path, [_line(), "{not json"], batch="batch-03.jsonl")
     with pytest.raises(LabelError, match=r"batch-03\.jsonl:2:"):

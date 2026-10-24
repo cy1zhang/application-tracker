@@ -10,7 +10,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app.domain.applications import ApplicationStatus, RoleType, Season
 
@@ -47,6 +54,12 @@ class Label(BaseModel):
         if value is RoleType.UNKNOWN:
             raise ValueError("role_type must be null, not 'unknown'")
         return value
+
+    @model_validator(mode="after")
+    def _status_only_for_updates(self) -> "Label":
+        if self.status is not None and self.kind != "application_update":
+            raise ValueError("status must be null unless kind is application_update")
+        return self
 
 
 def _describe(error: ValidationError) -> str:
