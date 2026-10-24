@@ -4,15 +4,17 @@ Prints only report numbers, never company names, roles, or ids.
 """
 
 import argparse
+import json
 import sys
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal, Protocol
 
 import boto3
 from moto import mock_aws
+from pydantic import ValidationError
 
 from app.domain.ai import AiProvider
 from app.domain.messages import MessageContent
@@ -33,6 +35,8 @@ from local_tools.config import load_config
 
 MIN_PRECISION = 0.98
 MIN_RECALL = 0.90
+MIN_AUTOMATIC_CHANGES = 30
+MIN_APPLICATION_EMAILS = 30
 FIELDS = ("status", "company", "role", "season", "year")
 NOW = datetime(2026, 10, 20, 12, tzinfo=UTC)
 TOKEN = {"ciphertext": "c", "nonce": "n", "encrypted_data_key": "k"}
@@ -51,6 +55,7 @@ class EmailOutcome:
     role: str | None
     season: str | None
     year: int | None
+    ai_unavailable: bool = False
 
 
 class PipelineRun(Protocol):
@@ -69,6 +74,21 @@ class AnswerKeyReport:
     automatic_changes: int = 0
     emails: int = 0
     unavailable: int = 0
+    application_emails: int = 0
+    labeled: int = 0
+    indexed: int = 0
+    ai_unavailable: int = 0
+    pipeline: str = ""
+    model: str = ""
+
+
+def apply_floors(report: AnswerKeyReport) -> AnswerKeyReport:
+    # Below the floor a gate is a single-item coin flip, so report it unmeasured.
+    if report.automatic_changes < MIN_AUTOMATIC_CHANGES:
+        report.precision = None
+    if report.application_emails < MIN_APPLICATION_EMAILS:
+        report.recall = None
+    return report
 
 
 def _value(item, name):
@@ -123,10 +143,14 @@ def score(labels: dict[str, Label], outcomes: list[EmailOutcome]) -> AnswerKeyRe
         ),
         kind_confusion={k: dict(v) for k, v in confusion.items()},
         automatic_changes=len(automatic), emails=len(outcomes),
+        application_emails=len(updates),
+        ai_unavailable=sum(o.ai_unavailable for o in outcomes),
     )
 
 
 def exit_code(report) -> int:
+    if report.labeled < report.indexed:
+        return 1
     if report.precision is None or report.recall is None:
         return 1
     return 0 if report.precision >= MIN_PRECISION and report.recall >= MIN_RECALL else 1
@@ -193,9 +217,12 @@ class CurrentPipeline:
             stored = process_message(
                 OWNER, _payload(content), candidates, emails, escalator=escalator
             )
-            outcomes.append(
-                _outcome(label_id, stored, before, applications)
-            )
+            outcome = _outcome(label_id, stored, before, applications)
+            note = client.get_item(
+                TableName="Events",
+                Key={"owner_id": {"S": OWNER}, "event_id": {"S": f"gmail#{content.message_id}"}},
+            ).get("Item", {}).get("ai_note", {}).get("S")
+            outcomes.append(replace(outcome, ai_unavailable=note == "ai_unavailable"))
         return outcomes
 
 
@@ -236,25 +263,33 @@ def load_items(api, directory: Path, labels, index):
                 unavailable += 1
                 continue
             raise
-        items.append((label_id, MessageContent(**data)))
+        try:
+            content = MessageContent(**data)
+        except ValidationError:
+            # Never echo input values: they are real email text.
+            raise ValueError(f"malformed content for {label_id}") from None
+        items.append((label_id, content))
     items.sort(key=lambda item: item[1].received_at)
     return items, unavailable
 
 
 def run_cli(api, directory: Path, pipeline: PipelineRun) -> AnswerKeyReport:
-    import json
-
     labels = load_labels(directory)
-    index = json.loads((Path(directory) / "index.json").read_text())
+    index = json.loads((Path(directory) / "index.json").read_text(encoding="utf-8"))
     items, unavailable = load_items(api, directory, labels, index)
     report = score(labels, pipeline.run(items))
     report.unavailable = unavailable
-    return report
+    report.labeled, report.indexed = len(labels), len(index)
+    return apply_floors(report)
 
 
 def _print(report: AnswerKeyReport) -> None:
+    print("sample-weighted (stratified sample), replayed from empty tracker")
+    print(f"pipeline: {report.pipeline}, model: {report.model}")
     print(f"emails={report.emails} unavailable={report.unavailable} "
-          f"automatic_changes={report.automatic_changes}")
+          f"automatic_changes={report.automatic_changes} "
+          f"labeled={report.labeled}/{report.indexed} "
+          f"ai_unavailable={report.ai_unavailable}")
     def show(value):
         return "unmeasured" if value is None else f"{value:.3f}"
 
@@ -276,6 +311,7 @@ def main(argv: list[str]) -> int:
     api = TrackerApi(load_config(args.config))
     provider = OllamaProvider(args.model, cache_dir=args.dir / "cache")
     report = run_cli(api, args.dir, CurrentPipeline(provider, args.model))
+    report.pipeline, report.model = args.pipeline, args.model
     _print(report)
     return exit_code(report) if args.check else 0
 

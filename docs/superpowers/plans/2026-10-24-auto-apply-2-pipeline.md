@@ -360,4 +360,5 @@ Decision table, reasons verbatim:
 - [ ] **Step 4: Run** `uv run pytest -q && uv run python -m evaluation.run --check`. Expected: pass.
 - [ ] **Step 5: Commit** `feat: score and gate the automatic pipeline`.
 - [ ] **Step 6 (operator):** run `score --pipeline auto --check` on the answer key. Iterate the filters (Task 2), the prompt (Task 3) and the normalization (Task 4) until precision is at least 0.98 and recall at least 0.90. Commit each change separately. Record the counts in the "Results" section of the Plan 1 file.
+  - Note: the answer-key report is sample-weighted over a stratified sample, so its precision and recall are not population rates. Stratum-weighting the gate (using `strata.json`) is Plan 2 work.
 - [ ] **Step 7 (operator):** full CI-equivalent checks, then deploy dev. With mode `off`, verify unchanged behavior with a `Sync now` that produces no new `pending_ai` items.

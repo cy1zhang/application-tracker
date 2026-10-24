@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import urllib.request
 from pathlib import Path
 
@@ -26,10 +27,14 @@ class OllamaProvider:
         ).hexdigest()
         path = self._cache_dir / f"{digest}.json"
         if path.exists():
-            return json.loads(path.read_text())
+            return json.loads(path.read_text(encoding="utf-8"))
         result = self._call(model, prompt_input)
-        self._cache_dir.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(result))
+        self._cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(self._cache_dir, 0o700)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            os.fchmod(handle.fileno(), 0o600)
+            handle.write(json.dumps(result))
         return result
 
     def _call(self, model, prompt_input) -> dict:

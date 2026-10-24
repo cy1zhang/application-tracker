@@ -72,7 +72,7 @@ def _describe(error: ValidationError) -> str:
 
 def _read_json(path: Path, what: str):
     try:
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise LabelError(f"{path.name}: {what} not found") from None
     except json.JSONDecodeError as error:
@@ -84,7 +84,7 @@ def load_labels(directory: Path) -> dict[str, Label]:
     index = _read_json(directory / "index.json", "index")
     labels: dict[str, Label] = {}
     for path in sorted((directory / "labels").glob("batch-*.jsonl")):
-        for number, line in enumerate(path.read_text().splitlines(), start=1):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if not line.strip():
                 continue
             where = f"{path.name}:{number}"

@@ -1,4 +1,5 @@
 import json
+import stat
 import threading
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -96,7 +97,7 @@ def test_kind_confusion_counts_actions_by_kind():
 
 def test_check_thresholds_exit_code():
     def report(p, r):
-        return SimpleNamespace(precision=p, recall=r)
+        return SimpleNamespace(precision=p, recall=r, labeled=5, indexed=5)
 
     assert exit_code(report(0.98, 0.90)) == 0
     assert exit_code(report(0.979, 0.95)) == 1
@@ -209,8 +210,9 @@ def test_recall_unmeasured_without_application_labels():
 
 
 def test_check_fails_when_unmeasured():
-    assert exit_code(SimpleNamespace(precision=None, recall=1.0)) == 1
-    assert exit_code(SimpleNamespace(precision=1.0, recall=None)) == 1
+    covered = {"labeled": 5, "indexed": 5}
+    assert exit_code(SimpleNamespace(precision=None, recall=1.0, **covered)) == 1
+    assert exit_code(SimpleNamespace(precision=1.0, recall=None, **covered)) == 1
 
 
 @mock_aws
@@ -253,3 +255,156 @@ def test_applied_outcome_maps_to_updated_with_changed_fields():
     labels = {"E1": label("E1", key="a", status="rejected")}
     report = score(labels, [outcome])
     assert (report.precision, report.wrong_status) == (0.0, 1)
+
+
+def _write_key(tmp_path, count, labeled=None):
+    labeled = count if labeled is None else labeled
+    (tmp_path / "index.json").write_text(
+        json.dumps({f"E{i}": f"m{i}" for i in range(count)})
+    )
+    (tmp_path / "labels").mkdir(exist_ok=True)
+    rows = [dict(id=f"E{i}", kind="other", **BASE) for i in range(labeled)]
+    (tmp_path / "labels" / "batch-1.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows)
+    )
+
+
+class _ContentApi:
+    def get(self, path, params=None):
+        return content(path.split("/")[2], "Thanks.").model_dump(mode="json")
+
+
+class _IgnorePipeline:
+    def run(self, items):
+        return [out(i, "ignored") for i, _ in items]
+
+
+def test_run_cli_reports_below_floor_as_unmeasured(tmp_path):
+    from evaluation.answer_key.score import run_cli
+
+    _write_key(tmp_path, 3)
+    report = run_cli(_ContentApi(), tmp_path, _IgnorePipeline())
+    assert (report.precision, report.recall) == (None, None)
+    assert exit_code(report) == 1
+    from evaluation.answer_key import score as module
+
+    full = module.score(
+        {f"E{i}": label(f"E{i}", key=f"k{i}", status="applied") for i in range(30)},
+        [out(f"E{i}", "created", f"r{i}", status="applied") for i in range(30)],
+    )
+    assert module.apply_floors(full).precision == 1.0
+    labels = {f"E{i}": label(f"E{i}", key=f"k{i}") for i in range(29)}
+    short = module.score(labels, [out(i, "created", f"r{i}") for i in labels])
+    assert module.apply_floors(short).precision is None
+
+
+def test_run_cli_counts_label_coverage(tmp_path):
+    from evaluation.answer_key.score import run_cli
+
+    _write_key(tmp_path, 4, labeled=3)
+    report = run_cli(_ContentApi(), tmp_path, _IgnorePipeline())
+    assert (report.labeled, report.indexed) == (3, 4)
+    report.precision = report.recall = 1.0
+    assert exit_code(report) == 1
+    report.labeled = 4
+    assert exit_code(report) == 0
+
+
+def test_load_items_never_leaks_malformed_text(tmp_path):
+    from evaluation.answer_key.score import load_items
+
+    secret = "SECRET-BODY-TEXT"
+
+    class Api:
+        def get(self, path, params=None):
+            return {"message_id": "m", "text": secret, "received_at": secret}
+
+    labels = {"E1": label("E1", kind="other")}
+    with pytest.raises(ValueError) as caught:
+        load_items(Api(), tmp_path, labels, {"E1": "m"})
+    assert str(caught.value) == "malformed content for E1"
+    assert secret not in repr(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__suppress_context__
+
+
+def test_ollama_cache_is_private(tmp_path):
+    _Fake.bodies = []
+    server = HTTPServer(("127.0.0.1", 0), _Fake)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    cache = tmp_path / "cache"
+    try:
+        OllamaProvider(
+            cache_dir=cache, base_url=f"http://127.0.0.1:{server.server_port}"
+        ).extract("key", "m", SimpleNamespace(system="s", user="u"))
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert stat.S_IMODE(cache.stat().st_mode) == 0o700
+    (file,) = cache.glob("*.json")
+    assert stat.S_IMODE(file.stat().st_mode) == 0o600
+
+
+class _Broken(BaseHTTPRequestHandler):
+    mode = "500"
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers["Content-Length"]))
+        if type(self).mode == "500":
+            self.send_response(500)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"<html>not json</html>")
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.mark.parametrize("mode", ["500", "html"])
+def test_ollama_errors_become_provider_error_and_needs_look(tmp_path, mode):
+    from app.services.ai_providers import ProviderError
+
+    _Broken.mode = mode
+    server = HTTPServer(("127.0.0.1", 0), _Broken)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        provider = OllamaProvider(
+            cache_dir=tmp_path, base_url=f"http://127.0.0.1:{server.server_port}"
+        )
+        with pytest.raises(ProviderError):
+            provider.extract("k", "m", SimpleNamespace(system="s", user="u"))
+        assert not list(tmp_path.glob("*.json"))
+        outcomes = CurrentPipeline(provider).run(
+            [("E1", content("m1", AMBIGUOUS_TEXT))]
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert [o.action for o in outcomes] == ["needs_look"]
+    assert outcomes[0].ai_unavailable is True
+    labels = {"E1": label("E1", key="a")}
+    assert score(labels, outcomes).ai_unavailable == 1
+
+
+def _patch_main(monkeypatch, tmp_path, count, labeled):
+    from evaluation.answer_key import score as module
+
+    _write_key(tmp_path, count, labeled)
+    monkeypatch.setattr(module, "load_config", lambda path: None)
+    monkeypatch.setattr(module, "TrackerApi", lambda config: _ContentApi())
+    monkeypatch.setattr(module, "CurrentPipeline", lambda provider, model: _IgnorePipeline())
+    return module
+
+
+def test_main_check_prints_unmeasured_header_and_exits_1(tmp_path, monkeypatch, capsys):
+    module = _patch_main(monkeypatch, tmp_path, 3, 3)
+    code = module.main(["score", "--dir", str(tmp_path), "--pipeline", "current", "--check"])
+    printed = capsys.readouterr().out
+    assert code == 1
+    assert "precision=unmeasured recall=unmeasured" in printed
+    lines = printed.splitlines()
+    assert lines[0] == "sample-weighted (stratified sample), replayed from empty tracker"
+    assert lines[1] == "pipeline: current, model: gemma4:latest"
+    assert "labeled=3/3" in printed and "ai_unavailable=0" in printed
+    assert module.main(["score", "--dir", str(tmp_path), "--pipeline", "current"]) == 0
