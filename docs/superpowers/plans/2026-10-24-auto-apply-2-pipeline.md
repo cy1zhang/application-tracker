@@ -27,6 +27,11 @@
 - No email body is stored. `subject[:300]` and `sender[:300]` are stored on queue, ignored and needs-look items, as review items already do.
 - Owner isolation: every new route and query is scoped to the verified `sub`. Tests cover cross-owner access and stale versions for each owner-scoped write.
 
+## Carried from Plan 1
+
+- `fetch_owner_message(owner_id, message_id)` returns `(ParsedGmailMessage, generation)`. Task 7's input route uses the tuple.
+- The answer-key sample-size floors live in `evaluation.answer_key.score.run_cli`. `--pipeline auto` must gate through `run_cli`, not call `score()` and `exit_code()` directly.
+
 ## Review Focus
 
 - **Two emails in one backfill for the same new job:** the first creates the row and the second updates it. They must never create two rows. `simulate()` and the apply worker share in-memory or DB candidates in `received_at` order. Covered in Task 5 and Task 8.
