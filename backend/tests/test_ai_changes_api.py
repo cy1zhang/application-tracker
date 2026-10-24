@@ -258,6 +258,28 @@ def test_older_applied_ai_event_is_labelled_by_event_type(env) -> None:
     assert items["old2"]["action"] == "created"
 
 
+def test_overlapping_undo_loser_gets_already_undone(env, monkeypatch) -> None:
+    row = created_and_updated(env)
+    real = env.applications.update
+
+    def first_commits_first(**kwargs):
+        # The other request's transaction commits between our read and our write.
+        monkeypatch.setattr(env.applications, "update", real)
+        real(**{
+            **kwargs, "event_id": "other",
+            "extra_items": [env.emails.undo_claim_item("user-a", "m2", NOW)],
+        })
+        return real(**kwargs)
+
+    monkeypatch.setattr(env.applications, "update", first_commits_first)
+
+    response = env.api.post("/ai-changes/m2/undo")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "already_undone"}
+    assert env.apps()[0].version == row.version + 1
+
+
 def test_undo_ignored_409_not_undoable(env) -> None:
     env.raw("user-a", "f1", 1, "filtered:newsletter")
 

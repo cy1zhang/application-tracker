@@ -80,19 +80,19 @@ class AiUndoService:
             owner_id=owner_id, application_id=item.get("application_id", "")
         )
         if application is None:
-            raise ChangedSince
+            raise self._lost(owner_id, message_id)
         created = item.get("event_type") == "created"
         changes = item.get("changes", {})
         if created:
             if application.version != 1:
-                raise ChangedSince
+                raise self._lost(owner_id, message_id)
         else:
             current = application.model_dump()
             if any(
                 plain(current[field]) != plain(change["after"])
                 for field, change in changes.items()
             ):
-                raise ChangedSince
+                raise self._lost(owner_id, message_id)
 
         # One transaction: application write, user audit event, and undone_at.
         now = self._clock()
@@ -118,14 +118,18 @@ class AiUndoService:
                     extra_items=claim,
                 )
         except (VersionConflict, ApplicationNotFound):
-            raise ChangedSince from None
+            raise self._lost(owner_id, message_id) from None
         except ClientError as error:
             if error.response["Error"]["Code"] != "TransactionCanceledException":
                 raise
-            latest = self._emails.get_event_item(owner_id, message_id)
-            if latest is not None and "undone_at" in latest:
-                raise AlreadyUndone from None
-            raise ChangedSince from None
+            raise self._lost(owner_id, message_id) from None
+
+    def _lost(self, owner_id: str, message_id: str) -> Exception:
+        """Why a cancelled undo lost: an overlapping undo, or a changed application."""
+        latest = self._emails.get_event_item(owner_id, message_id)
+        if latest is not None and "undone_at" in latest:
+            return AlreadyUndone()
+        return ChangedSince()
 
     def reconsider(self, owner_id: str, message_id: str) -> ReconsiderResult:
         item = self._item(owner_id, message_id)
