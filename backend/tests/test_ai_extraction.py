@@ -2,7 +2,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.domain.ai import EXTRACTION_JSON_SCHEMA, AiProvider, ExtractionOutput
+from app.domain.ai import (
+    EXTRACTION_JSON_SCHEMA,
+    AiProvider,
+    ApplicationKind,
+    ExtractionOutput,
+)
 from app.domain.applications import Application, ApplicationStatus
 from app.services.ai_extraction import (
     BODY_LIMIT,
@@ -59,10 +64,11 @@ def _candidate(company="Acme", role="Software Engineer Intern", *, threads=()):
 def _raw(**values):
     evidence = {field: None for field in FIELDS}
     out = {field: None for field in FIELDS}
+    kind = values.pop("kind", "application_update")
     for field, (value, quote) in values.items():
         out[field] = value
         evidence[field] = quote
-    return {**out, "evidence": evidence}
+    return {**out, "kind": kind, "evidence": evidence}
 
 
 def _prompt(text, **kwargs):
@@ -206,7 +212,7 @@ def test_schema_is_flat_strict_and_all_nullable():
     assert EXTRACTION_JSON_SCHEMA["additionalProperties"] is False
     props = EXTRACTION_JSON_SCHEMA["properties"]
     assert set(EXTRACTION_JSON_SCHEMA["required"]) == set(props)
-    assert set(FIELDS) | {"evidence"} == set(props)
+    assert set(FIELDS) | {"kind", "evidence"} == set(props)
     evidence = props["evidence"]
     assert evidence["additionalProperties"] is False
     assert set(evidence["required"]) == set(FIELDS) == set(evidence["properties"])
@@ -344,3 +350,55 @@ def test_instruction_in_a_different_sentence_does_not_null_the_status():
     )
     result = validate_extraction(_raw(status=("offer", "pleased to offer")), prompt)
     assert result.status is ApplicationStatus.OFFER
+
+
+def test_extraction_requires_kind():
+    raw = _raw()
+    del raw["kind"]
+    with pytest.raises(InvalidExtraction):
+        validate_extraction(raw, _prompt("body"))
+    with pytest.raises(InvalidExtraction):
+        validate_extraction({**raw, "kind": None}, _prompt("body"))
+    with pytest.raises(InvalidExtraction):
+        validate_extraction({**raw, "kind": "spam"}, _prompt("body"))
+
+
+def test_schema_lists_kind_enum():
+    kind = EXTRACTION_JSON_SCHEMA["properties"]["kind"]
+    assert kind == {
+        "type": "string",
+        "enum": [
+            "application_update", "job_alert", "recruiter_outreach",
+            "newsletter_or_event", "other",
+        ],
+    }
+    assert "kind" in EXTRACTION_JSON_SCHEMA["required"]
+    assert "kind" not in EXTRACTION_JSON_SCHEMA["properties"]["evidence"]["properties"]
+
+
+def test_prompt_mentions_kind_definition():
+    system = _prompt("body").system
+    assert system.endswith(
+        "Set kind to application_update only when the email reports the status of a "
+        "job the recipient applied to (applied, assessment, interview, offer, "
+        "rejection, or withdrawal), even if no earlier confirmation exists; use "
+        "recruiter_outreach for unsolicited interest in a role the recipient has not "
+        "applied to, job_alert for job recommendations or listings, "
+        "newsletter_or_event for newsletters, events, and marketing, and other for "
+        "anything else."
+    )
+
+
+def test_validated_extraction_carries_kind():
+    result = validate_extraction(_raw(kind="job_alert"), _prompt("body"))
+    assert result.kind is ApplicationKind.JOB_ALERT
+    assert result.evidence == {}
+
+
+def test_stored_proposal_without_kind_still_reads():
+    from app.domain.reviews import AiProposalView
+
+    old = AiProposalView.model_validate({"company": "Acme", "evidence": {}})
+    assert old.kind is None
+    new = AiProposalView.model_validate({"kind": "job_alert", "evidence": {}})
+    assert new.kind is ApplicationKind.JOB_ALERT

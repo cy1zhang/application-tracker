@@ -101,6 +101,12 @@ export interface AiProposal {
   year?: number | null;
   status?: ApplicationStatus | null;
   requisition_id?: string | null;
+  kind?:
+    | "application_update"
+    | "job_alert"
+    | "recruiter_outreach"
+    | "newsletter_or_event"
+    | "other";
   evidence: Record<string, string>;
 }
 

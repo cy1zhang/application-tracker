@@ -95,6 +95,7 @@ def extraction(**overrides) -> dict:
         "requisition_id",
     )
     raw = {key: None for key in evidence_keys}
+    raw["kind"] = "application_update"
     raw["evidence"] = {key: None for key in evidence_keys}
     evidence = overrides.pop("evidence", {})
     raw.update(overrides)

@@ -122,6 +122,7 @@ class DynamoReviewRepository:
                     for field in _PROPOSAL_FIELDS
                     if (value := getattr(proposal, field)) is not None
                 },
+                **({"kind": proposal.kind.value} if proposal.kind is not None else {}),
                 "evidence": dict(proposal.evidence),
                 "status_in_subject_only": proposal.status_in_subject_only,
             },

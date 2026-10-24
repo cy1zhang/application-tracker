@@ -48,7 +48,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -66,7 +67,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -84,7 +86,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Rules need a link; the AI matches the single named application."
@@ -138,7 +141,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -156,7 +160,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -174,7 +179,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   }
  },
@@ -227,7 +233,8 @@
      "year": null,
      "status": "next round of interviews",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Initech",
@@ -245,7 +252,8 @@
      "year": null,
      "status": "next round of interviews",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Initech",
@@ -263,7 +271,8 @@
      "year": null,
      "status": "next round of interviews",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   }
  },
@@ -316,7 +325,8 @@
      "year": "Summer 2027",
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -334,7 +344,8 @@
      "year": "Summer 2027",
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -352,7 +363,8 @@
      "year": "Summer 2027",
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   }
  },
@@ -418,7 +430,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -436,7 +449,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -454,7 +468,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   }
  },
@@ -507,7 +522,8 @@
      "year": null,
      "status": "We are thrilled to tell you that you have advanced to the next round of interviews at Acme.",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -525,7 +541,8 @@
      "year": null,
      "status": "advanced to the next round of interviews",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -543,7 +560,8 @@
      "year": null,
      "status": "We are thrilled to tell you that you have advanced to the next round of interviews at Acme.",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Models that quote the whole sentence exceed the 70-character cap."
@@ -597,7 +615,8 @@
      "year": null,
      "status": "As part of our process we ask every candidate to complete the online coding challenge within seven days of this message.",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -615,7 +634,8 @@
      "year": null,
      "status": "complete the online coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -633,7 +653,8 @@
      "year": null,
      "status": "complete the online coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   }
  },
@@ -686,7 +707,8 @@
      "year": null,
      "status": "will not be proceeding with your application",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Wayne Systems",
@@ -704,7 +726,8 @@
      "year": null,
      "status": "will not be proceeding with your application",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Wayne Systems",
@@ -722,7 +745,8 @@
      "year": null,
      "status": "will not be proceeding with your application",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Correct output; the status cue lexicon has no 'proceeding' wording."
@@ -776,7 +800,8 @@
      "year": null,
      "status": "decided to proceed with other applicants",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Stark Works",
@@ -794,7 +819,8 @@
      "year": null,
      "status": "decided to proceed with other applicants",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Stark Works",
@@ -812,7 +838,8 @@
      "year": null,
      "status": "decided to proceed with other applicants",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Correct output; the status cue lexicon only knows 'other candidates'."
@@ -862,7 +889,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -880,7 +908,8 @@
      "year": null,
      "status": null,
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -898,7 +927,8 @@
      "year": null,
      "status": "pleased to offer you",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Fabricated status evidence that is not in the email."
@@ -952,7 +982,8 @@
      "year": null,
      "status": "coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -970,7 +1001,8 @@
      "year": null,
      "status": "coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -988,7 +1020,8 @@
      "year": null,
      "status": "coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "The model misreads an assessment as an interview; the quote does not support that status."
@@ -1042,7 +1075,8 @@
      "year": null,
      "status": "invites you to a technical interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1060,7 +1094,8 @@
      "year": null,
      "status": "invites you to a technical interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1078,7 +1113,8 @@
      "year": null,
      "status": "invites you to a technical interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Correct output; the interviewing cue only matches 'invite you to', not 'invites you to'."
@@ -1132,7 +1168,8 @@
      "year": null,
      "status": "invite you to a final-round interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1150,7 +1187,8 @@
      "year": null,
      "status": "invite you to a final-round interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1168,7 +1206,8 @@
      "year": null,
      "status": "invite you to a final-round interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Correct output; the interviewing cue does not allow a hyphenated interview type."
@@ -1222,7 +1261,8 @@
      "year": "Summer 2027",
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1240,7 +1280,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1258,7 +1299,8 @@
      "year": "Summer 2027",
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "The email names no cycle; a September date must not produce one."
@@ -1308,7 +1350,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1326,7 +1369,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1344,7 +1388,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Status appears only in the subject."
@@ -1394,7 +1439,8 @@
      "year": null,
      "status": "invite you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1412,7 +1458,8 @@
      "year": null,
      "status": "invite you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1430,7 +1477,8 @@
      "year": null,
      "status": "invite you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Conditional wording is not an event."
@@ -1493,7 +1541,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1511,7 +1560,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1529,7 +1579,8 @@
      "year": null,
      "status": "invites you to interview",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   }
  },
@@ -1578,7 +1629,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1596,7 +1648,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1614,7 +1667,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "An assessment after an offer is a regression."
@@ -1664,7 +1718,8 @@
      "year": "Summer 2028",
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1682,7 +1737,8 @@
      "year": "Summer 2028",
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1700,7 +1756,8 @@
      "year": "Summer 2028",
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "A different cycle from the tracked application."
@@ -1750,7 +1807,8 @@
      "year": null,
      "status": "extending you an offer",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1768,7 +1826,8 @@
      "year": null,
      "status": null,
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1786,7 +1845,8 @@
      "year": null,
      "status": "extending you an offer",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Instruction text carrying a status cue; obedient models are recorded for two providers."
@@ -1849,7 +1909,8 @@
      "year": null,
      "status": "coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1867,7 +1928,8 @@
      "year": null,
      "status": "coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1885,7 +1947,8 @@
      "year": null,
      "status": "coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   }
  },
@@ -1935,7 +1998,8 @@
      "status": null,
      "requisition_id": null
     },
-    "api_key": "synthetic-key-not-real"
+    "api_key": "synthetic-key-not-real",
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -1953,7 +2017,8 @@
      "year": null,
      "status": null,
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -1972,7 +2037,8 @@
      "status": null,
      "requisition_id": null
     },
-    "note": "key withheld"
+    "note": "key withheld",
+    "kind": "application_update"
    }
   }
  },
@@ -2242,7 +2308,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -2260,7 +2327,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -2278,7 +2346,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "The model names the wrong role; the quote does not contain it, so it is dropped."
@@ -2314,7 +2383,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -2332,7 +2402,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -2350,7 +2421,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Relevant mail for an untracked application: review, never a new application."
@@ -2404,7 +2476,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Globex",
@@ -2422,7 +2495,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Globex",
@@ -2440,7 +2514,8 @@
      "year": null,
      "status": "complete the coding challenge",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Company drawn from a passing mention; it contradicts the linked application."
@@ -2494,7 +2569,8 @@
      "year": null,
      "status": "pleased to offer you",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Acme",
@@ -2512,7 +2588,8 @@
      "year": null,
      "status": "pleased to offer you",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Acme",
@@ -2530,7 +2607,8 @@
      "year": null,
      "status": "pleased to offer you",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   },
   "note": "Clear rules outcome; the (wrong) recorded output must never be consulted."
@@ -2584,7 +2662,8 @@
      "year": null,
      "status": "pleased to offer you",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "anthropic": {
     "company": "Umbrella Labs",
@@ -2602,7 +2681,8 @@
      "year": null,
      "status": "pleased to offer you",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    },
    "gemini": {
     "company": "Umbrella Labs",
@@ -2620,7 +2700,8 @@
      "year": null,
      "status": "pleased to offer you",
      "requisition_id": null
-    }
+    },
+    "kind": "application_update"
    }
   }
  }

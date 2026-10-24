@@ -47,7 +47,7 @@ def _output(status="interviewing", quote="invite you to interview"):
     evidence = {field: None for field in FIELDS}
     output["status"] = status
     evidence["status"] = quote
-    return {**output, "evidence": evidence}
+    return {**output, "kind": "application_update", "evidence": evidence}
 
 
 def _review(reason="unknown_stage"):

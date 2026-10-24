@@ -3,6 +3,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from app.domain.ai import ApplicationKind
 from app.domain.applications import (
     ApplicationPatch,
     ApplicationStatus,
@@ -57,6 +58,7 @@ class AiProposalView(BaseModel):
     year: int | None = None
     status: ApplicationStatus | None = None
     requisition_id: str | None = None
+    kind: ApplicationKind | None = None
     evidence: dict[str, str] = {}
 
 

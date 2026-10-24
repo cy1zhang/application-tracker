@@ -83,7 +83,7 @@ def test_ai_applies_and_persists_provenance(env) -> None:
     assert proposal["evidence"]["status"] == "invite you to interview"
     assert set(proposal) <= {
         "company", "role", "employment_type", "season", "year", "status",
-        "requisition_id", "evidence", "status_in_subject_only",
+        "requisition_id", "evidence", "status_in_subject_only", "kind",
     }
     assert "confidence" not in proposal
 

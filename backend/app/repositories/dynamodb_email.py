@@ -499,6 +499,8 @@ class DynamoEmailRepository:
             value = getattr(proposal, field)
             if value is not None:
                 stored[field] = value.value if isinstance(value, Enum) else value
+        if proposal.kind is not None:
+            stored["kind"] = proposal.kind.value
         stored["evidence"] = dict(proposal.evidence)
         stored["status_in_subject_only"] = bool(proposal.status_in_subject_only)
         return stored

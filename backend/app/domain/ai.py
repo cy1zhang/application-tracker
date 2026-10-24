@@ -28,6 +28,14 @@ class AiProvider(str, Enum):
     HUGGING_FACE = "huggingface"
 
 
+class ApplicationKind(str, Enum):
+    APPLICATION_UPDATE = "application_update"
+    JOB_ALERT = "job_alert"
+    RECRUITER_OUTREACH = "recruiter_outreach"
+    NEWSLETTER_OR_EVENT = "newsletter_or_event"
+    OTHER = "other"
+
+
 class ExtractionEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -50,6 +58,7 @@ class ExtractionOutput(BaseModel):
     year: int | None = Field(ge=2000, le=2100, strict=True)
     status: ApplicationStatus | None
     requisition_id: RequisitionId | None
+    kind: ApplicationKind
     evidence: ExtractionEvidence
 
     @field_validator("employment_type")
@@ -85,6 +94,7 @@ EXTRACTION_JSON_SCHEMA: dict = {
     "type": "object",
     "properties": {
         **{name: _nullable(schema) for name, schema in _FIELDS.items()},
+        "kind": {"type": "string", "enum": [k.value for k in ApplicationKind]},
         "evidence": {
             "type": "object",
             "properties": {name: _nullable(_STRING) for name in _FIELDS},
@@ -92,7 +102,7 @@ EXTRACTION_JSON_SCHEMA: dict = {
             "additionalProperties": False,
         },
     },
-    "required": [*_FIELDS, "evidence"],
+    "required": [*_FIELDS, "kind", "evidence"],
     "additionalProperties": False,
 }
 

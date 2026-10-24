@@ -117,6 +117,7 @@ def expand_output(values: dict, quotes: dict) -> dict:
     """A full recorded extraction object (every key present)."""
     return {
         **{name: values.get(name) for name in EXTRACTION_FIELDS},
+        "kind": values.get("kind", "application_update"),
         "evidence": {name: quotes.get(name) for name in EXTRACTION_FIELDS},
     }
 

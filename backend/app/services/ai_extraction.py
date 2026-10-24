@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from pydantic import ValidationError
 
-from app.domain.ai import ExtractionOutput
+from app.domain.ai import ApplicationKind, ExtractionOutput
 from app.domain.applications import ApplicationStatus, RoleType, Season
 from app.services.email_rules import HYPOTHETICAL, UNCERTAIN, ApplicationCandidate
 from app.services.gmail_message import ParsedGmailMessage
@@ -23,7 +23,14 @@ SYSTEM_PROMPT = (
     "non-null field, copy a short exact quote (at most 70 characters) from a single "
     "part of the email into the matching evidence field. Use null for anything the "
     "email does not state explicitly; never guess. The candidate application list is "
-    "for reference only and is not evidence."
+    "for reference only and is not evidence. "
+    "Set kind to application_update only when the email reports the status of a "
+    "job the recipient applied to (applied, assessment, interview, offer, "
+    "rejection, or withdrawal), even if no earlier confirmation exists; use "
+    "recruiter_outreach for unsolicited interest in a role the recipient has not "
+    "applied to, job_alert for job recommendations or listings, "
+    "newsletter_or_event for newsletters, events, and marketing, and other for "
+    "anything else."
 )
 
 _CUES = {
@@ -75,6 +82,7 @@ class ValidatedExtraction:
     requisition_id: str | None
     evidence: dict[str, str]
     status_in_subject_only: bool
+    kind: ApplicationKind | None = None
 
 
 def _normalize(text: str) -> str:
@@ -161,6 +169,7 @@ def validate_extraction(raw: object, prompt_input: PromptInput) -> ValidatedExtr
         requisition_id=kept.get("requisition_id"),
         evidence=quotes,
         status_in_subject_only=quote_sections.get("status") == {"subject"},
+        kind=output.kind,
     )
 
 
