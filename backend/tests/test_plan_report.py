@@ -79,3 +79,21 @@ def test_sample_holds_first_100_creates_and_updates():
     assert report.counts["create"] == 120
     assert len(report.sample) == 100
     assert report.sample[0].message_id == "m0"
+
+
+def test_simulate_conflicting_cycle_on_same_thread_creates_separate_row():
+    first = item("m1", 0)
+    second = item("m2", 5)
+    second = PlannedItem(
+        message_id="m2",
+        received_at=second.received_at,
+        extraction=second.extraction.__class__(
+            **{**second.extraction.__dict__, "year": 2028}
+        ),
+        subject="s",
+        sender="a@example.com",
+        thread_id="t",
+    )
+    first = PlannedItem(**{**first.__dict__, "thread_id": "t"})
+    report = simulate([first, second], [])
+    assert report.counts["create"] == 2

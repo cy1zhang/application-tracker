@@ -7,6 +7,7 @@ from app.services.ai_extraction import ValidatedExtraction
 from app.services.application_matching import (
     Ambiguous,
     Matched,
+    NoMatch,
     match_application,
 )
 from app.services.email_rules import ApplicationCandidate, would_regress
@@ -42,6 +43,19 @@ def _supported_fields(extraction: ValidatedExtraction) -> dict[str, object]:
     return {name: value for name, value in values.items() if value is not None}
 
 
+def _cycle_conflicts(
+    candidate: ApplicationCandidate, extraction: ValidatedExtraction
+) -> bool:
+    row = candidate.application
+    return any(
+        have is not None and want is not None and have != want
+        for have, want in (
+            (row.season, extraction.season),
+            (row.year, extraction.year),
+        )
+    )
+
+
 def decide(
     extraction: ValidatedExtraction,
     *,
@@ -67,6 +81,10 @@ def decide(
         return AutoDecision("needs_look", "ambiguous_match", None, {})
 
     proposed = _supported_fields(extraction)
+    if isinstance(match, Matched) and _cycle_conflicts(
+        match.candidate, extraction
+    ):
+        match = NoMatch()
     if isinstance(match, Matched):
         current = match.candidate.application
         target = current.application_id
@@ -83,7 +101,8 @@ def decide(
             for name, value in proposed.items()
             if getattr(current, name) != value
             and not (
-                name in {"season", "year"} and getattr(current, name) is not None
+                name in {"season", "year", "company", "role"}
+                and getattr(current, name) is not None
             )
         }
         if not changes:

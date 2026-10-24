@@ -220,3 +220,45 @@ def test_decision_is_frozen():
     except AttributeError:
         return
     raise AssertionError("expected frozen")
+
+
+def test_thread_match_with_conflicting_cycle_creates_separate_row():
+    d = decide(
+        extraction(year=2028),
+        message_ref=REF,
+        candidates=[candidate(thread_ids=["t1"])],
+    )
+    assert (d.action, d.reason) == ("create", "ai_create")
+
+
+def test_requisition_match_with_conflicting_cycle_creates_separate_row():
+    c = ApplicationCandidate(
+        application=candidate().application,
+        requisition_ids=frozenset({"R-1"}),
+    )
+    d = decide(
+        extraction(season=Season.FALL, requisition_id="R-1"),
+        message_ref=MessageRef("m1", None, NOW),
+        candidates=[c],
+    )
+    assert (d.action, d.reason) == ("create", "ai_create")
+
+
+def test_update_does_not_overwrite_existing_company_or_role():
+    d = decide(
+        extraction(company="ACME Inc", role="SWE Intern"),
+        message_ref=REF,
+        candidates=[candidate(thread_ids=["t1"])],
+    )
+    assert (d.action, d.reason) == ("ignore", "no_change")
+
+
+def test_update_fills_missing_role():
+    c = candidate(thread_ids=["t1"])
+    c = ApplicationCandidate(
+        application=c.application.model_copy(update={"role": None}),
+        thread_ids=c.thread_ids,
+    )
+    d = decide(extraction(), message_ref=REF, candidates=[c])
+    assert d.action == "update"
+    assert d.fields == {"role": "Software Engineering Intern"}
