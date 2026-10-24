@@ -59,8 +59,8 @@ class PipelineRun(Protocol):
 
 @dataclass
 class AnswerKeyReport:
-    precision: float
-    recall: float
+    precision: float | None  # None means unmeasured
+    recall: float | None
     fake_rows: int
     duplicate_rows: int
     merged_rows: int
@@ -111,8 +111,8 @@ def score(labels: dict[str, Label], outcomes: list[EmailOutcome]) -> AnswerKeyRe
     for outcome in outcomes:
         confusion[labels[outcome.id].kind][outcome.action] += 1
     return AnswerKeyReport(
-        precision=correct / len(automatic) if automatic else 1.0,
-        recall=caught / len(updates) if updates else 0.0,
+        precision=correct / len(automatic) if automatic else None,
+        recall=caught / len(updates) if updates else None,
         fake_rows=sum(1 for l in first_label.values() if l.kind != "application_update"),
         duplicate_rows=sum(len(rows) - 1 for rows in key_rows.values()),
         merged_rows=sum(1 for keys in row_keys.values() if len(keys) >= 2),
@@ -127,6 +127,8 @@ def score(labels: dict[str, Label], outcomes: list[EmailOutcome]) -> AnswerKeyRe
 
 
 def exit_code(report) -> int:
+    if report.precision is None or report.recall is None:
+        return 1
     return 0 if report.precision >= MIN_PRECISION and report.recall >= MIN_RECALL else 1
 
 
@@ -177,7 +179,7 @@ class CurrentPipeline:
             settings=settings, cipher=_Cipher(),
             provider_factory=lambda name: self._provider,
             models={AiProvider.OPENAI: self._model},
-            # One day per message keeps the daily AI request limit from tripping.
+            # Daily cap deliberately bypassed (one day per message): offline evaluation.
             clock=lambda: NOW + timedelta(days=position[0]),
         )
         outcomes = []
@@ -253,7 +255,10 @@ def run_cli(api, directory: Path, pipeline: PipelineRun) -> AnswerKeyReport:
 def _print(report: AnswerKeyReport) -> None:
     print(f"emails={report.emails} unavailable={report.unavailable} "
           f"automatic_changes={report.automatic_changes}")
-    print(f"precision={report.precision:.3f} recall={report.recall:.3f}")
+    def show(value):
+        return "unmeasured" if value is None else f"{value:.3f}"
+
+    print(f"precision={show(report.precision)} recall={show(report.recall)}")
     print(f"fake_rows={report.fake_rows} duplicate_rows={report.duplicate_rows} "
           f"merged_rows={report.merged_rows} wrong_status={report.wrong_status}")
     for kind, actions in sorted(report.kind_confusion.items()):

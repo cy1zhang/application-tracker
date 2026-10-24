@@ -5,8 +5,11 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from types import SimpleNamespace
 from typing import ClassVar
 
+import boto3
 import pytest
+from moto import mock_aws
 
+from app.domain.applications import ApplicationPatch
 from app.domain.messages import MessageContent
 from evaluation.answer_key.labels import Label
 from evaluation.answer_key.ollama import OllamaProvider
@@ -158,7 +161,7 @@ def test_current_pipeline_creates_no_rows_from_empty_start():
         [("E1", content("m1", thanks)), ("E2", content("m2", AMBIGUOUS_TEXT, 1))]
     )
     assert [o.id for o in outcomes] == ["E1", "E2"]
-    assert {o.action for o in outcomes} <= {"ignored", "needs_look"}
+    assert [o.action for o in outcomes] == ["needs_look", "needs_look"]
     assert all(o.row is None for o in outcomes)
 
 
@@ -193,3 +196,60 @@ def test_cli_skips_and_counts_unavailable_messages(tmp_path, capsys):
     report = run_cli(Api(), tmp_path, Pipeline())
     assert (report.emails, report.unavailable) == (1, 1)
     assert capsys.readouterr().out == ""
+
+
+def test_precision_unmeasured_without_automatic_changes():
+    labels = {"E1": label("E1", key="a")}
+    assert score(labels, [out("E1", "needs_look")]).precision is None
+
+
+def test_recall_unmeasured_without_application_labels():
+    labels = {"E1": label("E1", kind="job_alert")}
+    assert score(labels, [out("E1", "ignored")]).recall is None
+
+
+def test_check_fails_when_unmeasured():
+    assert exit_code(SimpleNamespace(precision=None, recall=1.0)) == 1
+    assert exit_code(SimpleNamespace(precision=1.0, recall=None)) == 1
+
+
+@mock_aws
+def test_applied_outcome_maps_to_updated_with_changed_fields():
+    from app.domain.applications import ApplicationCreate, ApplicationStatus
+    from app.repositories.dynamodb import DynamoApplicationRepository
+    from app.repositories.dynamodb_email import StoredOutcome
+    from app.repositories.dynamodb_tables import create_tables
+    from evaluation.answer_key import score as module
+
+    client = boto3.client("dynamodb", region_name="us-east-1")
+    create_tables(
+        client, applications_table="Applications", events_table="Events",
+        users_table="Users", oauth_states_table="OAuthStates",
+        sync_runs_table="SyncRuns",
+    )
+    repo = DynamoApplicationRepository(
+        client=client, applications_table="Applications", events_table="Events"
+    )
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    created = repo.create(
+        owner_id=module.OWNER,
+        payload=ApplicationCreate(company="Acme", role="Intern", status="applied"),
+        application_id="app-1", event_id="e1", occurred_at=now,
+    )
+    before = {"app-1": created}
+    repo.update(
+        owner_id=module.OWNER, application_id="app-1",
+        patch=ApplicationPatch(
+            expected_version=created.version, status=ApplicationStatus.INTERVIEWING
+        ),
+        event_id="e2", occurred_at=now + timedelta(days=1),
+    )
+    stored = StoredOutcome("m1", "applied", "rule", "app-1")
+    outcome = module._outcome("E1", stored, before, repo)
+    assert outcome == EmailOutcome(
+        "E1", "updated", "app-1", status="interviewing", company=None,
+        role=None, season=None, year=None,
+    )
+    labels = {"E1": label("E1", key="a", status="rejected")}
+    report = score(labels, [outcome])
+    assert (report.precision, report.wrong_status) == (0.0, 1)
