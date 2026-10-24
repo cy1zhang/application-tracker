@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 from typing import Annotated, Any
@@ -71,7 +72,8 @@ def apply(
     queue_url = os.getenv("SYNC_QUEUE_URL")
     if not queue_url:
         raise HTTPException(status_code=503, detail="Sync worker is unavailable")
-    if settings.get_mode(owner_id) == "off":
+    previous = settings.get_mode(owner_id)
+    if previous == "off":
         raise HTTPException(status_code=409, detail="auto_apply_off")
     if not emails.list_planned(owner_id):
         raise HTTPException(status_code=409, detail="nothing_planned")
@@ -84,5 +86,7 @@ def apply(
             MessageBody=json.dumps({"mode": "apply_plan", "owner_id": owner_id}),
         )
     except (BotoCoreError, ClientError):
+        with contextlib.suppress(Exception):  # best effort; the 503 is still returned
+            settings.set_mode(owner_id, previous)
         raise HTTPException(status_code=503, detail="queue_unavailable") from None
     return {"queued": True}

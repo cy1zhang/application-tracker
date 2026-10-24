@@ -165,3 +165,19 @@ def test_apply_is_owner_scoped(env) -> None:
     put_plan(env.client, "user-b", "b1", 0)
 
     assert env.api.post("/ai-plan/apply").json() == {"detail": "nothing_planned"}
+
+
+def test_apply_enqueue_failure_restores_mode(env) -> None:
+    from botocore.exceptions import ClientError
+
+    put_plan(env.client, "user-a", "m1", 0)
+
+    def fail(**kwargs):
+        raise ClientError({"Error": {"Code": "X", "Message": "x"}}, "SendMessage")
+
+    env.publisher.send_message = fail
+
+    response = env.api.post("/ai-plan/apply")
+
+    assert response.status_code == 503
+    assert env.settings.get_mode("user-a") == "plan"

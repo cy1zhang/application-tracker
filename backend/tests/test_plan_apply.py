@@ -194,3 +194,17 @@ def test_report_performance_1200_plans(env) -> None:
     print(f"SIMULATE_SECONDS={elapsed:.3f}")
     assert report.counts["create"] == 300
     assert elapsed < 2
+
+
+def test_apply_page_unexpected_error_propagates(env, monkeypatch) -> None:
+    put_plan(env.client, "user-a", "m1", 0)
+
+    def boom(*args, **kwargs):
+        raise ValueError("unrelated data error")
+
+    monkeypatch.setattr(env.emails, "execute", boom)
+
+    with pytest.raises(ValueError):
+        env.apply()
+
+    assert "executed_at" not in env.item("m1")["ai_plan"]

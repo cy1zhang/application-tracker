@@ -50,6 +50,10 @@ class InvalidMessageCursor(Exception):
     pass
 
 
+class InvalidCreateDecision(ValueError):
+    """A create decision that breaks the create invariants."""
+
+
 class PlanConflict(Exception):
     """The message is missing, not queued, or already planned."""
 
@@ -573,7 +577,7 @@ class DynamoEmailRepository:
             or decision.fields.get("status") is None
             or extraction.kind != ApplicationKind.APPLICATION_UPDATE
         ):
-            raise ValueError("invalid create decision")
+            raise InvalidCreateDecision("invalid create decision")
         existing = self._get_event_item(owner_id, message.message_id)
         if existing is not None and not self._replaceable(existing, reconsider):
             return self._as_outcome(existing)
