@@ -3,7 +3,13 @@ from datetime import timedelta
 import pytest
 from moto import mock_aws
 
-from app.domain.applications import ApplicationStatus, RoleType, Season
+from app.domain.ai import ApplicationKind
+from app.domain.applications import (
+    ApplicationPatch,
+    ApplicationStatus,
+    RoleType,
+    Season,
+)
 from app.repositories.dynamodb_sync import StaleSyncRun
 from app.services.auto_apply import AutoDecision, MessageRef
 from tests.ai_support import NOW, Env
@@ -90,10 +96,19 @@ def test_create_writes_application_and_created_event_atomically(env):
     assert [e.source_message_id for e in history] == ["m1"]
 
 
-def test_create_never_defaults_status(env):
-    decision = AutoDecision("create", "ai_create", None, {"company": "Acme"})
-    run(env, decision, new_id="new-1")
-    assert env.applications.get(owner_id=OWNER, application_id="new-1").status is None
+@pytest.mark.parametrize("fields,kind", [
+    ({"company": "Acme"}, None),
+    ({"role": "SWE", "status": ApplicationStatus.APPLIED}, None),
+    ({"company": "Acme", "status": ApplicationStatus.APPLIED},
+     ApplicationKind.JOB_ALERT),
+])
+def test_create_without_status_or_company_is_refused(env, fields, kind):
+    extraction = make_extraction(kind=kind) if kind else make_extraction()
+    decision = AutoDecision("create", "ai_create", None, fields)
+    with pytest.raises(ValueError, match="invalid create decision"):
+        run(env, decision, new_id="new-1", extraction=extraction)
+    assert raw_app(env, "new-1") is None
+    assert env.event("m1") is None
 
 
 def test_create_records_requisition_for_later_matching(env):
@@ -125,15 +140,20 @@ def test_update_applies_and_records_event(env):
 
 def test_update_respects_manual_correction(env):
     env.app()
-    run(env, update_decision(), message_id="m-new", version=1)
+    env.applications.update(
+        owner_id=OWNER, application_id="app-1",
+        patch=ApplicationPatch(
+            expected_version=1, status=ApplicationStatus.INTERVIEWING
+        ),
+        event_id="manual-1", occurred_at=NOW + timedelta(days=1),
+    )
     outcome = run(
-        env, update_decision(ApplicationStatus.REJECTED), message_id="m-old",
-        received_at=NOW - timedelta(days=1), version=2,
+        env, update_decision(ApplicationStatus.REJECTED), version=2, received_at=NOW,
     )
     assert (outcome.outcome, outcome.reason) == ("review_required", "older_evidence")
-    assert env.event("m-old")["ai_proposal"]["kind"] == "application_update"
+    assert env.event("m1")["ai_proposal"]["kind"] == "application_update"
     stored = env.applications.get(owner_id=OWNER, application_id="app-1")
-    assert stored.status == ApplicationStatus.INTERVIEWING
+    assert stored.status == ApplicationStatus.INTERVIEWING and stored.version == 2
 
 
 def test_update_stale_version_goes_to_review(env):
@@ -206,3 +226,44 @@ def test_cross_owner_application_id_rejected(env):
     other = env.applications.get(owner_id="owner-b", application_id="b-app")
     assert other.version == 1 and other.status == ApplicationStatus.APPLIED
     assert env.event("m1", owner="owner-b") is None
+
+
+def test_every_successful_execute_records_executed_at(env):
+    env.app()
+    run(env, create_decision(), message_id="c", new_id="new-1")
+    run(env, update_decision(), message_id="u", version=1)
+    run(env, AutoDecision("ignore", "no_change", None, {}), message_id="i")
+    run(env, AutoDecision("needs_look", "ambiguous_match", None, {}), message_id="n")
+    for message_id in "cuin":
+        assert env.event(message_id)["ai_plan"] == {"executed_at": NOW.isoformat()}
+
+
+def test_plan_changed_since_read_is_not_executed(env, monkeypatch):
+    seed_plan(env)
+    env.client.update_item(
+        TableName="Events",
+        Key={"owner_id": {"S": OWNER}, "event_id": {"S": "gmail#m1"}},
+        UpdateExpression="SET ai_plan.planned_at = :p",
+        ExpressionAttributeValues={":p": {"S": "t1"}},
+    )
+    emails = env.emails()
+    original = emails._get_event_item
+
+    def read_then_replan(owner_id, message_id):
+        item = original(owner_id, message_id)
+        env.client.update_item(
+            TableName="Events",
+            Key={"owner_id": {"S": owner_id}, "event_id": {"S": f"gmail#{message_id}"}},
+            UpdateExpression="SET ai_plan.planned_at = :p",
+            ExpressionAttributeValues={":p": {"S": "t2"}},
+        )
+        return item
+
+    monkeypatch.setattr(emails, "_get_event_item", read_then_replan)
+    # An update and a create both leave the new plan alone.
+    env.app()
+    outcome = run(env, update_decision(), version=1, emails=emails)
+    assert outcome.outcome == "review_required" and outcome.reason == "planned"
+    stored = env.event("m1")
+    assert stored["ai_plan"] == {"action": "create", "planned_at": "t2"}
+    assert env.applications.get(owner_id=OWNER, application_id="app-1").version == 1

@@ -422,6 +422,12 @@ class DynamoEmailRepository:
         occurred_at: datetime,
     ) -> StoredOutcome:
         """Apply one automatic decision; the gmail# item is the audit event."""
+        if decision.action == "create" and (
+            decision.fields.get("company") is None
+            or decision.fields.get("status") is None
+            or extraction.kind != ApplicationKind.APPLICATION_UPDATE
+        ):
+            raise ValueError("invalid create decision")
         existing = self._get_event_item(owner_id, message.message_id)
         if existing is not None and not self._replaceable(existing):
             return self._as_outcome(existing)
@@ -432,7 +438,7 @@ class DynamoEmailRepository:
                 extraction, existing, occurred_at,
             )
             item.update(extra)
-            return self._put_outcome(item, execute=True)
+            return self._put_outcome(item, execute=True, existing=existing)
 
         if decision.action == "ignore":
             return review("ignored", decision.reason)
@@ -479,14 +485,14 @@ class DynamoEmailRepository:
             self._client.transact_write_items(
                 TransactItems=[
                     self._application_update_put(updated, application_version),
-                    self._event_put(event, execute=True),
+                    self._event_put(event, execute=True, existing=existing),
                     *self._guard(owner_id),
                 ]
             )
         except ClientError as error:
             if error.response["Error"]["Code"] != "TransactionCanceledException":
                 raise
-            replayed = self._after_cancel(owner_id, message.message_id)
+            replayed = self._after_cancel(owner_id, message.message_id, existing)
             if replayed is not None:
                 return replayed
             latest = self._get_application(owner_id, decision.application_id)
@@ -541,25 +547,30 @@ class DynamoEmailRepository:
                             "ConditionExpression": "attribute_not_exists(application_id)",
                         }
                     },
-                    self._event_put(event, execute=True),
+                    self._event_put(event, execute=True, existing=existing),
                     *self._guard(owner_id),
                 ]
             )
         except ClientError as error:
             if error.response["Error"]["Code"] != "TransactionCanceledException":
                 raise
-            replayed = self._after_cancel(owner_id, message.message_id)
+            replayed = self._after_cancel(owner_id, message.message_id, existing)
             if replayed is not None:
                 return replayed
             raise
         return self._as_outcome(event)
 
-    def _after_cancel(self, owner_id: str, message_id: str) -> StoredOutcome | None:
+    def _after_cancel(
+        self, owner_id: str, message_id: str, existing: dict[str, Any] | None
+    ) -> StoredOutcome | None:
         """Stale guard raises; a message that is already settled returns as stored."""
         if not self._guard_valid(owner_id):
             raise StaleSyncRun from None
         current = self._get_event_item(owner_id, message_id)
-        if current is not None and not self._replaceable(current):
+        if current is not None and (
+            not self._replaceable(current)
+            or current.get("ai_plan") != (existing or {}).get("ai_plan")
+        ):
             return self._as_outcome(current)
         return None
 
@@ -623,10 +634,10 @@ class DynamoEmailRepository:
             ):
                 if value is not None:
                     item[key] = value.value if isinstance(value, Enum) else value
-        if existing is not None and "ai_plan" in existing:
-            item["ai_plan"] = {
-                **existing["ai_plan"], "executed_at": occurred_at.isoformat()
-            }
+        item["ai_plan"] = {
+            **((existing or {}).get("ai_plan") or {}),
+            "executed_at": occurred_at.isoformat(),
+        }
         return item
 
     def _get_event_item(self, owner_id: str, message_id: str) -> dict[str, Any] | None:
@@ -713,9 +724,9 @@ class DynamoEmailRepository:
 
     def _put_outcome(
         self, item: dict[str, Any], decision: RuleDecision | None = None,
-        *, execute: bool = False,
+        *, execute: bool = False, existing: dict[str, Any] | None = None,
     ) -> StoredOutcome:
-        put = self._event_put(item, execute=execute)["Put"]
+        put = self._event_put(item, execute=execute, existing=existing)["Put"]
         try:
             if self._users_table is None:
                 self._client.put_item(**put)
@@ -749,23 +760,40 @@ class DynamoEmailRepository:
             return prior
         return self._as_outcome(item)
 
-    def _event_put(self, item: dict[str, Any], *, execute: bool = False) -> dict:
-        values = {":retryable": "retryable"}
+    def _event_put(
+        self, item: dict[str, Any], *, execute: bool = False,
+        existing: dict[str, Any] | None = None,
+    ) -> dict:
+        values: dict[str, Any] = {":retryable": "retryable"}
+        condition = _RECORD_CONDITION
         if execute:
             values[":pending_ai"] = "pending_ai"
-        return {
-            "Put": {
-                "TableName": self._events_table,
-                "Item": self._encode(item),
-                "ConditionExpression": (
-                    _EXECUTE_CONDITION if execute else _RECORD_CONDITION
-                ),
-                "ExpressionAttributeValues": {
-                    key: self._serializer.serialize(value)
-                    for key, value in values.items()
-                },
-            }
+            condition = _EXECUTE_CONDITION
+            # Bind the write to the item (and plan) that was read, so a different
+            # plan stored since then is never marked executed.
+            if existing is None:
+                condition = "attribute_not_exists(event_id)"
+                del values[":retryable"], values[":pending_ai"]
+            elif "ai_plan" not in existing:
+                condition = f"({condition}) AND attribute_not_exists(ai_plan)"
+            elif "planned_at" in existing["ai_plan"]:
+                condition = f"({condition}) AND ai_plan.planned_at = :planned_at"
+                values[":planned_at"] = existing["ai_plan"]["planned_at"]
+            else:
+                condition = (
+                    f"({condition}) AND attribute_not_exists(ai_plan.planned_at)"
+                )
+        put: dict[str, Any] = {
+            "TableName": self._events_table,
+            "Item": self._encode(item),
+            "ConditionExpression": condition,
         }
+        if values:
+            put["ExpressionAttributeValues"] = {
+                key: self._serializer.serialize(value)
+                for key, value in values.items()
+            }
+        return {"Put": put}
 
     def _application_update_put(self, updated: dict[str, Any], version: int) -> dict:
         return {
