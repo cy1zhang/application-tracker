@@ -235,6 +235,18 @@ def get_email_repository() -> DynamoEmailRepository:
     )
 
 
+def get_queue_email_repository() -> DynamoEmailRepository:
+    client_options = {}
+    if region := os.getenv("AWS_REGION"):
+        client_options["region_name"] = region
+    return DynamoEmailRepository(
+        client=boto3.client("dynamodb", **client_options),
+        applications_table=os.environ["APPLICATIONS_TABLE"],
+        events_table=os.environ["EVENTS_TABLE"],
+        plan_users_table=os.environ["USERS_TABLE"],
+    )
+
+
 def get_message_content_service(
     emails: Annotated[DynamoEmailRepository, Depends(get_email_repository)],
     connections: Annotated[DynamoGmailRepository, Depends(get_gmail_repository)],

@@ -10,6 +10,7 @@ from app.domain.ai import AiProvider
 from app.observability import category_of, get_logger, log_event
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_ai import DynamoAiSettingsRepository
+from app.repositories.dynamodb_auto_apply import DynamoAutoApplySettings
 from app.repositories.dynamodb_email import DynamoEmailRepository
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_sync import DynamoSyncRepository, StaleSyncRun
@@ -48,6 +49,9 @@ def _dependencies():
         ),
         "publisher": boto3.client("sqs"),
         "ai_settings": DynamoAiSettingsRepository(
+            client=client, users_table=os.environ["USERS_TABLE"]
+        ),
+        "auto_apply": DynamoAutoApplySettings(
             client=client, users_table=os.environ["USERS_TABLE"]
         ),
     }
@@ -98,9 +102,10 @@ def handler(event, context):
                 escalator_factory=_escalator_factory(
                     dependencies, owner_id, generation, run_id
                 ),
+                auto_apply=dependencies.get("auto_apply"),
                 **{
                     key: value for key, value in dependencies.items()
-                    if key not in {"client", "ai_settings"}
+                    if key not in {"client", "ai_settings", "auto_apply"}
                 },
             )
             if run is not None:

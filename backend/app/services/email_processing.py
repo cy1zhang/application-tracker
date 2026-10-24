@@ -3,9 +3,11 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from app.observability import category_of, get_logger, log_event
+from app.repositories.dynamodb_auto_apply import AutoApplyMode
 from app.repositories.dynamodb_email import DynamoEmailRepository, StoredOutcome
 from app.repositories.dynamodb_sync import StaleSyncRun
 from app.services.ai_reconcile import ESCALATION_REASONS
+from app.services.email_filters import filter_reason
 from app.services.email_rules import ApplicationCandidate, classify_message
 from app.services.gmail_message import MessageParseError, parse_gmail_message
 
@@ -35,6 +37,7 @@ def process_message(
     applications: list[ApplicationCandidate],
     repository: DynamoEmailRepository,
     escalator=None,
+    mode: AutoApplyMode = "off",
 ) -> StoredOutcome:
     try:
         message = parse_gmail_message(gmail_message)
@@ -59,7 +62,14 @@ def process_message(
             subject=subject, sender=sender,
         )
 
+    if mode != "off":
+        reason = filter_reason(message)
+        if reason is not None:
+            return repository.record_ignored(owner_id, message, f"filtered:{reason}")
     decision = classify_message(message, applications)
+    if mode != "off" and decision.outcome != "applied":
+        # The local AI decides everything the rules don't; the hosted AI is not used.
+        return repository.record_pending_ai(owner_id, message)
     if (
         escalator is not None
         and decision.outcome == "review_required"

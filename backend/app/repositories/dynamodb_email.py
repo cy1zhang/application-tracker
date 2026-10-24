@@ -6,8 +6,11 @@ from typing import Any, Literal
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
 
+from app.domain.ai import ApplicationKind
+from app.domain.applications import ApplicationStatus, RoleType, Season
 from app.repositories.dynamodb import APPLICATION_FIELDS, field_times_for
 from app.repositories.dynamodb_reviews import (
+    GmailConnectionChanged,
     InvalidReviewCursor,
     _decode_cursor,
     _encode_cursor,
@@ -18,7 +21,9 @@ from app.services.auto_apply import AutoDecision, MessageRef
 from app.services.email_rules import RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
 
-StoredOutcomeName = Literal["applied", "ignored", "review_required", "retryable"]
+StoredOutcomeName = Literal[
+    "applied", "ignored", "review_required", "retryable", "pending_ai"
+]
 _TERMINAL = {"applied", "ignored", "review_required"}
 _MAX_HEADER = 300
 _RECORD_CONDITION = "attribute_not_exists(event_id) OR outcome = :retryable"
@@ -39,6 +44,36 @@ class InvalidMessageCursor(Exception):
     pass
 
 
+class PlanConflict(Exception):
+    """The message is missing, not queued, or already planned."""
+
+
+def is_queued(item: dict[str, Any]) -> bool:
+    """True when the local AI worker still owes this item a plan."""
+    return "ai_plan" not in item and (
+        item.get("outcome") == "pending_ai" or item.get("ai_backfill") is True
+    )
+
+
+def extraction_from_plan(plan: dict[str, Any]) -> ValidatedExtraction:
+    """Rebuild the validated extraction stored in an item's ai_plan map."""
+    def enum(kind, key):
+        return kind(plan[key]) if plan.get(key) is not None else None
+
+    return ValidatedExtraction(
+        company=plan.get("company"),
+        role=plan.get("role"),
+        employment_type=enum(RoleType, "employment_type"),
+        season=enum(Season, "season"),
+        year=int(plan["year"]) if plan.get("year") is not None else None,
+        status=enum(ApplicationStatus, "status"),
+        requisition_id=plan.get("requisition_id"),
+        evidence=dict(plan.get("evidence", {})),
+        status_in_subject_only=bool(plan.get("status_in_subject_only", False)),
+        kind=enum(ApplicationKind, "kind"),
+    )
+
+
 class _AiSettingsStale(Exception):
     """The AI settings changed after the provider call; discard the AI result."""
 
@@ -55,7 +90,7 @@ class DynamoEmailRepository:
     def __init__(
         self, *, client, applications_table: str, events_table: str,
         users_table: str | None = None, guard_generation: int | None = None,
-        guard_run_id: str | None = None,
+        guard_run_id: str | None = None, plan_users_table: str | None = None,
     ) -> None:
         guard_parts = (users_table, guard_generation, guard_run_id)
         if any(part is not None for part in guard_parts) and not all(
@@ -66,10 +101,183 @@ class DynamoEmailRepository:
         self._applications_table = applications_table
         self._events_table = events_table
         self._users_table = users_table
+        self._plan_users_table = plan_users_table
         self._guard_generation = guard_generation
         self._guard_run_id = guard_run_id
         self._serializer = TypeSerializer()
         self._deserializer = TypeDeserializer()
+
+    def get_event_item(self, owner_id: str, message_id: str) -> dict[str, Any] | None:
+        return self._get_event_item(owner_id, message_id)
+
+    def record_pending_ai(
+        self, owner_id: str, message: ParsedGmailMessage
+    ) -> StoredOutcome:
+        """Queue a message for the local AI; any other stored outcome is left alone."""
+        prior = self._get_outcome(owner_id, message.message_id)
+        if prior is not None and prior.outcome != "retryable":
+            return prior
+        return self._put_outcome(
+            self._header_item(
+                owner_id, message, "pending_ai", "awaiting_local_ai"
+            )
+        )
+
+    def record_ignored(
+        self, owner_id: str, message: ParsedGmailMessage, reason: str
+    ) -> StoredOutcome:
+        prior = self._get_outcome(owner_id, message.message_id)
+        if prior is not None and prior.outcome != "retryable":
+            return prior
+        return self._put_outcome(
+            self._header_item(owner_id, message, "ignored", reason)
+        )
+
+    @staticmethod
+    def _header_item(
+        owner_id: str, message: ParsedGmailMessage, outcome: str, reason: str
+    ) -> dict[str, Any]:
+        item: dict[str, Any] = {
+            "owner_id": owner_id,
+            "event_id": f"gmail#{message.message_id}",
+            "source_message_id": message.message_id,
+            "thread_id": message.thread_id,
+            "received_at": message.received_at.isoformat(),
+            "outcome": outcome,
+            "reason": reason,
+        }
+        if message.subject:
+            item["subject"] = message.subject[:_MAX_HEADER]
+        if message.sender:
+            item["sender"] = message.sender[:_MAX_HEADER]
+        return item
+
+    def _owner_events(self, owner_id: str) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        query: dict[str, Any] = {
+            "TableName": self._events_table,
+            "KeyConditionExpression": "owner_id = :owner AND begins_with(event_id, :prefix)",
+            "ExpressionAttributeValues": {
+                ":owner": self._serializer.serialize(owner_id),
+                ":prefix": self._serializer.serialize("gmail#"),
+            },
+            "ConsistentRead": True,
+        }
+        while True:
+            response = self._client.query(**query)
+            items.extend(self._decode(item) for item in response.get("Items", []))
+            last_key = response.get("LastEvaluatedKey")
+            if last_key is None:
+                return items
+            query["ExclusiveStartKey"] = last_key
+
+    def list_ai_queue(
+        self, owner_id: str, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        """Queued items, oldest first; limit=None returns the whole queue."""
+        queued = sorted(
+            (item for item in self._owner_events(owner_id) if is_queued(item)),
+            key=lambda item: (item.get("received_at", ""), item["event_id"]),
+        )
+        return queued if limit is None else queued[:limit]
+
+    def mark_backfill(self, owner_id: str) -> int:
+        """Queue old no_event/unresolved-review items for the local AI; returns new marks."""
+        marked = 0
+        for item in self._owner_events(owner_id):
+            if "ai_plan" in item or "ai_backfill" in item or "resolution" in item:
+                continue
+            outcome, reason = item.get("outcome"), item.get("reason")
+            if not (
+                (outcome == "ignored" and reason == "no_event")
+                or (outcome == "review_required" and reason != "unparseable_message")
+            ):
+                continue
+            try:
+                self._client.update_item(
+                    TableName=self._events_table,
+                    Key=self._encode(
+                        {"owner_id": owner_id, "event_id": item["event_id"]}
+                    ),
+                    UpdateExpression="SET ai_backfill = :true",
+                    ConditionExpression=(
+                        "outcome = :outcome AND reason = :reason "
+                        "AND attribute_not_exists(ai_backfill) "
+                        "AND attribute_not_exists(ai_plan) "
+                        "AND attribute_not_exists(resolution)"
+                    ),
+                    ExpressionAttributeValues=self._encode({
+                        ":true": True, ":outcome": outcome, ":reason": reason,
+                    }),
+                )
+            except ClientError as error:
+                if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    raise
+                continue
+            marked += 1
+        return marked
+
+    def save_plan(
+        self, owner_id: str, message_id: str, *, extraction: ValidatedExtraction,
+        model: str, generation: int, planned_at: datetime,
+    ) -> None:
+        """Store the local AI's extraction on a queued item, once."""
+        users_table = self._users_table or self._plan_users_table
+        plan = {
+            **self._proposal(extraction),
+            "model": model,
+            "generation": generation,
+            "planned_at": planned_at.isoformat(),
+        }
+        items: list[dict[str, Any]] = [{
+            "Update": {
+                "TableName": self._events_table,
+                "Key": self._encode(
+                    {"owner_id": owner_id, "event_id": f"gmail#{message_id}"}
+                ),
+                "UpdateExpression": "SET ai_plan = :plan REMOVE ai_backfill",
+                "ConditionExpression": (
+                    "attribute_exists(event_id) AND attribute_not_exists(ai_plan) "
+                    "AND (outcome = :pending OR ai_backfill = :true)"
+                ),
+                "ExpressionAttributeValues": self._encode({
+                    ":plan": plan, ":pending": "pending_ai", ":true": True,
+                }),
+            }
+        }]
+        if users_table is not None:
+            items.append({
+                "ConditionCheck": {
+                    "TableName": users_table,
+                    "Key": self._encode({"owner_id": owner_id}),
+                    "ConditionExpression": (
+                        "generation = :generation AND attribute_exists(encrypted_token) "
+                        "AND attribute_not_exists(deletion_state)"
+                    ),
+                    "ExpressionAttributeValues": self._encode(
+                        {":generation": generation}
+                    ),
+                }
+            })
+        try:
+            self._client.transact_write_items(TransactItems=items)
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "TransactionCanceledException":
+                raise
+            if users_table is not None:
+                response = self._client.get_item(
+                    TableName=users_table,
+                    Key=self._encode({"owner_id": owner_id}),
+                    ConsistentRead=True,
+                )
+                user = self._decode(response["Item"]) if "Item" in response else {}
+                if (
+                    user.get("generation") != generation
+                    or "encrypted_token" not in user
+                    or "deletion_state" in user
+                ):
+                    raise GmailConnectionChanged from None
+            raise PlanConflict from None
 
     def get_terminal_outcome(
         self, owner_id: str, message_id: str

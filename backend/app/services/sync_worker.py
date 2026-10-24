@@ -14,7 +14,7 @@ class RetryableSyncOutcome(Exception):
 def process_sync_page(
     *, owner_id, run_id, generation, lease_id, now, syncs, connections,
     cipher, oauth, fetch, applications, emails, publisher, queue_url,
-    escalator_factory=None,
+    escalator_factory=None, auto_apply=None,
 ):
     lease = syncs.claim(owner_id, run_id, generation, lease_id, now)
     if lease is None:
@@ -51,6 +51,7 @@ def process_sync_page(
             return rescan
         final_history_id = page.history_id
     candidates = load_candidates(owner_id, applications)
+    mode = auto_apply.get_mode(owner_id) if auto_apply is not None else "off"
     escalator = escalator_factory() if escalator_factory is not None else None
     processed = 0
     offset = lease.message_offset if run.mode == "incremental" else 0
@@ -72,7 +73,8 @@ def process_sync_page(
         if run.import_after is not None and received_at is not None and received_at < run.import_after:
             continue
         outcome = process_message(
-            owner_id, message, candidates, emails, escalator=escalator
+            owner_id, message, candidates, emails, escalator=escalator,
+            mode=mode,
         )
         if outcome.outcome == "retryable":
             raise RetryableSyncOutcome

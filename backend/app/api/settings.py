@@ -49,6 +49,7 @@ async def request_validation_error_handler(
     if not (
         path.startswith("/settings/")
         or (path.startswith("/reviews/") and path.endswith("/local-ai-suggestion"))
+        or (path.startswith("/ai-queue/") and path.endswith("/result"))
     ):
         return await default_validation_handler(request, error)
     # Key-bearing and model-output bodies may contain private text; never echo them.
