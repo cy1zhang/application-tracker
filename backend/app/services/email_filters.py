@@ -16,12 +16,13 @@ VETO_BODY_CHARS = 1000
 
 # Application wording in the subject or the start of the body keeps the email.
 VETO_PATTERNS = re.compile(
-    r"your application|thank you for applying|interview|assessment|\boffer\b|unfortunately",
+    r"your application|thank you for applying|interview|assessment|\boffers?\b|unfortunately",
     re.IGNORECASE,
 )
 
 # (local-part regex, domain suffix or None for any domain, reason): the sender
-# alone identifies the mail. Evaluated in order.
+# alone identifies the mail. Only known job-board domains; generic senders
+# need a subject template match as well.
 SENDER_RULES: tuple[tuple[str, str | None, FilterReason], ...] = (
     (r"jobalerts?[-_.]?(noreply|no-reply)?", "linkedin.com", "job_alert"),
     (r"jobs-(listings|noreply)", "linkedin.com", "job_alert"),
@@ -30,11 +31,6 @@ SENDER_RULES: tuple[tuple[str, str | None, FilterReason], ...] = (
     (r"jobalerts?", "glassdoor.com", "job_alert"),
     (r"alerts?", "ziprecruiter.com", "job_alert"),
     (r"(digest|updates|recommendations)", "joinhandshake.com", "digest"),
-    (r"(job)?alerts?", None, "job_alert"),
-    (r"digest", None, "digest"),
-    (r"newsletters?", None, "newsletter"),
-    (r"(marketing|promotions?|offers)", None, "marketing"),
-    (r"(events?|webinars?)", None, "event"),
 )
 
 # Local parts of automated mailboxes; subject rules only apply to these or to

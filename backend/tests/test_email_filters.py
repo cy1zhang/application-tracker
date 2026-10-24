@@ -58,7 +58,7 @@ def test_veto_ignores_text_after_first_1000_chars():
     ("Handshake <digest@joinhandshake.com>", "Your weekly update", "digest"),
     ("Handshake <no-reply@joinhandshake.com>", "Jobs picked for you this week", "digest"),
     ("Acme <noreply@acme.test>", "Your weekly digest", "digest"),
-    ("Acme <newsletter@acme.test>", "March news", "newsletter"),
+    ("Acme <newsletter@acme.test>", "March newsletter", "newsletter"),
     ("Acme <noreply@acme.test>", "Our monthly Newsletter", "newsletter"),
     ("Acme <marketing@acme.test>", "Spring savings", "marketing"),
     ("Acme <no-reply@acme.test>", "Join our webinar on careers", "event"),
@@ -72,6 +72,20 @@ def test_person_sender_with_alert_words_not_filtered_unless_service():
     assert filter_reason(msg("Sam Lee <sam@acme.test>", "Job alert webinar newsletter")) is None
     assert filter_reason(msg("Sam Lee <sam@linkedin.com>", "Hi")) is None
     assert filter_reason(msg("Alerts <alerts@acme.test>", "Job alert: new roles")) == "job_alert"
+
+
+@pytest.mark.parametrize("sender", [
+    "alerts@acme.test", "noreply@acme.test", "notifications@acme.test",
+    "offers@acme.test", "newsletter@acme.test", "events@acme.test",
+    "digest@acme.test", "marketing@acme.test",
+])
+@pytest.mark.parametrize("subject", ["Your application status", "Account notice"])
+def test_generic_sender_without_subject_template_not_filtered(sender, subject):
+    assert filter_reason(msg(sender, subject)) is None
+
+
+def test_offers_wording_vetoes_marketing_filter():
+    assert filter_reason(msg("Acme <offers@acme.test>", "Your offers are ready")) is None
 
 
 def test_sender_case_insensitive_and_bare_address():
