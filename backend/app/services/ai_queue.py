@@ -3,7 +3,11 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.domain.ai import EXTRACTION_JSON_SCHEMA
-from app.repositories.dynamodb_email import PlanConflict, is_queued
+from app.repositories.dynamodb_email import (
+    PlanConflict,
+    extraction_from_plan,
+    is_queued,
+)
 from app.repositories.dynamodb_reviews import GmailConnectionChanged
 from app.services.ai_extraction import build_prompt, validate_extraction
 from app.services.auto_apply import MessageRef, decide
@@ -88,8 +92,22 @@ class AiQueueService:
         item = self._emails.get_event_item(owner_id, message_id)
         if item is None:
             raise LocalAiNotFound
-        if "ai_plan" in item:
-            raise LocalAiStale
+        plan = item.get("ai_plan")
+        if plan is not None:
+            # A saved plan that never executed is retried from the stored map.
+            retry = (
+                mode == "on" and "executed_at" not in plan
+                and "resolution" not in item and "undone_at" not in item
+            )
+            if not retry:
+                raise LocalAiStale
+            message, _ = self._fetch_message(owner_id, message_id, generation)
+            if item.get("thread_id") not in {None, message.thread_id}:
+                raise LocalAiStale
+            return self._execute(
+                owner_id, message, load_candidates(owner_id, self._applications),
+                extraction_from_plan(plan),
+            )
         if not is_queued(item):
             raise LocalAiNotFound
         message, _ = self._fetch_message(owner_id, message_id, generation)
@@ -98,11 +116,10 @@ class AiQueueService:
         candidates = load_candidates(owner_id, self._applications)
         # Raises InvalidExtraction; the route maps it to a body-free 422.
         extraction = validate_extraction(raw, build_prompt(message, candidates))
-        planned_at = self._clock()
         try:
             self._emails.save_plan(
                 owner_id, message_id, extraction=extraction, model=model,
-                generation=generation, planned_at=planned_at,
+                generation=generation, planned_at=self._clock(),
             )
         except GmailConnectionChanged:
             raise LocalAiConnectionChanged from None
@@ -110,7 +127,9 @@ class AiQueueService:
             raise LocalAiStale from None
         if mode != "on":
             return PlanResult(planned=True, executed=False, action=None)
+        return self._execute(owner_id, message, candidates, extraction)
 
+    def _execute(self, owner_id, message, candidates, extraction) -> PlanResult:
         ref = MessageRef(message.message_id, message.thread_id, message.received_at)
         decision = decide(extraction, message_ref=ref, candidates=candidates)
         version = next(
@@ -120,13 +139,20 @@ class AiQueueService:
             ),
             None,
         )
-        self._emails.execute(
+        stored = self._emails.execute(
             owner_id, message=ref, subject=message.subject, sender=message.sender,
             decision=decision, extraction=extraction, application_version=version,
             new_application_id=uuid4().hex if decision.action == "create" else None,
-            occurred_at=planned_at,
+            occurred_at=self._clock(),
         )
-        return PlanResult(planned=True, executed=True, action=decision.action)
+        # Report what was stored, not what was intended: execute may demote to review.
+        if stored.outcome == "applied":
+            action = decision.action
+        elif decision.action == "ignore" and stored.outcome == "ignored":
+            action = "ignore"
+        else:
+            action = "needs_look"
+        return PlanResult(planned=True, executed=True, action=action)
 
     def _queued_item(self, owner_id: str, message_id: str) -> dict:
         item = self._emails.get_event_item(owner_id, message_id)

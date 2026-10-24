@@ -308,3 +308,61 @@ def test_invalid_result_is_422_without_echoing_output(env) -> None:
     assert response.status_code == 422 and bad.status_code == 422
     assert "private-email-fragment" not in response.text + bad.text
     assert "ai_plan" not in item(env, "m1")
+
+
+def test_on_mode_retry_executes_saved_unexecuted_plan(env, monkeypatch) -> None:
+    env.settings.set_mode("user-a", "on")
+    queue(env, "m1")
+    real = env.emails.execute
+    calls = []
+
+    def flaky(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("synthetic crash")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(env.emails, "execute", flaky)
+    assert post_result(env, "m1").status_code == 500
+    assert "executed_at" not in item(env, "m1")["ai_plan"]
+    assert env.api.get("/ai-queue").json()["remaining"] == 0
+
+    retry = post_result(env, "m1")
+
+    assert retry.status_code == 200
+    assert retry.json() == {"planned": True, "executed": True, "action": "create"}
+    assert item(env, "m1")["outcome"] == "applied"
+    assert len(env.applications.list(owner_id="user-a", limit=10, cursor=None).items) == 1
+    again = post_result(env, "m1")
+    assert again.status_code == 409 and again.json() == {"detail": "review_changed"}
+
+
+def test_response_reports_stored_outcome_when_application_went_stale(env, monkeypatch) -> None:
+    from app.domain.applications import ApplicationCreate, ApplicationPatch
+
+    env.settings.set_mode("user-a", "on")
+    existing = env.applications.create(
+        owner_id="user-a",
+        payload=ApplicationCreate(
+            company="Acme", role="Software Engineer Intern", status="applied"
+        ),
+        application_id="app-1", event_id="create-1", occurred_at=NOW - timedelta(days=30),
+    )
+    queue(env, "m1")
+    real = env.emails.execute
+
+    def bump_then_execute(*args, **kwargs):
+        env.applications.update(
+            owner_id="user-a", application_id="app-1", event_id="bump-1",
+            patch=ApplicationPatch(expected_version=existing.version, year=2027),
+            occurred_at=NOW,
+        )
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(env.emails, "execute", bump_then_execute)
+
+    response = post_result(env, "m1", role="Software Engineer Intern")
+
+    assert response.status_code == 200
+    assert response.json() == {"planned": True, "executed": True, "action": "needs_look"}
+    assert item(env, "m1")["outcome"] == "review_required"
