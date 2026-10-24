@@ -35,6 +35,11 @@ _EXECUTE_CONDITION = (
     "(attribute_exists(ai_plan) AND attribute_not_exists(ai_plan.executed_at) "
     "AND attribute_not_exists(resolution) AND attribute_not_exists(undone_at))"
 )
+# reconsider may overwrite an ignored plan that nobody resolved or undid.
+_RECONSIDER_CONDITION = (
+    "outcome = :ignored AND attribute_exists(ai_plan) "
+    "AND attribute_not_exists(resolution) AND attribute_not_exists(undone_at)"
+)
 _PROPOSAL_FIELDS = (
     "company", "role", "employment_type", "season", "year", "status",
     "requisition_id",
@@ -47,6 +52,32 @@ class InvalidMessageCursor(Exception):
 
 class PlanConflict(Exception):
     """The message is missing, not queued, or already planned."""
+
+
+class AlreadyUndone(Exception):
+    """The message item already carries undone_at, or is missing."""
+
+
+class NotReconsiderable(Exception):
+    """The item is not an ignored, unresolved, not-undone message."""
+
+
+def is_ai_change(item: dict[str, Any]) -> bool:
+    """True for what the owner may review: AI writes and AI/filter ignores."""
+    outcome, reason = item.get("outcome"), item.get("reason", "")
+    if outcome == "applied":
+        return item.get("origin") == "ai"
+    return outcome == "ignored" and (
+        reason.startswith(("filtered:", "not_application:"))
+        or reason == "no_status_no_match"
+    )
+
+
+def is_reconsiderable(item: dict[str, Any]) -> bool:
+    return (
+        item.get("outcome") == "ignored" and is_ai_change(item)
+        and "resolution" not in item and "undone_at" not in item
+    )
 
 
 def is_queued(item: dict[str, Any]) -> bool:
@@ -300,6 +331,95 @@ class DynamoEmailRepository:
                     raise GmailConnectionChanged from None
             raise PlanConflict from None
 
+    def list_ai_changes(
+        self, owner_id: str, *, limit: int, cursor: str | None
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """AI-made changes and ignores, newest received_at first."""
+        everything = self._owner_events(owner_id)
+        changes = sorted(
+            (item for item in everything if is_ai_change(item)),
+            key=lambda item: (item.get("received_at", ""), item["event_id"]),
+            reverse=True,
+        )
+        if cursor is not None:
+            try:
+                event_id = _decode_cursor(cursor)
+            except InvalidReviewCursor as error:
+                raise InvalidMessageCursor from error
+            anchor = next(
+                (item for item in everything if item["event_id"] == event_id), None
+            )
+            if anchor is None:
+                raise InvalidMessageCursor
+            key = (anchor.get("received_at", ""), event_id)
+            changes = [
+                item for item in changes
+                if (item.get("received_at", ""), item["event_id"]) < key
+            ]
+        page = changes[:limit]
+        next_cursor = (
+            _encode_cursor(page[-1]["event_id"]) if len(changes) > limit else None
+        )
+        return page, next_cursor
+
+    def mark_undone(self, owner_id: str, message_id: str, at: datetime) -> None:
+        """Claim the undo; only one caller can set undone_at."""
+        try:
+            self._client.update_item(
+                TableName=self._events_table,
+                Key=self._encode(
+                    {"owner_id": owner_id, "event_id": f"gmail#{message_id}"}
+                ),
+                UpdateExpression="SET undone_at = :at",
+                ConditionExpression=(
+                    "attribute_exists(event_id) AND attribute_not_exists(undone_at)"
+                ),
+                ExpressionAttributeValues=self._encode({":at": at.isoformat()}),
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+            raise AlreadyUndone from None
+
+    def clear_undone(self, owner_id: str, message_id: str, at: datetime) -> None:
+        """Release our own undo claim after the application write failed."""
+        try:
+            self._client.update_item(
+                TableName=self._events_table,
+                Key=self._encode(
+                    {"owner_id": owner_id, "event_id": f"gmail#{message_id}"}
+                ),
+                UpdateExpression="REMOVE undone_at",
+                ConditionExpression="undone_at = :at",
+                ExpressionAttributeValues=self._encode({":at": at.isoformat()}),
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+
+    def queue_reconsider(self, owner_id: str, message_id: str) -> None:
+        """Send a plan-less ignored item back to the local AI queue."""
+        try:
+            self._client.update_item(
+                TableName=self._events_table,
+                Key=self._encode(
+                    {"owner_id": owner_id, "event_id": f"gmail#{message_id}"}
+                ),
+                UpdateExpression="SET ai_backfill = :true",
+                ConditionExpression=(
+                    "outcome = :ignored AND attribute_not_exists(ai_plan) "
+                    "AND attribute_not_exists(resolution) "
+                    "AND attribute_not_exists(undone_at)"
+                ),
+                ExpressionAttributeValues=self._encode(
+                    {":true": True, ":ignored": "ignored"}
+                ),
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+            raise NotReconsiderable from None
+
     def get_terminal_outcome(
         self, owner_id: str, message_id: str
     ) -> StoredOutcome | None:
@@ -441,8 +561,13 @@ class DynamoEmailRepository:
         application_version: int | None,
         new_application_id: str | None,
         occurred_at: datetime,
+        reconsider: bool = False,
     ) -> StoredOutcome:
-        """Apply one automatic decision; the gmail# item is the audit event."""
+        """Apply one automatic decision; the gmail# item is the audit event.
+
+        reconsider=True also lets an executed, ignored, unresolved, not-undone plan
+        be overwritten (still bound to the same planned_at).
+        """
         if decision.action == "create" and (
             decision.fields.get("company") is None
             or decision.fields.get("status") is None
@@ -450,7 +575,7 @@ class DynamoEmailRepository:
         ):
             raise ValueError("invalid create decision")
         existing = self._get_event_item(owner_id, message.message_id)
-        if existing is not None and not self._replaceable(existing):
+        if existing is not None and not self._replaceable(existing, reconsider):
             return self._as_outcome(existing)
 
         def review(outcome: StoredOutcomeName, reason: str, **extra: Any):
@@ -459,7 +584,9 @@ class DynamoEmailRepository:
                 extraction, existing, occurred_at,
             )
             item.update(extra)
-            return self._put_outcome(item, execute=True, existing=existing)
+            return self._put_outcome(
+                item, execute=True, existing=existing, reconsider=reconsider
+            )
 
         if decision.action == "ignore":
             return review("ignored", decision.reason)
@@ -470,7 +597,7 @@ class DynamoEmailRepository:
                 raise ValueError("Create decision requires a new application ID")
             return self._execute_create(
                 owner_id, message, subject, sender, decision, extraction,
-                new_application_id, existing, occurred_at,
+                new_application_id, existing, occurred_at, reconsider,
             )
         if decision.application_id is None or application_version is None:
             raise ValueError("Update decision requires application and version")
@@ -506,14 +633,18 @@ class DynamoEmailRepository:
             self._client.transact_write_items(
                 TransactItems=[
                     self._application_update_put(updated, application_version),
-                    self._event_put(event, execute=True, existing=existing),
+                    self._event_put(
+                        event, execute=True, existing=existing, reconsider=reconsider
+                    ),
                     *self._guard(owner_id),
                 ]
             )
         except ClientError as error:
             if error.response["Error"]["Code"] != "TransactionCanceledException":
                 raise
-            replayed = self._after_cancel(owner_id, message.message_id, existing)
+            replayed = self._after_cancel(
+                owner_id, message.message_id, existing, reconsider
+            )
             if replayed is not None:
                 return replayed
             latest = self._get_application(owner_id, decision.application_id)
@@ -528,6 +659,7 @@ class DynamoEmailRepository:
         self, owner_id: str, message: MessageRef, subject: str, sender: str,
         decision: AutoDecision, extraction: ValidatedExtraction,
         application_id: str, existing: dict[str, Any] | None, occurred_at: datetime,
+        reconsider: bool = False,
     ) -> StoredOutcome:
         values = {field: None for field in APPLICATION_FIELDS}
         values.update({
@@ -568,37 +700,44 @@ class DynamoEmailRepository:
                             "ConditionExpression": "attribute_not_exists(application_id)",
                         }
                     },
-                    self._event_put(event, execute=True, existing=existing),
+                    self._event_put(
+                        event, execute=True, existing=existing, reconsider=reconsider
+                    ),
                     *self._guard(owner_id),
                 ]
             )
         except ClientError as error:
             if error.response["Error"]["Code"] != "TransactionCanceledException":
                 raise
-            replayed = self._after_cancel(owner_id, message.message_id, existing)
+            replayed = self._after_cancel(
+                owner_id, message.message_id, existing, reconsider
+            )
             if replayed is not None:
                 return replayed
             raise
         return self._as_outcome(event)
 
     def _after_cancel(
-        self, owner_id: str, message_id: str, existing: dict[str, Any] | None
+        self, owner_id: str, message_id: str, existing: dict[str, Any] | None,
+        reconsider: bool = False,
     ) -> StoredOutcome | None:
         """Stale guard raises; a message that is already settled returns as stored."""
         if not self._guard_valid(owner_id):
             raise StaleSyncRun from None
         current = self._get_event_item(owner_id, message_id)
         if current is not None and (
-            not self._replaceable(current)
+            not self._replaceable(current, reconsider)
             or current.get("ai_plan") != (existing or {}).get("ai_plan")
         ):
             return self._as_outcome(current)
         return None
 
     @staticmethod
-    def _replaceable(item: dict[str, Any]) -> bool:
+    def _replaceable(item: dict[str, Any], reconsider: bool = False) -> bool:
         """Python mirror of _EXECUTE_CONDITION for an existing event item."""
         plan = item.get("ai_plan")
+        if reconsider:
+            return plan is not None and is_reconsiderable(item)
         return item["outcome"] in {"pending_ai", "retryable"} or (
             plan is not None
             and "executed_at" not in plan
@@ -746,8 +885,11 @@ class DynamoEmailRepository:
     def _put_outcome(
         self, item: dict[str, Any], decision: RuleDecision | None = None,
         *, execute: bool = False, existing: dict[str, Any] | None = None,
+        reconsider: bool = False,
     ) -> StoredOutcome:
-        put = self._event_put(item, execute=execute, existing=existing)["Put"]
+        put = self._event_put(
+            item, execute=execute, existing=existing, reconsider=reconsider
+        )["Put"]
         try:
             if self._users_table is None:
                 self._client.put_item(**put)
@@ -783,13 +925,17 @@ class DynamoEmailRepository:
 
     def _event_put(
         self, item: dict[str, Any], *, execute: bool = False,
-        existing: dict[str, Any] | None = None,
+        existing: dict[str, Any] | None = None, reconsider: bool = False,
     ) -> dict:
         values: dict[str, Any] = {":retryable": "retryable"}
         condition = _RECORD_CONDITION
         if execute:
             values[":pending_ai"] = "pending_ai"
             condition = _EXECUTE_CONDITION
+            if reconsider:
+                condition = _RECONSIDER_CONDITION
+                del values[":retryable"], values[":pending_ai"]
+                values[":ignored"] = "ignored"
             # Bind the write to the item (and plan) that was read, so a different
             # plan stored since then is never marked executed.
             if existing is None:
