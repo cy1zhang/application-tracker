@@ -7,6 +7,11 @@ from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 from botocore.exceptions import ClientError
 
 from app.repositories.dynamodb import field_times_for
+from app.repositories.dynamodb_reviews import (
+    InvalidReviewCursor,
+    _decode_cursor,
+    _encode_cursor,
+)
 from app.repositories.dynamodb_sync import StaleSyncRun
 from app.services.email_rules import RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
@@ -18,6 +23,10 @@ _PROPOSAL_FIELDS = (
     "company", "role", "employment_type", "season", "year", "status",
     "requisition_id",
 )
+
+
+class InvalidMessageCursor(Exception):
+    pass
 
 
 class _AiSettingsStale(Exception):
@@ -57,6 +66,40 @@ class DynamoEmailRepository:
     ) -> StoredOutcome | None:
         prior = self._get_outcome(owner_id, message_id)
         return prior if prior is not None and prior.outcome in _TERMINAL else None
+
+    def get_outcome(self, owner_id: str, message_id: str) -> StoredOutcome | None:
+        return self._get_outcome(owner_id, message_id)
+
+    def list_processed(
+        self, owner_id: str, *, limit: int, cursor: str | None
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        query: dict[str, Any] = {
+            "TableName": self._events_table,
+            "KeyConditionExpression": "owner_id = :owner AND begins_with(event_id, :prefix)",
+            "ExpressionAttributeValues": {
+                ":owner": self._serializer.serialize(owner_id),
+                ":prefix": self._serializer.serialize("gmail#"),
+            },
+            "Limit": limit,
+            "ConsistentRead": True,
+        }
+        if cursor is not None:
+            try:
+                event_id = _decode_cursor(cursor)
+            except InvalidReviewCursor as error:
+                raise InvalidMessageCursor from error
+            query["ExclusiveStartKey"] = self._encode(
+                {"owner_id": owner_id, "event_id": event_id}
+            )
+        response = self._client.query(**query)
+        items = [self._decode(item) for item in response.get("Items", [])]
+        last_key = response.get("LastEvaluatedKey")
+        next_cursor = (
+            _encode_cursor(self._decode(last_key)["event_id"])
+            if last_key is not None
+            else None
+        )
+        return items, next_cursor
 
     def record(
         self,

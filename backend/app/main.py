@@ -2,7 +2,7 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api import account, applications, gmail, reviews, settings, syncs
+from app.api import account, applications, gmail, messages, reviews, settings, syncs
 from app.api.dependencies import require_active_account
 from app.observability import category_of, get_logger, log_event
 
@@ -16,6 +16,7 @@ app.include_router(account.router)
 app.include_router(applications.router, dependencies=_active)
 app.include_router(gmail.router, dependencies=_active)
 app.include_router(gmail.public_router)
+app.include_router(messages.router, dependencies=_active)
 app.include_router(reviews.router, dependencies=_active)
 app.include_router(syncs.router, dependencies=_active)
 app.include_router(settings.router, dependencies=_active)

@@ -103,26 +103,42 @@ class LocalReviewAiService:
             raise LocalAiNotFound
         if not local_review_eligible(review):
             raise LocalAiIneligible
-        connection = self._connections.get_connection(owner_id)
-        if expected_generation is not None and connection.generation != expected_generation:
-            raise LocalAiConnectionChanged
-        if connection.encrypted_token is None or connection.reconnect_required:
-            raise LocalAiUnavailable
-        encrypted = self._connections.get_active(owner_id, connection.generation)
-        if encrypted is None:
-            raise LocalAiConnectionChanged
-        try:
-            token = self._cipher.decrypt_refresh_token(owner_id, encrypted)
-            access_token = self._oauth.refresh_access_token(token)
-            message = parse_gmail_message(self._fetch.get_message(access_token, message_id))
-        except (MessageUnavailable, MessageParseError):
-            raise LocalAiMessageUnavailable from None
-        except (CredentialError, OAuthError, GmailApiError):
-            raise LocalAiUnavailable from None
+        message, generation = fetch_owner_message(
+            connections=self._connections, cipher=self._cipher, oauth=self._oauth,
+            fetch=self._fetch, owner_id=owner_id, message_id=message_id,
+            expected_generation=expected_generation,
+        )
         if message.thread_id != review.get("thread_id"):
             raise LocalAiStale
         candidates = load_candidates(owner_id, self._applications)
-        return review, message, candidates, connection.generation
+        return review, message, candidates, generation
+
+
+def fetch_owner_message(
+    *, connections, cipher, oauth, fetch, owner_id: str, message_id: str,
+    expected_generation: int | None = None,
+) -> tuple[ParsedGmailMessage, int]:
+    """Fetch and parse one Gmail message with the owner's connection.
+
+    Returns the message and the connection generation it was fetched under.
+    """
+    connection = connections.get_connection(owner_id)
+    if expected_generation is not None and connection.generation != expected_generation:
+        raise LocalAiConnectionChanged
+    if connection.encrypted_token is None or connection.reconnect_required:
+        raise LocalAiUnavailable
+    encrypted = connections.get_active(owner_id, connection.generation)
+    if encrypted is None:
+        raise LocalAiConnectionChanged
+    try:
+        token = cipher.decrypt_refresh_token(owner_id, encrypted)
+        access_token = oauth.refresh_access_token(token)
+        message = parse_gmail_message(fetch.get_message(access_token, message_id))
+    except (MessageUnavailable, MessageParseError):
+        raise LocalAiMessageUnavailable from None
+    except (CredentialError, OAuthError, GmailApiError):
+        raise LocalAiUnavailable from None
+    return message, connection.generation
 
 
 def local_review_eligible(review: dict[str, Any]) -> bool:

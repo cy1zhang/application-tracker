@@ -240,6 +240,8 @@ GUARDED = [
     ("GET", "/reviews/m/local-ai-input", None),
     ("POST", "/reviews/m/local-ai-suggestion", {}),
     ("POST", "/reviews/m/resolve", {}),
+    ("GET", "/messages", None),
+    ("GET", "/messages/m/content", None),
     ("GET", "/syncs/latest", None),
     ("POST", "/syncs", None),
     ("GET", "/settings", None),

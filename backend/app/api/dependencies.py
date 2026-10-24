@@ -12,11 +12,14 @@ from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_account import DynamoAccountRepository
 from app.repositories.dynamodb_ai import DynamoAiSettingsRepository
+from app.repositories.dynamodb_email import DynamoEmailRepository
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_reviews import DynamoReviewRepository
 from app.repositories.dynamodb_sync import DynamoSyncRepository
 from app.services.credential_crypto import CredentialCipher
+from app.services.gmail_fetch import GmailFetchClient
 from app.services.google_oauth import GoogleOAuthClient
+from app.services.message_content import MessageContentService
 
 LOOPBACK_HOSTS = {"127.0.0.1", "::1"}
 APPROVED_GROUP = "tracker-users"
@@ -207,4 +210,27 @@ def get_google_oauth_client(request: Request) -> GoogleOAuthClient:
         boto3.client("secretsmanager"),
         os.environ["GMAIL_OAUTH_SECRET_NAME"],
         get_gmail_redirect_uri(request),
+    )
+
+
+def get_email_repository() -> DynamoEmailRepository:
+    client_options = {}
+    if region := os.getenv("AWS_REGION"):
+        client_options["region_name"] = region
+    return DynamoEmailRepository(
+        client=boto3.client("dynamodb", **client_options),
+        applications_table=os.environ["APPLICATIONS_TABLE"],
+        events_table=os.environ["EVENTS_TABLE"],
+    )
+
+
+def get_message_content_service(
+    emails: Annotated[DynamoEmailRepository, Depends(get_email_repository)],
+    connections: Annotated[DynamoGmailRepository, Depends(get_gmail_repository)],
+    cipher: Annotated[CredentialCipher, Depends(get_credential_cipher)],
+    oauth: Annotated[GoogleOAuthClient, Depends(get_google_oauth_client)],
+) -> MessageContentService:
+    return MessageContentService(
+        emails=emails, connections=connections, cipher=cipher, oauth=oauth,
+        fetch=GmailFetchClient(),
     )
