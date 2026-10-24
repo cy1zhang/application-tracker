@@ -162,6 +162,16 @@ injection, tools, or credentials.
 **Verification:** Every PRD acceptance criterion maps to an automated test or a
 documented controlled-deployment check.
 
+### 11. Automatic tracking (local AI, spreadsheet)
+
+**Status: in progress on `claude/auto-apply-sheet` (stacked on unmerged branches)**
+
+- Per-owner `auto_apply_mode` switch, AI queue, dry-run plan, apply, and undo.
+- Local AI worker and spreadsheet output.
+
+Spec: `docs/superpowers/specs/2026-10-24-auto-apply-sheet-design.md`. Plan index:
+`docs/superpowers/plans/2026-10-24-auto-apply-index.md`.
+
 ## Historical implementation batch: milestones 0 and 1
 
 ### Task 1: Baseline and roadmap

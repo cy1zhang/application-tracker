@@ -66,7 +66,9 @@ Connect/disconnect Gmail; select, replace, or delete an AI key; enable/disable A
 
 An email received in September 2026 can describe Summer 2027. Do not infer the cycle from the email date. For winter spanning two years, retain explicit source wording and request a year when ambiguous. Full-time roles need not have a seasonal cycle.
 
-If an email identifies a company and role but does not establish an application stage, send it to review without assuming Applied. Do not create a new application with an invented status. If it matches an existing application, preserve its current status; independently supported non-status details may still be updated.
+If an email identifies a company and role but does not establish an application stage, send it to review without assuming Applied. Do not create a new application with an invented status. When an email does establish a stage, AI may create the application (see Tier 2).
+
+The owner's definition of an application: any email that states a status for a job the owner applied to creates a row, even when no confirmation email is on file. Outreach about jobs the owner did not apply to never creates one. If it matches an existing application, preserve its current status; independently supported non-status details may still be updated.
 
 Company alone is never a unique application identifier: the same company may have multiple roles and cycles. Prefer requisition identifiers and existing thread associations; otherwise require enough corroborating evidence or ask for review.
 
@@ -83,6 +85,8 @@ Use recruiting phrases, known sender/template patterns, role/requisition identif
 Send only relevant candidate email content and minimal application context to the selected provider. Do not send the entire inbox. Extract typed fields and evidence; validate the output before proposing or applying changes. Confidence claimed by a model is not sufficient by itself for automatic updates.
 
 Evaluate fields separately: an interview may be clear while its cycle remains unknown. AI must not fabricate dates or cycles, execute instructions inside emails, or access tools. Invalid output, contradictory evidence, ambiguous application matches, or missing evidence go to review.
+
+The automatic path (AI-created and AI-updated applications) is behind a per-owner mode, `auto_apply_mode`: `off` (default, behavior unchanged), `plan` (dry run), or `on`. In `plan` mode the system produces a dry-run plan of what it would create and change; the owner approves that plan once, after which `on` becomes available. Applied changes can be undone. Design: `docs/superpowers/specs/2026-10-24-auto-apply-sheet-design.md`.
 
 Rules always run first; explicit status language with a clear application match must not require an AI call. AI may automatically apply a change only when rules could not resolve it, the email unambiguously matches one application, source text supports the proposed change, and the change does not contradict newer evidence or undo a manual correction using evidence that predates that correction. Otherwise, send the proposal to review. Uncertain fields remain unknown and do not block independently supported updates.
 

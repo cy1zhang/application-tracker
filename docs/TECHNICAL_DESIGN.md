@@ -92,6 +92,10 @@ Treat email text as untrusted data. Extraction calls have no tools, cannot choos
 
 Manual corrections record a per-field correction timestamp and provenance rather than a permanent lock. Existing or replayed evidence cannot overwrite a correction. A later email with a clear application match and supporting evidence may update the field; compare the email receipt timestamp with the correction timestamp, not the time the worker processes it. Ambiguous ordering or contradictory evidence goes to review. Store event time separately from ingestion time; old messages can enrich history without regressing current status. Terminal-state reopening requires review. Missing cycle values remain null.
 
+## Automatic tracking (auto-apply)
+
+A per-owner mode `auto_apply_mode` (`off` | `plan` | `on`, default `off`) is stored on the Users item; `PUT /settings/auto-apply` accepts only `off` or `plan`, and `on` is reached only through plan approval. When `off`, behavior is unchanged. Messages that rules cannot resolve go to an AI queue; the AI output is validated, then collected into a dry-run plan that the owner approves once. Apply creates or updates applications through the normal audited repository transactions with origin `ai`, and every applied change can be undone. Full design: `docs/superpowers/specs/2026-10-24-auto-apply-sheet-design.md`.
+
 ## Operations and verification
 
 CloudWatch logs contain request/run identifiers, counts, duration, and sanitized error categories; retention is 14 days. Alarm on dead-letter messages, dispatcher/worker failures, and repeated sync failures. Do not log email bodies, evidence, model prompts/responses, secrets, or full upstream exceptions.
