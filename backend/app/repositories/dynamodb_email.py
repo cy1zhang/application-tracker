@@ -20,6 +20,7 @@ from app.services.ai_extraction import ValidatedExtraction
 from app.services.auto_apply import AutoDecision, MessageRef
 from app.services.email_rules import RuleDecision
 from app.services.gmail_message import ParsedGmailMessage
+from app.services.plan_report import PlannedItem
 
 StoredOutcomeName = Literal[
     "applied", "ignored", "review_required", "retryable", "pending_ai"
@@ -180,6 +181,26 @@ class DynamoEmailRepository:
             key=lambda item: (item.get("received_at", ""), item["event_id"]),
         )
         return queued if limit is None else queued[:limit]
+
+    def list_planned(self, owner_id: str) -> list[PlannedItem]:
+        """Saved, unexecuted, unresolved, not-undone plans, oldest first."""
+        planned = [
+            item for item in self._owner_events(owner_id)
+            if "ai_plan" in item and "executed_at" not in item["ai_plan"]
+            and "resolution" not in item and "undone_at" not in item
+        ]
+        planned.sort(key=lambda item: (item.get("received_at", ""), item["event_id"]))
+        return [
+            PlannedItem(
+                message_id=item["source_message_id"],
+                received_at=datetime.fromisoformat(item["received_at"]),
+                extraction=extraction_from_plan(item["ai_plan"]),
+                subject=item.get("subject", ""),
+                sender=item.get("sender", ""),
+                thread_id=item.get("thread_id"),
+            )
+            for item in planned
+        ]
 
     def mark_backfill(self, owner_id: str) -> int:
         """Queue old no_event/unresolved-review items for the local AI; returns new marks."""

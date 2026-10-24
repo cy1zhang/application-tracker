@@ -240,6 +240,8 @@ GUARDED = [
     ("GET", "/reviews/m/local-ai-input", None),
     ("POST", "/reviews/m/local-ai-suggestion", {}),
     ("POST", "/reviews/m/resolve", {}),
+    ("GET", "/ai-plan/report", None),
+    ("POST", "/ai-plan/apply", None),
     ("POST", "/ai-queue/backfill", None),
     ("GET", "/ai-queue", None),
     ("GET", "/ai-queue/m/input", None),

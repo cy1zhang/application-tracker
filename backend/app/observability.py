@@ -6,6 +6,7 @@ LOG_EVENTS = frozenset({
     "sync_worker_failure",
     "sync_run_failed",
     "sync_page_completed",
+    "plan_apply_invalid_create",
     "dispatch_summary",
     "ai_escalation_failed",
     "api_unhandled_error",

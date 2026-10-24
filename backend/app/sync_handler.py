@@ -19,6 +19,7 @@ from app.services.ai_providers import create_provider
 from app.services.credential_crypto import CredentialCipher
 from app.services.gmail_fetch import GmailFetchClient
 from app.services.google_oauth import GoogleOAuthClient, OAuthReconnectRequired
+from app.services.plan_apply import apply_plan_page
 from app.services.sync_worker import process_sync_page
 
 logger = get_logger(__name__)
@@ -75,6 +76,20 @@ def _escalator_factory(dependencies, owner_id, generation, run_id):
     )
 
 
+def _apply_plan_page(dependencies, owner_id):
+    emails = DynamoEmailRepository(
+        client=dependencies["client"],
+        applications_table=os.environ["APPLICATIONS_TABLE"],
+        events_table=os.environ["EVENTS_TABLE"],
+        plan_users_table=os.environ["USERS_TABLE"],
+    )
+    return apply_plan_page(
+        owner_id, emails=emails, applications=dependencies["applications"],
+        settings=dependencies["auto_apply"], publisher=dependencies["publisher"],
+        queue_url=os.environ["SYNC_QUEUE_URL"],
+    )
+
+
 def handler(event, context):
     dependencies = _dependencies()
     failures = []
@@ -86,6 +101,9 @@ def handler(event, context):
         try:
             job = json.loads(record["body"])
             owner_id = job["owner_id"]
+            if job.get("mode") == "apply_plan":
+                _apply_plan_page(dependencies, owner_id)
+                continue
             run_id = job["run_id"]
             generation = int(job["generation"])
             emails = DynamoEmailRepository(

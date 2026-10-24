@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import (
     account,
+    ai_plan,
     ai_queue,
     applications,
     gmail,
@@ -22,6 +23,7 @@ app = FastAPI(title="Application Tracker API")
 # deliberately outside it so a deleting account can still read its status.
 _active = [Depends(require_active_account)]
 app.include_router(account.router)
+app.include_router(ai_plan.router, dependencies=_active)
 app.include_router(ai_queue.router, dependencies=_active)
 app.include_router(applications.router, dependencies=_active)
 app.include_router(gmail.router, dependencies=_active)

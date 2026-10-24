@@ -78,3 +78,19 @@ def test_revoked_or_stale_work_is_acknowledged(setup, error, status) -> None:
 
     assert sync_handler.handler(delivery(), None) == {"batchItemFailures": []}
     assert [item[3] for item in syncs.failures] == ([status] if status else [])
+
+
+def test_apply_plan_message_runs_apply_page_without_a_sync_run(setup) -> None:
+    _, monkeypatch = setup
+    calls = []
+    monkeypatch.setattr(
+        sync_handler, "_apply_plan_page", lambda dependencies, owner_id: calls.append(owner_id)
+    )
+    event = {"Records": [{
+        "messageId": "sqs-1",
+        "body": json.dumps({"mode": "apply_plan", "owner_id": "owner-a"}),
+        "attributes": {"ApproximateReceiveCount": "1"},
+    }]}
+
+    assert sync_handler.handler(event, None) == {"batchItemFailures": []}
+    assert calls == ["owner-a"]
