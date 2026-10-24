@@ -12,6 +12,7 @@ from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb import DynamoApplicationRepository
 from app.repositories.dynamodb_account import DynamoAccountRepository
 from app.repositories.dynamodb_ai import DynamoAiSettingsRepository
+from app.repositories.dynamodb_auto_apply import DynamoAutoApplySettings
 from app.repositories.dynamodb_email import DynamoEmailRepository
 from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_reviews import DynamoReviewRepository
@@ -177,6 +178,16 @@ def get_ai_settings_repository() -> DynamoAiSettingsRepository:
     if region := os.getenv("AWS_REGION"):
         client_options["region_name"] = region
     return DynamoAiSettingsRepository(
+        client=boto3.client("dynamodb", **client_options),
+        users_table=os.environ["USERS_TABLE"],
+    )
+
+
+def get_auto_apply_settings() -> DynamoAutoApplySettings:
+    client_options = {}
+    if region := os.getenv("AWS_REGION"):
+        client_options["region_name"] = region
+    return DynamoAutoApplySettings(
         client=boto3.client("dynamodb", **client_options),
         users_table=os.environ["USERS_TABLE"],
     )

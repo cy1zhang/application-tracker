@@ -246,6 +246,7 @@ GUARDED = [
     ("POST", "/syncs", None),
     ("GET", "/settings", None),
     ("PUT", "/settings/ai", {"provider": "openai", "enabled": False}),
+    ("PUT", "/settings/auto-apply", {"mode": "plan"}),
     ("DELETE", "/settings/ai", None),
     ("GET", "/gmail/connection", None),
     ("POST", "/gmail/connect", None),
@@ -472,9 +473,10 @@ def test_settings_routes_map_account_deleting_to_423(env) -> None:
         def encrypt(self, *args):
             return {"ciphertext": "c", "nonce": "n", "encrypted_data_key": "k"}
 
-    from app.api.dependencies import get_ai_settings_repository
+    from app.api.dependencies import get_ai_settings_repository, get_auto_apply_settings
 
     app.dependency_overrides[get_ai_settings_repository] = lambda: Raising()
+    app.dependency_overrides[get_auto_apply_settings] = lambda: object()
     app.dependency_overrides[get_ai_available_providers] = lambda: [AiProvider.OPENAI]
     app.dependency_overrides[get_credential_cipher] = lambda: Cipher()
 

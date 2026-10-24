@@ -7,12 +7,14 @@ from moto import mock_aws
 from app.api.dependencies import (
     get_ai_available_providers,
     get_ai_settings_repository,
+    get_auto_apply_settings,
     get_credential_cipher,
     get_current_subject,
 )
 from app.domain.ai import AiProvider
 from app.main import app
 from app.repositories.dynamodb_ai import DynamoAiSettingsRepository
+from app.repositories.dynamodb_auto_apply import DynamoAutoApplySettings
 from app.repositories.dynamodb_tables import create_tables
 
 SECRET = "synthetic-secret-key-ABCD"
@@ -39,6 +41,8 @@ def setup(monkeypatch):
         )
         repository = DynamoAiSettingsRepository(client=client, users_table="Users")
         app.dependency_overrides[get_ai_settings_repository] = lambda: repository
+        auto_apply = DynamoAutoApplySettings(client=client, users_table="Users")
+        app.dependency_overrides[get_auto_apply_settings] = lambda: auto_apply
         app.dependency_overrides[get_credential_cipher] = lambda: FakeCipher()
         app.dependency_overrides[get_ai_available_providers] = lambda: [
             AiProvider.OPENAI, AiProvider.GEMINI,
@@ -93,7 +97,8 @@ def test_get_with_nothing_saved(setup) -> None:
             "requests_today": 0,
             "daily_limit": 50,
             "usage_day": response.json()["ai"]["usage_day"],
-        }
+        },
+        "auto_apply_mode": "off",
     }
 
 
