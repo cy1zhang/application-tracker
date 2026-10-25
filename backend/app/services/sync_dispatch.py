@@ -141,3 +141,49 @@ def recover_deletions(
             continue
         republished += 1
     return republished
+
+
+def recover_stranded_plans(
+    client, publisher, users_table, events_table, queue_url, *, page_size=100
+):
+    """Enqueue apply_plan for auto-apply owners holding saved but unexecuted plans."""
+    enqueued = 0
+    for user in _scan_pages(
+        client, users_table, page_size,
+        FilterExpression="auto_apply_mode = :on AND attribute_not_exists(deletion_state)",
+        ExpressionAttributeValues={":on": {"S": "on"}},
+        ProjectionExpression="owner_id",
+    ):
+        if not _has_unexecuted_plan(client, events_table, user["owner_id"]):
+            continue
+        try:
+            publisher.send_message(
+                QueueUrl=queue_url,
+                MessageBody=json.dumps({"mode": "apply_plan", "owner_id": user["owner_id"]}),
+            )
+        except ClientError:
+            continue  # the plan stays saved; the next recovery pass retries
+        enqueued += 1
+    return enqueued
+
+
+def _has_unexecuted_plan(client, events_table, owner_id) -> bool:
+    request = {
+        "TableName": events_table,
+        "KeyConditionExpression": "owner_id = :owner AND begins_with(event_id, :prefix)",
+        "FilterExpression": (
+            "attribute_exists(ai_plan) AND attribute_not_exists(ai_plan.executed_at) "
+            "AND attribute_not_exists(resolution) AND attribute_not_exists(undone_at)"
+        ),
+        "ExpressionAttributeValues": {
+            ":owner": {"S": owner_id}, ":prefix": {"S": "gmail#"},
+        },
+        "ProjectionExpression": "event_id",
+    }
+    while True:
+        page = client.query(**request)
+        if page.get("Items"):
+            return True
+        if "LastEvaluatedKey" not in page:
+            return False
+        request["ExclusiveStartKey"] = page["LastEvaluatedKey"]

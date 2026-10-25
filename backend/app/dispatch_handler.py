@@ -8,6 +8,7 @@ from app.repositories.dynamodb_sync import DynamoSyncRepository
 from app.services.sync_dispatch import (
     dispatch_daily,
     recover_deletions,
+    recover_stranded_plans,
     recover_unfinished,
 )
 
@@ -33,6 +34,14 @@ def handler(event, context):
             client, publisher, os.environ["USERS_TABLE"],
             os.environ["SYNC_RUNS_TABLE"], queue_url, now
         )
+        events_table = os.environ.get("EVENTS_TABLE")
+        if events_table:
+            log_event(
+                logger, "info", "dispatch_summary", mode="recover_plans",
+                count=recover_stranded_plans(
+                    client, publisher, os.environ["USERS_TABLE"], events_table, queue_url
+                ),
+            )
         deletion_queue_url = os.environ.get("DELETION_QUEUE_URL")
         if deletion_queue_url:
             log_event(

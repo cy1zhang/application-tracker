@@ -520,12 +520,16 @@ Resources:
           SYNC_RUNS_TABLE: !Ref SyncRunsTable
           SYNC_QUEUE_URL: !Ref SyncQueue
           DELETION_QUEUE_URL: !Ref AccountDeletionQueue
+          EVENTS_TABLE: !Ref EventsTable
       Policies:
         - Version: '2012-10-17'
           Statement:
             - Effect: Allow
               Action: [dynamodb:Scan, dynamodb:GetItem, dynamodb:UpdateItem]
               Resource: !GetAtt UsersTable.Arn
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !GetAtt EventsTable.Arn
             - Effect: Allow
               Action: [dynamodb:Scan, dynamodb:GetItem, dynamodb:PutItem, dynamodb:UpdateItem]
               Resource: !GetAtt SyncRunsTable.Arn

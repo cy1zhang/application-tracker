@@ -11,6 +11,7 @@ from app.repositories.dynamodb_tables import create_tables
 from app.services.sync_dispatch import (
     dispatch_daily,
     recover_deletions,
+    recover_stranded_plans,
     recover_unfinished,
 )
 
@@ -150,3 +151,46 @@ def test_dispatch_handler_recover_also_recovers_deletions(setup, monkeypatch) ->
     dispatch_handler.handler({"mode": "recover"}, None)
 
     assert publisher.messages == [{"kind": "delete_account", "owner_id": "owner-x"}]
+
+
+def _owner_with_plan(client, owner, mode, *, planned=True, executed=False):
+    client.put_item(TableName="Users", Item={
+        "owner_id": {"S": owner}, "auto_apply_mode": {"S": mode},
+    })
+    plan = {"planned_at": {"S": "t"}}
+    if executed:
+        plan["executed_at"] = {"S": "t"}
+    item = {"owner_id": {"S": owner}, "event_id": {"S": f"gmail#{owner}-m"}}
+    if planned:
+        item["ai_plan"] = {"M": plan}
+    client.put_item(TableName="Events", Item=item)
+
+
+def test_recover_stranded_plans_enqueues_only_owners_on_with_unexecuted_plans(setup) -> None:
+    client, _, _, publisher = setup
+    _owner_with_plan(client, "on-stranded", "on")
+    _owner_with_plan(client, "plan-mode", "plan")
+    _owner_with_plan(client, "on-none", "on", planned=False)
+    _owner_with_plan(client, "on-executed", "on", executed=True)
+
+    count = recover_stranded_plans(client, publisher, "Users", "Events", "queue", page_size=1)
+
+    assert count == 1
+    assert publisher.messages == [{"mode": "apply_plan", "owner_id": "on-stranded"}]
+
+
+def test_dispatch_handler_recover_also_recovers_stranded_plans(setup, monkeypatch) -> None:
+    from app import dispatch_handler
+
+    client, _, _, publisher = setup
+    _owner_with_plan(client, "owner-s", "on")
+    for key, value in {
+        "SYNC_QUEUE_URL": "queue", "USERS_TABLE": "Users",
+        "SYNC_RUNS_TABLE": "SyncRuns", "EVENTS_TABLE": "Events",
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(dispatch_handler.boto3, "client", lambda name: client if name == "dynamodb" else publisher)
+
+    dispatch_handler.handler({"mode": "recover"}, None)
+
+    assert publisher.messages == [{"mode": "apply_plan", "owner_id": "owner-s"}]
