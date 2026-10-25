@@ -11,6 +11,7 @@ from app.domain.ai import (
 from app.domain.applications import Application, ApplicationStatus
 from app.services.ai_extraction import (
     BODY_LIMIT,
+    SYSTEM_PROMPT,
     InvalidExtraction,
     PromptInput,
     build_prompt,
@@ -117,12 +118,12 @@ def test_whitespace_reflowed_quote_is_still_valid():
     [
         None,
         "an offer that was never written",
-        "o" * 71,
+        "o" * 201,
         "Offer subject Body",
     ],
 )
 def test_status_nulled_when_quote_missing_fabricated_long_or_spanning(quote):
-    prompt = _prompt("x" * 40 + " offer " + "o" * 71, subject="Offer")
+    prompt = _prompt("x" * 40 + " offer " + "o" * 201, subject="Offer")
     result = validate_extraction(_raw(status=("offer", quote)), prompt)
     assert result.status is None
     assert "status" not in result.evidence
@@ -300,7 +301,7 @@ def test_body_is_capped_and_sections_match_what_was_sent():
     ("status", "quote", "kept"),
     [
         ("offer", "we offer competitive benefits", False),
-        ("interviewing", "interview tips", False),
+        ("interviewing", "interview tips", True),
         ("interviewing", "if you are selected for an interview", False),
         ("rejected", "we will not be moving forward with your application", True),
         ("offer", "we are pleased to offer you the role", True),
@@ -313,6 +314,43 @@ def test_body_is_capped_and_sections_match_what_was_sent():
 def test_status_cues_reject_boilerplate_and_hedging(status, quote, kept):
     result = validate_extraction(_raw(status=(status, quote)), _prompt(quote + "."))
     assert (result.status is not None) is kept
+
+
+@pytest.mark.parametrize(
+    ("status", "quote", "kept"),
+    [
+        ("applied", "We have received your application", True),
+        ("applied", "Thank you for your recent application", True),
+        ("applied", "Your application has landed safely with us", True),
+        ("applied", "Thanks for your interest in Acme", True),
+        ("applied", "Your online application was successfully received", True),
+        ("interviewing", "Please join a phone screen on Monday", True),
+        ("interviewing", "Please share your availability", True),
+        ("interviewing", "Your interview with the team is next week", True),
+        ("interviewing", "If selected, we will invite you to interview", False),
+        ("interviewing", "We are not able to schedule an interview", False),
+        ("rejected", "Unfortunately, we chose another path", True),
+        ("rejected", "The position has been filled", True),
+        ("rejected", "We decided to pursue other candidates", True),
+        ("oa_received", "Please complete the assessment below", True),
+        ("oa_received", "Here is your take-home challenge", True),
+    ],
+)
+def test_expanded_status_cues(status, quote, kept):
+    result = validate_extraction(_raw(status=(status, quote)), _prompt(quote + "."))
+    assert (result.status is not None) is kept
+
+
+@pytest.mark.parametrize(("length", "kept"), [(150, True), (250, False)])
+def test_quote_length_limit(length, kept):
+    quote = "We have received your application " + "x" * (length - 34)
+    assert len(quote) == length
+    result = validate_extraction(_raw(status=("applied", quote)), _prompt(quote))
+    assert (result.status is not None) is kept
+
+
+def test_prompt_states_quote_limit():
+    assert "at most 200 characters" in SYSTEM_PROMPT
 
 
 INJECTION_BODY = (
