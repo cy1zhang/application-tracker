@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 
 import { createApplication } from "../api/client";
 import type { Application, ApplicationCreate, ApplicationValues, ReviewItem } from "../api/types";
@@ -20,8 +20,11 @@ type Props = {
   reviewError?: string | null;
 };
 
+const TAB_ORDER = ["applications", "reviews", "ai"] as const;
+type SheetTab = typeof TAB_ORDER[number];
+
 export function Sheet({ applications, reviews, onReload, onAccountDeleted, reviewError }: Props) {
-  const [tab, setTab] = useState<"applications" | "reviews" | "ai">("applications");
+  const [tab, setTab] = useState<SheetTab>("applications");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -37,6 +40,19 @@ export function Sheet({ applications, reviews, onReload, onAccountDeleted, revie
   function sortBy(key: SortKey) {
     if (key === sortKey) setDirection((current) => current === "asc" ? "desc" : "asc");
     else { setSortKey(key); setDirection("asc"); }
+  }
+
+  function selectTab(next: SheetTab) {
+    setTab(next);
+    if (next === "reviews") void onReload();
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: SheetTab) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const nextIndex = (TAB_ORDER.indexOf(current) + (event.key === "ArrowRight" ? 1 : -1) + TAB_ORDER.length) % TAB_ORDER.length;
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[nextIndex]?.focus();
+    selectTab(TAB_ORDER[nextIndex]);
   }
 
   async function create(values: ApplicationValues) {
@@ -70,8 +86,8 @@ export function Sheet({ applications, reviews, onReload, onAccountDeleted, revie
             </div>
           </div>
           {settingsOpen && <SettingsPanel reviews={reviews} onReload={onReload} onAccountDeleted={onAccountDeleted} />}
-          {tab === "applications" && (
-            <div className="sheet-page" role="tabpanel" aria-label="Applications">
+          <div id="sheet-panel-applications" className="sheet-page" role="tabpanel" aria-labelledby="sheet-tab-applications" tabIndex={0} hidden={tab !== "applications"}>
+            {tab === "applications" && <>
               <div className="filters sheet-filters">
                 <div className="field"><label htmlFor="sheet-search">Search</label><input id="sheet-search" type="search" placeholder="Company or role" value={filters.search} onChange={(event) => setFilter("search", event.target.value)} /></div>
                 <div className="field"><label htmlFor="sheet-role-type">Role type</label><select id="sheet-role-type" value={filters.roleType} onChange={(event) => setFilter("roleType", event.target.value as Filters["roleType"])}><option value={ALL}>All role types</option>{Object.entries(ROLE_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
@@ -80,14 +96,14 @@ export function Sheet({ applications, reviews, onReload, onAccountDeleted, revie
                 <div className="field"><label htmlFor="sheet-status">Status</label><select id="sheet-status" value={filters.status} onChange={(event) => setFilter("status", event.target.value as Filters["status"])}><option value={ALL}>All statuses</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value={UNKNOWN_VALUE}>{UNKNOWN}</option></select></div>
               </div>
               {visible.length === 0 ? <p className="empty">{applications.length === 0 ? "No applications yet." : "No applications match these filters."}</p> : <SheetGrid applications={visible} sortKey={sortKey} direction={direction} onSort={sortBy} onSelect={setDetailId} onReload={onReload} />}
-            </div>
-          )}
-          {tab === "reviews" && (reviewError ? <div role="alert" className="error"><p>Could not load reviews: {reviewError}</p><button type="button" onClick={() => void onReload()}>Retry reviews</button></div> : <ReviewQueue reviews={reviews} applications={applications} onResolved={async () => { await onReload(); }} onBack={() => setTab("applications")} showOllama={false} />)}
-          {tab === "ai" && <p className="empty" role="tabpanel">No AI changes yet.</p>}
+            </>}
+          </div>
+          <div id="sheet-panel-reviews" role="tabpanel" aria-labelledby="sheet-tab-reviews" tabIndex={0} hidden={tab !== "reviews"}>{tab === "reviews" && (reviewError ? <div role="alert" className="error"><p>Could not load reviews: {reviewError}</p><button type="button" onClick={() => void onReload()}>Retry reviews</button></div> : <ReviewQueue reviews={reviews} applications={applications} onResolved={async () => { await onReload(); }} onBack={() => setTab("applications")} showOllama={false} />)}</div>
+          <p id="sheet-panel-ai" className="empty" role="tabpanel" aria-labelledby="sheet-tab-ai" tabIndex={0} hidden={tab !== "ai"}>No AI changes yet.</p>
           <nav className="sheet-tabs" role="tablist" aria-label="Sheet tabs">
-            <button type="button" role="tab" aria-selected={tab === "applications"} onClick={() => setTab("applications")}>Applications ({applications.length})</button>
-            <button type="button" role="tab" aria-selected={tab === "reviews"} onClick={() => { setTab("reviews"); void onReload(); }}>Needs a look ({reviews.length})</button>
-            <button type="button" role="tab" aria-selected={tab === "ai"} onClick={() => setTab("ai")}>AI changes (0)</button>
+            <button id="sheet-tab-applications" type="button" role="tab" aria-selected={tab === "applications"} aria-controls="sheet-panel-applications" tabIndex={tab === "applications" ? 0 : -1} onClick={() => selectTab("applications")} onKeyDown={(event) => handleTabKeyDown(event, "applications")}>Applications ({applications.length})</button>
+            <button id="sheet-tab-reviews" type="button" role="tab" aria-selected={tab === "reviews"} aria-controls="sheet-panel-reviews" tabIndex={tab === "reviews" ? 0 : -1} onClick={() => selectTab("reviews")} onKeyDown={(event) => handleTabKeyDown(event, "reviews")}>Needs a look ({reviews.length})</button>
+            <button id="sheet-tab-ai" type="button" role="tab" aria-selected={tab === "ai"} aria-controls="sheet-panel-ai" tabIndex={tab === "ai" ? 0 : -1} onClick={() => selectTab("ai")} onKeyDown={(event) => handleTabKeyDown(event, "ai")}>AI changes (0)</button>
           </nav>
         </>
       )}

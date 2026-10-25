@@ -37,17 +37,63 @@ test("test_tabs_render_with_counts", () => {
   expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   fireEvent.click(tabs[1]);
   expect(screen.getByText("Synthetic evidence")).toBeInTheDocument();
+  fireEvent.click(tabs[0]);
+  expect(screen.getByRole("table")).toBeInTheDocument();
+  expect(tabs[0]).toHaveAttribute("aria-selected", "true");
 });
 
 test("test_header_click_toggles_sort", () => {
-  render(<Sheet applications={[globex, acme]} reviews={[]} onReload={vi.fn()} mode="live" />);
+  const sortAcme = makeApplication({ ...acme, status: "rejected", application_date: "2026-04-10" });
+  const sortGlobex = makeApplication({ ...globex, status: "interviewing", application_date: "2026-06-10" });
+  const early = makeApplication({ application_id: "early", company: "Early", status: "applied", application_date: "2026-01-10" });
+  const late = makeApplication({ application_id: "late", company: "Late", status: "offer", application_date: "2026-12-10" });
+  render(<Sheet applications={[sortGlobex, sortAcme, late, early]} reviews={[]} onReload={vi.fn()} mode="live" />);
   const company = screen.getByRole("button", { name: "Company" });
   const rows = () => within(screen.getByRole("table")).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("cell")[0].textContent);
 
   fireEvent.click(company);
-  expect(rows()).toEqual(["Acme", "Globex"]);
+  expect(rows()).toEqual(["Acme", "Early", "Globex", "Late"]);
   fireEvent.click(company);
-  expect(rows()).toEqual(["Globex", "Acme"]);
+  expect(rows()).toEqual(["Late", "Globex", "Early", "Acme"]);
+
+  const status = screen.getByRole("button", { name: "Status" });
+  fireEvent.click(status);
+  expect(rows()).toEqual(["Early", "Globex", "Late", "Acme"]);
+  fireEvent.click(status);
+  expect(rows()).toEqual(["Acme", "Late", "Globex", "Early"]);
+
+  const applied = within(screen.getByRole("columnheader", { name: "Applied" })).getByRole("button");
+  fireEvent.click(applied);
+  expect(rows()).toEqual(["Early", "Acme", "Globex", "Late"]);
+  fireEvent.click(applied);
+  expect(rows()).toEqual(["Late", "Globex", "Acme", "Early"]);
+});
+
+test("tabs use arrow keys to select and focus their labelled panels", () => {
+  render(<Sheet applications={[acme]} reviews={[review]} onReload={vi.fn()} mode="live" />);
+  const tabs = screen.getAllByRole("tab");
+  expect(screen.getByRole("tablist", { name: "Sheet tabs" })).toBeInTheDocument();
+  for (const tab of tabs) expect(document.getElementById(tab.getAttribute("aria-controls") ?? "missing")).toBeInTheDocument();
+  expect(tabs.map((tab) => tab.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+  expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", tabs[0].id);
+  expect(tabs[0]).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
+
+  tabs[0].focus();
+  fireEvent.keyDown(tabs[0], { key: "ArrowRight" });
+  expect(tabs[1]).toHaveFocus();
+  expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", tabs[1].id);
+  expect(tabs[1]).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
+
+  fireEvent.keyDown(tabs[1], { key: "ArrowRight" });
+  expect(tabs[2]).toHaveFocus();
+  expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", tabs[2].id);
+
+  fireEvent.keyDown(tabs[2], { key: "ArrowRight" });
+  expect(tabs[0]).toHaveFocus();
+  fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
+  expect(tabs[2]).toHaveFocus();
+  expect(tabs.map((tab) => tab.getAttribute("tabindex"))).toEqual(["-1", "-1", "0"]);
 });
 
 test("test_search_and_filters_reduce_rows", () => {
