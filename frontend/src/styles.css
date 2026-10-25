@@ -539,6 +539,51 @@ tbody tr:last-child td {
   content: " ↓";
 }
 
+.sheet-cell {
+  display: inline-block;
+}
+
+.sheet-cell-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+}
+
+.sheet-detail-button {
+  margin-left: 6px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: #276146;
+}
+
+.sheet-detail-button::after {
+  content: "↗";
+}
+
+.sheet-cell input,
+.sheet-cell select {
+  max-width: 170px;
+  font: inherit;
+}
+
+.sheet-cycle-editor {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.sheet-cycle-editor input {
+  width: 85px;
+}
+
+.sheet-cell-error {
+  display: block;
+  color: #7a1f1f;
+  white-space: normal;
+}
+
 .sheet-tabs {
   overflow-x: auto;
   padding-top: 12px;
