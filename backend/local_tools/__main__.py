@@ -18,6 +18,10 @@ IDLE_RUNS_LIMIT = 2
 REPEAT_SLEEP_SECONDS = 30
 
 
+class _LockLost(Exception):
+    """Another process took over this worker's lock."""
+
+
 def _append_log(log_path: Path, clock, text: str) -> None:
     log_path = Path(log_path)
     log_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -44,7 +48,8 @@ def run_worker(
     idle = 0
 
     def refreshing_log(line: str) -> None:
-        lock.refresh()  # run_once logs after every item
+        if not lock.refresh():  # run_once logs after every item
+            raise _LockLost
         log(line)
 
     try:
@@ -55,6 +60,10 @@ def run_worker(
                 log("login required")
                 _append_log(log_path, clock, "login required")
                 return EXIT_LOGIN
+            except _LockLost:
+                log("worker lock lost")
+                _append_log(log_path, clock, "stopped=lock_lost")
+                return EXIT_STOP
             _append_log(
                 log_path, clock,
                 f"saved={summary.saved} executed={summary.executed} "

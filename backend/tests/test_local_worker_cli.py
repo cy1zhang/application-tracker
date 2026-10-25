@@ -144,3 +144,57 @@ def test_worker_refreshes_lock_per_item(tmp_path):
         clock=lambda: NOW, run=fake_run_once, log=lambda line: None,
     )
     assert len(set(stamps)) == 2  # rewritten per item (real clock advances)
+
+
+def test_concurrent_stale_takeover_yields_one_owner(tmp_path):
+    import threading
+
+    path = tmp_path / "worker.lock"
+    assert acquire_lock(path, clock=lambda: 1000.0) is not None
+    for _ in range(20):
+        barrier = threading.Barrier(8)
+        owners = []
+
+        def start(barrier=barrier, owners=owners):
+            barrier.wait()
+            owners.append(acquire_lock(path, stale_after=7200, clock=lambda: 1000.0 + 7201))
+
+        threads = [threading.Thread(target=start) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert len([o for o in owners if o is not None]) == 1
+        path.write_text("1 1000.0 old\n")  # make it stale again
+
+
+def test_refresh_reports_a_taken_over_lock(tmp_path):
+    path = tmp_path / "worker.lock"
+    lock = acquire_lock(path)
+    assert lock.refresh() is True
+    path.write_text("1 1.0 someone-else\n")
+    assert lock.refresh() is False
+
+
+def test_worker_that_loses_its_lock_stops_before_the_next_item(tmp_path):
+    seen = []
+    lock_path = tmp_path / "lock" / "worker.lock"
+
+    def run_once(api, ollama, *, limit=None, log=print):
+        for index in range(3):
+            seen.append(index)
+            if index == 0:
+                lock_path.write_text("1 1.0 someone-else\n")  # taken over mid-run
+            log(f"item {index + 1} saved")
+        return RunSummary(saved=3)
+
+    code = cli.run_worker(
+        object(), object(), log_path=tmp_path / "logs" / "worker.log",
+        lock_path=lock_path, clock=lambda: NOW, sleep=lambda s: None,
+        run=run_once, log=lambda line: None,
+    )
+
+    assert code == 2
+    assert seen == [0]
+    assert (tmp_path / "logs" / "worker.log").read_text().strip().endswith("stopped=lock_lost")
+    assert lock_path.read_text() == "1 1.0 someone-else\n"  # not released
