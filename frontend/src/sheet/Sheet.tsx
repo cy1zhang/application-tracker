@@ -1,14 +1,16 @@
-import { useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
-import { createApplication } from "../api/client";
-import type { Application, ApplicationCreate, ApplicationValues, ReviewItem } from "../api/types";
+import { createApplication, listAiChanges } from "../api/client";
+import type { AiChange, Application, ApplicationCreate, ApplicationValues, ReviewItem } from "../api/types";
 import { ApplicationDetail } from "../applications/ApplicationDetail";
 import { ApplicationForm } from "../applications/ApplicationForm";
 import { ALL, DEFAULT_FILTERS, UNKNOWN_VALUE, filterApplications, yearOptions, type Filters } from "../applications/filtering";
 import { ROLE_TYPE_LABELS, SEASON_LABELS, STATUS_LABELS, UNKNOWN } from "../applications/labels";
 import { ReviewQueue } from "../reviews/ReviewQueue";
+import { AiChangesTab } from "./AiChangesTab";
 import { SettingsPanel } from "./SettingsPanel";
 import { SheetGrid } from "./SheetGrid";
+import { latestAiFieldChanges } from "./aiMarkers";
 import { sortApplications, type SortKey } from "./sorting";
 
 type Props = {
@@ -31,7 +33,41 @@ export function Sheet({ applications, reviews, onReload, onAccountDeleted, revie
   const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, roleType: ALL });
   const [sortKey, setSortKey] = useState<SortKey>("updated_at");
   const [direction, setDirection] = useState<"asc" | "desc">("desc");
+  const [aiChanges, setAiChanges] = useState<AiChange[]>([]);
+  const [aiLoading, setAiLoading] = useState(true);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiRevision, setAiRevision] = useState(0);
   const visible = sortApplications(filterApplications(applications, filters), sortKey, direction);
+  const markers = useMemo(() => latestAiFieldChanges(aiChanges), [aiChanges]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setAiLoading(true);
+      setAiError(null);
+      setAiChanges([]);
+      try {
+        let cursor: string | null = null;
+        do {
+          const page = await listAiChanges(cursor ?? undefined);
+          if (cancelled) return;
+          setAiChanges((current) => [...current, ...page.items]);
+          cursor = page.next_cursor;
+        } while (cursor !== null);
+      } catch (caught) {
+        if (!cancelled) setAiError(caught instanceof Error ? caught.message : "Request failed");
+      } finally {
+        if (!cancelled) setAiLoading(false);
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [aiRevision]);
+
+  async function aiChanged() {
+    await onReload();
+    setAiRevision((current) => current + 1);
+  }
 
   function setFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -95,15 +131,15 @@ export function Sheet({ applications, reviews, onReload, onAccountDeleted, revie
                 <div className="field"><label htmlFor="sheet-year">Year</label><select id="sheet-year" value={filters.year} onChange={(event) => setFilter("year", event.target.value)}><option value={ALL}>All years</option>{yearOptions(applications).map((year) => <option key={year} value={String(year)}>{year}</option>)}<option value={UNKNOWN_VALUE}>{UNKNOWN}</option></select></div>
                 <div className="field"><label htmlFor="sheet-status">Status</label><select id="sheet-status" value={filters.status} onChange={(event) => setFilter("status", event.target.value as Filters["status"])}><option value={ALL}>All statuses</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value={UNKNOWN_VALUE}>{UNKNOWN}</option></select></div>
               </div>
-              {visible.length === 0 ? <p className="empty">{applications.length === 0 ? "No applications yet." : "No applications match these filters."}</p> : <SheetGrid applications={visible} sortKey={sortKey} direction={direction} onSort={sortBy} onSelect={setDetailId} onReload={onReload} />}
+              {visible.length === 0 ? <p className="empty">{applications.length === 0 ? "No applications yet." : "No applications match these filters."}</p> : <SheetGrid applications={visible} markers={markers} onAiChanged={aiChanged} sortKey={sortKey} direction={direction} onSort={sortBy} onSelect={setDetailId} onReload={onReload} />}
             </>}
           </div>
           <div id="sheet-panel-reviews" role="tabpanel" aria-labelledby="sheet-tab-reviews" tabIndex={0} hidden={tab !== "reviews"}>{tab === "reviews" && (reviewError ? <div role="alert" className="error"><p>Could not load reviews: {reviewError}</p><button type="button" onClick={() => void onReload()}>Retry reviews</button></div> : <ReviewQueue reviews={reviews} applications={applications} onResolved={async () => { await onReload(); }} onBack={() => setTab("applications")} showOllama={false} />)}</div>
-          <p id="sheet-panel-ai" className="empty" role="tabpanel" aria-labelledby="sheet-tab-ai" tabIndex={0} hidden={tab !== "ai"}>No AI changes yet.</p>
+          <div id="sheet-panel-ai" role="tabpanel" aria-labelledby="sheet-tab-ai" tabIndex={0} hidden={tab !== "ai"}>{tab === "ai" && <AiChangesTab changes={aiChanges} applications={applications} loading={aiLoading} error={aiError} onChanged={aiChanged} />}</div>
           <nav className="sheet-tabs" role="tablist" aria-label="Sheet tabs">
             <button id="sheet-tab-applications" type="button" role="tab" aria-selected={tab === "applications"} aria-controls="sheet-panel-applications" tabIndex={tab === "applications" ? 0 : -1} onClick={() => selectTab("applications")} onKeyDown={(event) => handleTabKeyDown(event, "applications")}>Applications ({applications.length})</button>
             <button id="sheet-tab-reviews" type="button" role="tab" aria-selected={tab === "reviews"} aria-controls="sheet-panel-reviews" tabIndex={tab === "reviews" ? 0 : -1} onClick={() => selectTab("reviews")} onKeyDown={(event) => handleTabKeyDown(event, "reviews")}>Needs a look ({reviews.length})</button>
-            <button id="sheet-tab-ai" type="button" role="tab" aria-selected={tab === "ai"} aria-controls="sheet-panel-ai" tabIndex={tab === "ai" ? 0 : -1} onClick={() => selectTab("ai")} onKeyDown={(event) => handleTabKeyDown(event, "ai")}>AI changes (0)</button>
+            <button id="sheet-tab-ai" type="button" role="tab" aria-selected={tab === "ai"} aria-controls="sheet-panel-ai" tabIndex={tab === "ai" ? 0 : -1} onClick={() => selectTab("ai")} onKeyDown={(event) => handleTabKeyDown(event, "ai")}>AI changes ({aiChanges.length})</button>
           </nav>
         </>
       )}

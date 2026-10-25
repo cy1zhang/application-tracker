@@ -2,6 +2,7 @@ import type {
   AccountStatus,
   AiSettings,
   AiSettingsUpdate,
+  AiChangePage,
   Application,
   ApplicationCreate,
   ApplicationEvent,
@@ -138,6 +139,20 @@ export async function listAllReviews(): Promise<ReviewItem[]> {
     cursor = page.next_cursor;
   } while (cursor !== null);
   return reviews;
+}
+
+export function listAiChanges(cursor?: string): Promise<AiChangePage> {
+  const query = new URLSearchParams({ limit: "50" });
+  if (cursor) query.set("cursor", cursor);
+  return request<AiChangePage>(`/ai-changes?${query}`);
+}
+
+export function undoAiChange(id: string): Promise<{ undone: boolean }> {
+  return request<{ undone: boolean }>(`/ai-changes/${encodeURIComponent(id)}/undo`, { method: "POST" });
+}
+
+export function reconsiderAiChange(id: string): Promise<{ queued: boolean } | { action: string }> {
+  return request<{ queued: boolean } | { action: string }>(`/ai-changes/${encodeURIComponent(id)}/reconsider`, { method: "POST" });
 }
 
 export function resolveReview(

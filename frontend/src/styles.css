@@ -543,6 +543,57 @@ tbody tr:last-child td {
   display: inline-block;
 }
 
+.sheet-ai-cell {
+  position: relative;
+  display: inline-block;
+  padding-right: 12px;
+}
+
+.sheet-ai-marker {
+  position: absolute;
+  top: -3px;
+  right: 0;
+  width: 10px;
+  height: 10px;
+  padding: 0;
+  border: 0;
+  background: #276146;
+  clip-path: polygon(0 0, 100% 0, 100% 100%);
+  cursor: pointer;
+}
+
+.sheet-ai-popover {
+  display: none;
+  position: absolute;
+  z-index: 2;
+  top: 100%;
+  left: 0;
+  min-width: 190px;
+  padding: 8px;
+  border: 1px solid #d4ddd7;
+  background: #fff;
+  box-shadow: 0 2px 8px #0002;
+  white-space: nowrap;
+  gap: 8px;
+}
+
+.sheet-ai-cell:hover .sheet-ai-popover,
+.sheet-ai-cell:focus-within .sheet-ai-popover {
+  display: flex;
+}
+
+.ai-change-list {
+  padding-left: 20px;
+}
+
+.ai-change-list li {
+  margin-bottom: 12px;
+}
+
+.ai-change-list li > * {
+  margin-right: 10px;
+}
+
 .sheet-cell-button {
   padding: 0;
   border: 0;

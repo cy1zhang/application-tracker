@@ -47,6 +47,24 @@ export interface ApplicationEvent {
   merge_resolutions?: Record<string, "keep" | "duplicate"> | null;
 }
 
+export interface AiChange {
+  message_id: string;
+  received_at: string;
+  action: "created" | "updated" | "ignored";
+  reason: string;
+  application_id: string | null;
+  changes: Record<string, { before: FieldValue; after: FieldValue }>;
+  subject: string | null;
+  sender: string | null;
+  source_url: string | null;
+  undone_at: string | null;
+}
+
+export interface AiChangePage {
+  items: AiChange[];
+  next_cursor: string | null;
+}
+
 export interface ApplicationCreate {
   company: string;
   role: string;
