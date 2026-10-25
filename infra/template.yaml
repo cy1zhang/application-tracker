@@ -314,8 +314,10 @@ Resources:
       Handler: app.lambda_handler.handler
       Runtime: python3.12
       Architectures: [arm64]
-      Timeout: 15
-      MemorySize: 256
+      # AI-queue and plan routes scan the owner's processed mail; keep headroom
+      # under the HTTP API's 30 s integration limit.
+      Timeout: 29
+      MemorySize: 1024
       ReservedConcurrentExecutions: !If [UseReservedConcurrency, 2, !Ref 'AWS::NoValue']
       Environment:
         Variables:
