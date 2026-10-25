@@ -232,3 +232,36 @@ def test_only_self_continuing_functions_allow_recursive_loop() -> None:
         if resource["Properties"].get("RecursiveLoop") == "Allow"
     }
     assert allowed == {"SyncWorkerFunction", DELETION}
+
+
+def _granted(function: str, table: str) -> set[str]:
+    arn = {"GetAtt": f"{table}.Arn"}
+    granted: set[str] = set()
+    for statement in _statements(function):
+        resource = statement["Resource"]
+        resources = resource if isinstance(resource, list) else [resource]
+        if arn in resources:
+            granted |= set(_actions(statement))
+    return granted
+
+
+def test_functions_hold_every_dynamodb_action_the_email_repository_calls() -> None:
+    # (operation -> table) the email, review, and application repositories issue,
+    # directly or as transaction items, from the API routes and the sync worker.
+    required = {
+        "EventsTable": {
+            "dynamodb:GetItem", "dynamodb:Query", "dynamodb:PutItem",
+            "dynamodb:UpdateItem",
+        },
+        "ApplicationsTable": {
+            "dynamodb:GetItem", "dynamodb:Query", "dynamodb:PutItem",
+        },
+    }
+    for function in ("ApiFunction", "SyncWorkerFunction"):
+        for table, actions in required.items():
+            assert actions <= _granted(function, table), (function, table)
+    assert "dynamodb:ConditionCheckItem" in _granted("ApiFunction", "ApplicationsTable")
+    for function in ("ApiFunction", "SyncWorkerFunction"):
+        for table in ("EventsTable", "ApplicationsTable"):
+            granted = _granted(function, table)
+            assert not granted & {"dynamodb:DeleteItem", "dynamodb:Scan"}, (function, table)
