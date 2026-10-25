@@ -1,6 +1,6 @@
 # Handoff: automatic tracking (overnight run)
 
-**Updated:** 2026-10-25 ~11:25 UTC (about 7:25 am Indiana)
+**Updated:** 2026-10-25 ~15:20 UTC (about 11:20 am Indiana)
 
 **Branch:** `claude/auto-apply-sheet`, stacked on `codex/local-ollama-review` and the earlier milestone branches. Unmerged and not pushed.
 
@@ -9,7 +9,7 @@
 ## What is running right now
 
 - The local worker (`python -m local_tools worker --until-empty`) is analyzing the backlog with Ollama on this Mac. The tracker is in mode **`on`**, so each analyzed email is applied straight away, oldest first.
-- Progress at 11:24 UTC: **135 applications** (111 applied, 24 rejected), with **625 emails** still to analyze, at about 25–35 s per email. Expected to finish around 16:30 UTC (12:30 pm Indiana).
+- Progress at 15:17 UTC: **223 applications** (179 applied, 40 rejected, 3 interviewing, 1 withdrawn), with **243 emails** still to analyze, at about 35 s per email. Expected to finish around 17:40 UTC.
 - Checks on the live data, counts only:
   - 0 duplicate rows.
   - On the overlap with the answer key, 26 of 26 created rows had the right company and status.
