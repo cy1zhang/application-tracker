@@ -67,6 +67,19 @@ test("delete reports a stale version and reloads the row", async () => {
   expect(onReload).toHaveBeenCalledOnce();
 });
 
+test("delete reports a completed deletion when the follow-up reload fails", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 204 }));
+  const onReload = vi.fn().mockRejectedValue(new Error("Offline"));
+  render(<Sheet applications={[acme]} reviews={[]} onReload={onReload} mode="live" />);
+
+  openRowMenu();
+  fireEvent.click(screen.getByRole("button", { name: "Delete row" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Deleted. Reload to refresh");
+  expect(onReload).toHaveBeenCalledOnce();
+});
+
 test("test_history_opens_drawer", async () => {
   vi.mocked(getApplication).mockResolvedValue(acme);
   vi.mocked(listApplicationEvents).mockResolvedValue([{
@@ -87,6 +100,42 @@ test("test_history_opens_drawer", async () => {
   expect(screen.getByRole("button", { name: "Row actions for Acme · Engineer" })).toHaveFocus();
 });
 
+test("Escape closes the history drawer and restores focus to its row action", async () => {
+  vi.mocked(getApplication).mockResolvedValue(acme);
+  vi.mocked(listApplicationEvents).mockResolvedValue([]);
+  render(<Sheet applications={[acme]} reviews={[]} onReload={vi.fn()} mode="live" />);
+
+  openRowMenu();
+  fireEvent.click(screen.getByRole("button", { name: "History" }));
+  const drawer = await screen.findByRole("complementary", { name: "Application history" });
+  fireEvent.keyDown(drawer, { key: "Escape" });
+
+  expect(screen.queryByRole("complementary", { name: "Application history" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Row actions for Acme · Engineer" })).toHaveFocus();
+});
+
+test("Tab and Shift+Tab stay inside the history drawer", async () => {
+  vi.mocked(getApplication).mockResolvedValue(acme);
+  vi.mocked(listApplicationEvents).mockResolvedValue([]);
+  render(<Sheet applications={[acme]} reviews={[]} onReload={vi.fn()} mode="live" />);
+
+  openRowMenu();
+  fireEvent.click(screen.getByRole("button", { name: "History" }));
+  const drawer = await screen.findByRole("complementary", { name: "Application history" });
+  const close = within(drawer).getByRole("button", { name: "Close" });
+  const last = within(drawer).getByRole("button", { name: "Edit" });
+  expect(close).toHaveFocus();
+
+  fireEvent.keyDown(close, { key: "Tab", shiftKey: true });
+  expect(last).toHaveFocus();
+  fireEvent.keyDown(last, { key: "Tab" });
+  expect(close).toHaveFocus();
+
+  screen.getByRole("button", { name: "Row actions for Acme · Engineer" }).focus();
+  fireEvent.keyDown(document, { key: "Tab" });
+  expect(close).toHaveFocus();
+});
+
 test("test_merge_opens_existing_form", () => {
   render(<Sheet applications={[acme, globex]} reviews={[]} onReload={vi.fn()} mode="live" />);
 
@@ -96,6 +145,37 @@ test("test_merge_opens_existing_form", () => {
   expect(within(drawer).getByRole("heading", { name: "Merge duplicate" })).toBeInTheDocument();
   expect(within(drawer).getByRole("option", { name: "Globex · Engineer" })).toBeInTheDocument();
   expect(screen.getByRole("table")).toBeInTheDocument();
+});
+
+test("Escape closes the row action list and returns focus to its trigger", () => {
+  render(<Sheet applications={[acme]} reviews={[]} onReload={vi.fn()} mode="live" />);
+
+  openRowMenu();
+  expect(screen.getByRole("button", { name: "History" })).toBeInTheDocument();
+  fireEvent.keyDown(document, { key: "Escape" });
+
+  expect(screen.queryByRole("button", { name: "History" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Row actions for Acme · Engineer" })).toHaveFocus();
+});
+
+test("clicking outside closes the row action list", () => {
+  render(<Sheet applications={[acme]} reviews={[]} onReload={vi.fn()} mode="live" />);
+
+  openRowMenu();
+  fireEvent.click(screen.getByRole("table"));
+
+  expect(screen.queryByRole("button", { name: "History" })).not.toBeInTheDocument();
+});
+
+test("opening another row action list closes the previous one", () => {
+  render(<Sheet applications={[acme, globex]} reviews={[]} onReload={vi.fn()} mode="live" />);
+
+  openRowMenu();
+  fireEvent.click(screen.getByRole("button", { name: "Row actions for Globex · Engineer" }));
+
+  expect(screen.getByRole("button", { name: "Row actions for Acme · Engineer" })).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByRole("button", { name: "Row actions for Globex · Engineer" })).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getAllByRole("button", { name: "History" })).toHaveLength(1);
 });
 
 test("test_needs_a_look_tab_shows_review_queue", () => {
