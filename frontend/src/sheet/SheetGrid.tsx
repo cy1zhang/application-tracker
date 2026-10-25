@@ -4,6 +4,7 @@ import { undoAiChange } from "../api/client";
 import type { AiChange, Application } from "../api/types";
 import { UNKNOWN, formatTimestamp } from "../applications/labels";
 import { EditableCell, type EditableField } from "./EditableCell";
+import { RowMenu } from "./RowMenu";
 import type { SortKey } from "./sorting";
 import { aiChangeError } from "./aiMarkers";
 
@@ -19,6 +20,7 @@ const COLUMNS: { key: SortKey; label: string }[] = [
 
 type Props = {
   applications: Application[];
+  allApplications?: Application[];
   sortKey: SortKey;
   direction: "asc" | "desc";
   onSort: (key: SortKey) => void;
@@ -77,7 +79,7 @@ function MarkedCell({ application, field, change, onReload, onAiChanged }: {
   </span>;
 }
 
-export function SheetGrid({ applications, sortKey, direction, onSort, onSelect, onReload, markers, onAiChanged }: Props) {
+export function SheetGrid({ applications, allApplications = applications, sortKey, direction, onSort, onSelect, onReload, markers, onAiChanged }: Props) {
   return (
     <div className="sheet-grid-scroll" role="region" aria-label="Applications grid" tabIndex={0}>
       <table className="sheet-grid">
@@ -95,7 +97,7 @@ export function SheetGrid({ applications, sortKey, direction, onSort, onSelect, 
             {(["role", "role_type", "cycle", "status", "application_date"] as EditableField[]).map((field) => (
               <td key={field}><MarkedCell application={application} field={field} change={markerFor(application, field, markers)} onReload={onReload} onAiChanged={onAiChanged} /></td>
             ))}
-            <td>{formatTimestamp(application.updated_at)}</td>
+            <td>{formatTimestamp(application.updated_at)}<RowMenu application={application} candidates={allApplications.filter((item) => item.application_id !== application.application_id)} onChanged={onReload} /></td>
           </tr>
         ))}</tbody>
       </table>

@@ -614,6 +614,36 @@ tbody tr:last-child td {
   content: "↗";
 }
 
+.sheet-row-menu {
+  display: inline-block;
+  margin-left: 6px;
+}
+
+.sheet-row-actions {
+  display: inline-flex;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.sheet-row-drawer {
+  position: fixed;
+  z-index: 5;
+  top: 0;
+  right: 0;
+  width: min(520px, 100vw);
+  height: 100vh;
+  overflow-y: auto;
+  padding: 20px;
+  background: #fff;
+  border-left: 1px solid #d4ddd7;
+  box-shadow: -4px 0 18px #0002;
+  white-space: normal;
+}
+
+.sheet-drawer-close {
+  float: right;
+}
+
 .sheet-cell input,
 .sheet-cell select {
   max-width: 170px;

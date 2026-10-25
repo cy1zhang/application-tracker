@@ -121,6 +121,12 @@ export function updateApplication(
   });
 }
 
+export function deleteApplication(id: string, expectedVersion: number): Promise<void> {
+  return request<void>(`/applications/${encodeURIComponent(id)}?expected_version=${expectedVersion}`, {
+    method: "DELETE",
+  });
+}
+
 export function mergeApplication(id: string, payload: MergeRequest): Promise<Application> {
   return request<Application>(`/applications/${encodeURIComponent(id)}/merge`, {
     method: "POST",
