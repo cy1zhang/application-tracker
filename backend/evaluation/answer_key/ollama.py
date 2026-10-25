@@ -3,13 +3,16 @@
 import hashlib
 import json
 import os
-import urllib.request
 from pathlib import Path
 
 from app.domain.ai import EXTRACTION_JSON_SCHEMA
 from app.services.ai_providers import ProviderError
-
-DEFAULT_BASE_URL = "http://127.0.0.1:11434"
+from local_tools.ollama import (
+    DEFAULT_BASE_URL,
+    OllamaClient,
+    OllamaFailed,
+    OllamaUnreachable,
+)
 
 
 class OllamaProvider:
@@ -49,27 +52,10 @@ class OllamaProvider:
         return result
 
     def _call(self, model, prompt_input) -> dict:
-        body = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": prompt_input.system},
-                {"role": "user", "content": prompt_input.user},
-            ],
-            "stream": False,
-            "format": EXTRACTION_JSON_SCHEMA,
-            "think": False,
-            "options": {"temperature": 0, "num_predict": 512},
-        }
-        request = urllib.request.Request(
-            self._base_url + "/api/chat", data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"}, method="POST",
-        )
+        client = OllamaClient(self._base_url, model)
         try:
-            with urllib.request.urlopen(request, timeout=300) as response:
-                content = json.loads(response.read())["message"]["content"]
-            parsed = json.loads(content)
-        except Exception:  # noqa: BLE001 - never surface model output
+            return client.chat(
+                prompt_input.system, prompt_input.user, EXTRACTION_JSON_SCHEMA
+            )
+        except (OllamaUnreachable, OllamaFailed):
             raise ProviderError("ollama") from None
-        if not isinstance(parsed, dict):
-            raise ProviderError("ollama")
-        return parsed
