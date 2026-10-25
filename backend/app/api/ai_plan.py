@@ -1,5 +1,4 @@
 import contextlib
-import json
 import os
 from typing import Annotated, Any
 from urllib.parse import quote
@@ -17,6 +16,7 @@ from app.api.dependencies import (
 from app.repositories.applications import ApplicationRepository
 from app.repositories.dynamodb_auto_apply import DynamoAutoApplySettings
 from app.repositories.dynamodb_email import DynamoEmailRepository
+from app.services.plan_apply import enqueue_apply_plan
 from app.services.plan_report import simulate
 from app.services.sync_candidates import load_candidates
 
@@ -81,12 +81,10 @@ def apply(
         raise HTTPException(status_code=409, detail="analysis_incomplete")
     settings.set_mode(owner_id, "on")
     try:
-        publisher.send_message(
-            QueueUrl=queue_url,
-            MessageBody=json.dumps({"mode": "apply_plan", "owner_id": owner_id}),
-        )
+        enqueue_apply_plan(publisher, queue_url, owner_id)
     except (BotoCoreError, ClientError):
+        # Restore only if the owner has not switched the mode again meanwhile.
         with contextlib.suppress(Exception):  # best effort; the 503 is still returned
-            settings.set_mode(owner_id, previous)
+            settings.set_mode_if(owner_id, previous, expected="on")
         raise HTTPException(status_code=503, detail="queue_unavailable") from None
     return {"queued": True}

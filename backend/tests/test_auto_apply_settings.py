@@ -88,3 +88,13 @@ def test_set_mode_refused_while_deleting(setup) -> None:
 
     with pytest.raises(AccountDeleting):
         settings.set_mode("owner-a", "plan")
+
+
+def test_set_mode_if_only_changes_the_expected_mode(setup):
+    _, settings, _ = setup
+    settings.set_mode("owner-a", "on")
+
+    assert settings.set_mode_if("owner-a", "plan", expected="off") is False
+    assert settings.get_mode("owner-a") == "on"
+    assert settings.set_mode_if("owner-a", "plan", expected="on") is True
+    assert settings.get_mode("owner-a") == "plan"

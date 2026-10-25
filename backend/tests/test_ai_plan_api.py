@@ -181,3 +181,18 @@ def test_apply_enqueue_failure_restores_mode(env) -> None:
 
     assert response.status_code == 503
     assert env.settings.get_mode("user-a") == "plan"
+
+
+def test_apply_enqueue_failure_keeps_mode_switched_off_meanwhile(env) -> None:
+    from botocore.exceptions import ClientError
+
+    put_plan(env.client, "user-a", "m1", 0)
+
+    def switch_off_then_fail(**kwargs):
+        env.settings.set_mode("user-a", "off")
+        raise ClientError({"Error": {"Code": "X", "Message": "x"}}, "SendMessage")
+
+    env.publisher.send_message = switch_off_then_fail
+
+    assert env.api.post("/ai-plan/apply").status_code == 503
+    assert env.settings.get_mode("user-a") == "off"

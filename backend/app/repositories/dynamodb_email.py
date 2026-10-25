@@ -54,6 +54,10 @@ class InvalidCreateDecision(ValueError):
     """A create decision that breaks the create invariants."""
 
 
+class AutoApplyOff(Exception):
+    """Automatic apply is not on, so an automatic write was refused."""
+
+
 class PlanConflict(Exception):
     """The message is missing, not queued, or already planned."""
 
@@ -605,8 +609,12 @@ class DynamoEmailRepository:
         new_application_id: str | None,
         occurred_at: datetime,
         reconsider: bool = False,
+        require_mode_on: bool = False,
     ) -> StoredOutcome:
         """Apply one automatic decision; the gmail# item is the audit event.
+
+        require_mode_on=True adds a Users check so nothing is written unless the
+        owner's auto_apply_mode is still "on"; otherwise AutoApplyOff is raised.
 
         reconsider=True also lets an executed, ignored, unresolved, not-undone plan
         be overwritten (still bound to the same planned_at).
@@ -628,7 +636,8 @@ class DynamoEmailRepository:
             )
             item.update(extra)
             return self._put_outcome(
-                item, execute=True, existing=existing, reconsider=reconsider
+                item, execute=True, existing=existing, reconsider=reconsider,
+                require_mode_on=require_mode_on,
             )
 
         if decision.action == "ignore":
@@ -641,6 +650,7 @@ class DynamoEmailRepository:
             return self._execute_create(
                 owner_id, message, subject, sender, decision, extraction,
                 new_application_id, existing, occurred_at, reconsider,
+                require_mode_on,
             )
         if decision.application_id is None or application_version is None:
             raise ValueError("Update decision requires application and version")
@@ -679,14 +689,14 @@ class DynamoEmailRepository:
                     self._event_put(
                         event, execute=True, existing=existing, reconsider=reconsider
                     ),
-                    *self._guard(owner_id),
+                    *self._guard(owner_id, require_mode_on=require_mode_on),
                 ]
             )
         except ClientError as error:
             if error.response["Error"]["Code"] != "TransactionCanceledException":
                 raise
             replayed = self._after_cancel(
-                owner_id, message.message_id, existing, reconsider
+                owner_id, message.message_id, existing, reconsider, require_mode_on
             )
             if replayed is not None:
                 return replayed
@@ -702,7 +712,7 @@ class DynamoEmailRepository:
         self, owner_id: str, message: MessageRef, subject: str, sender: str,
         decision: AutoDecision, extraction: ValidatedExtraction,
         application_id: str, existing: dict[str, Any] | None, occurred_at: datetime,
-        reconsider: bool = False,
+        reconsider: bool = False, require_mode_on: bool = False,
     ) -> StoredOutcome:
         values = {field: None for field in APPLICATION_FIELDS}
         values.update({
@@ -746,14 +756,14 @@ class DynamoEmailRepository:
                     self._event_put(
                         event, execute=True, existing=existing, reconsider=reconsider
                     ),
-                    *self._guard(owner_id),
+                    *self._guard(owner_id, require_mode_on=require_mode_on),
                 ]
             )
         except ClientError as error:
             if error.response["Error"]["Code"] != "TransactionCanceledException":
                 raise
             replayed = self._after_cancel(
-                owner_id, message.message_id, existing, reconsider
+                owner_id, message.message_id, existing, reconsider, require_mode_on
             )
             if replayed is not None:
                 return replayed
@@ -762,11 +772,13 @@ class DynamoEmailRepository:
 
     def _after_cancel(
         self, owner_id: str, message_id: str, existing: dict[str, Any] | None,
-        reconsider: bool = False,
+        reconsider: bool = False, require_mode_on: bool = False,
     ) -> StoredOutcome | None:
         """Stale guard raises; a message that is already settled returns as stored."""
         if not self._guard_valid(owner_id):
             raise StaleSyncRun from None
+        if require_mode_on and not self._mode_on(owner_id):
+            raise AutoApplyOff from None
         current = self._get_event_item(owner_id, message_id)
         if current is not None and (
             not self._replaceable(current, reconsider)
@@ -928,30 +940,36 @@ class DynamoEmailRepository:
     def _put_outcome(
         self, item: dict[str, Any], decision: RuleDecision | None = None,
         *, execute: bool = False, existing: dict[str, Any] | None = None,
-        reconsider: bool = False,
+        reconsider: bool = False, require_mode_on: bool = False,
     ) -> StoredOutcome:
         put = self._event_put(
             item, execute=execute, existing=existing, reconsider=reconsider
         )["Put"]
+        transactional = self._users_table is not None or require_mode_on
         try:
-            if self._users_table is None:
+            if not transactional:
                 self._client.put_item(**put)
             else:
                 self._client.transact_write_items(
                     TransactItems=[
-                        {"Put": put}, *self._guard(item["owner_id"], decision)
+                        {"Put": put},
+                        *self._guard(
+                            item["owner_id"], decision, require_mode_on=require_mode_on
+                        ),
                     ]
                 )
         except ClientError as error:
             code = error.response["Error"]["Code"]
             expected_code = (
-                "ConditionalCheckFailedException"
-                if self._users_table is None else "TransactionCanceledException"
+                "TransactionCanceledException"
+                if transactional else "ConditionalCheckFailedException"
             )
             if code != expected_code:
                 raise
             if not self._guard_valid(item["owner_id"]):
                 raise StaleSyncRun from None
+            if require_mode_on and not self._mode_on(item["owner_id"]):
+                raise AutoApplyOff from None
             prior = self._get_outcome(item["owner_id"], item["source_message_id"])
             if (
                 decision is not None and decision.origin == "ai"
@@ -1063,9 +1081,23 @@ class DynamoEmailRepository:
             },
         }
 
-    def _guard(self, owner_id: str, decision: RuleDecision | None = None) -> list[dict]:
+    def _guard(
+        self, owner_id: str, decision: RuleDecision | None = None,
+        *, require_mode_on: bool = False,
+    ) -> list[dict]:
         if self._users_table is None:
-            return []
+            if not require_mode_on:
+                return []
+            return [{
+                "ConditionCheck": {
+                    "TableName": self._plan_users_table,
+                    "Key": self._encode({"owner_id": owner_id}),
+                    "ConditionExpression": "auto_apply_mode = :on",
+                    "ExpressionAttributeValues": {
+                        ":on": self._serializer.serialize("on")
+                    },
+                }
+            }]
         condition = (
             "generation = :generation AND active_run_id = :run "
             "AND attribute_exists(encrypted_token)"
@@ -1074,6 +1106,10 @@ class DynamoEmailRepository:
             ":generation": self._serializer.serialize(self._guard_generation),
             ":run": self._serializer.serialize(self._guard_run_id),
         }
+        if require_mode_on:
+            # One check per item: DynamoDB rejects two operations on the Users item.
+            condition += " AND auto_apply_mode = :on"
+            values[":on"] = self._serializer.serialize("on")
         if decision is not None and decision.origin == "ai":
             # One check per item: DynamoDB rejects two operations on the Users item.
             condition += (
@@ -1109,6 +1145,15 @@ class DynamoEmailRepository:
             and user.get("ai_enabled") is True
             and user.get("ai_key_status") == "ok"
         )
+
+    def _mode_on(self, owner_id: str) -> bool:
+        response = self._client.get_item(
+            TableName=self._users_table or self._plan_users_table,
+            Key=self._encode({"owner_id": owner_id}),
+            ConsistentRead=True,
+        )
+        user = self._decode(response["Item"]) if "Item" in response else {}
+        return user.get("auto_apply_mode") == "on"
 
     def _guard_valid(self, owner_id: str) -> bool:
         if self._users_table is None:

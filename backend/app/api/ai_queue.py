@@ -1,4 +1,5 @@
-from typing import Annotated
+import os
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -10,6 +11,7 @@ from app.api.dependencies import (
     get_gmail_repository,
     get_google_oauth_client,
     get_queue_email_repository,
+    get_sync_publisher,
 )
 from app.domain.reviews import LocalAiSuggestionRequest
 from app.repositories.applications import ApplicationRepository
@@ -17,7 +19,7 @@ from app.repositories.dynamodb_auto_apply import DynamoAutoApplySettings
 from app.repositories.dynamodb_email import DynamoEmailRepository
 from app.repositories.gmail import GmailRepository
 from app.services.ai_extraction import InvalidExtraction
-from app.services.ai_queue import AiQueueService, AutoApplyOff
+from app.services.ai_queue import AiQueueService, AutoApplyOff, QueueUnavailable
 from app.services.credential_crypto import CredentialCipher
 from app.services.gmail_fetch import GmailFetchClient
 from app.services.google_oauth import GoogleOAuthClient
@@ -42,10 +44,12 @@ def get_ai_queue_service(
     connections: Annotated[GmailRepository, Depends(get_gmail_repository)],
     cipher: Annotated[CredentialCipher, Depends(get_credential_cipher)],
     oauth: Annotated[GoogleOAuthClient, Depends(get_google_oauth_client)],
+    publisher: Annotated[Any, Depends(get_sync_publisher)],
 ) -> AiQueueService:
     return AiQueueService(
         emails=emails, settings=settings, applications=applications,
         connections=connections, cipher=cipher, oauth=oauth, fetch=GmailFetchClient(),
+        publisher=publisher, queue_url=os.getenv("SYNC_QUEUE_URL"),
     )
 
 
@@ -57,6 +61,8 @@ def _translate(call):
         return call()
     except AutoApplyOff:
         raise HTTPException(status_code=409, detail="auto_apply_off") from None
+    except QueueUnavailable:
+        raise HTTPException(status_code=503, detail="queue_unavailable") from None
     except LocalAiNotFound:
         raise HTTPException(status_code=404, detail="Message not found") from None
     except LocalAiConnectionChanged:
@@ -97,4 +103,7 @@ def queue_result(
         owner_id, message_id, generation=payload.generation,
         model=payload.model, raw=payload.extraction,
     ))
-    return {"planned": result.planned, "executed": result.executed, "action": result.action}
+    body = {"planned": result.planned, "executed": result.executed, "action": result.action}
+    if result.deferred:
+        body["deferred"] = True
+    return body

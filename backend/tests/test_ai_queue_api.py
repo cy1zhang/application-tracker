@@ -65,6 +65,14 @@ class Fetch:
         return self.messages[message_id]
 
 
+class Publisher:
+    def __init__(self):
+        self.sent = []
+
+    def send_message(self, **kwargs):
+        self.sent.append(kwargs)
+
+
 class Env:
     pass
 
@@ -93,6 +101,7 @@ def env():
         connections.save_connection("user-a", 0, "a@example.test", TOKEN, NOW)
         e.connections = connections
         e.fetch = Fetch()
+        e.publisher = Publisher()
         e.settings.set_mode("user-a", "plan")
         e.owner = "user-a"
         app.dependency_overrides[get_current_subject] = lambda: e.owner
@@ -100,6 +109,7 @@ def env():
             emails=e.emails, settings=e.settings, applications=e.applications,
             connections=connections, cipher=Cipher(), oauth=OAuth(), fetch=e.fetch,
             clock=lambda: NOW + timedelta(days=1),
+            publisher=e.publisher, queue_url="q",
         )
         with TestClient(app) as api:
             e.api = api
@@ -430,3 +440,54 @@ def test_three_invalid_outputs_send_the_item_to_review(env) -> None:
         client=env.client, applications_table="Applications", events_table="Events"
     ).list_pending(owner_id="user-a", limit=10, cursor=None)
     assert [review.message_id for review in reviews.items] == ["m1"]
+
+
+def test_result_defers_behind_an_older_backlog_and_worker_drains_in_order(env) -> None:
+    import json
+
+    from app.services.plan_apply import apply_plan_page
+    from tests.plan_support import put_plan
+
+    env.settings.set_mode("user-a", "on")
+    put_plan(env.client, "user-a", "old", -60, status="applied")
+    queue(env, "m1", received=NOW)
+
+    response = post_result(env, "m1")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "planned": True, "executed": False, "action": None, "deferred": True,
+    }
+    assert "ai_plan" in item(env, "m1") and "executed_at" not in item(env, "m1")["ai_plan"]
+    assert env.applications.list(owner_id="user-a", limit=10, cursor=None).items == []
+    assert [json.loads(m["MessageBody"]) for m in env.publisher.sent] == [
+        {"mode": "apply_plan", "owner_id": "user-a"}
+    ]
+
+    assert apply_plan_page(
+        "user-a", emails=env.emails, applications=env.applications,
+        settings=env.settings, publisher=env.publisher, queue_url="q",
+    ) is True
+
+    assert item(env, "old")["application_id"] == item(env, "m1")["application_id"]
+    assert item(env, "old")["reason"] == "ai_create"
+    assert item(env, "m1")["outcome"] == "applied"
+
+
+def test_result_mode_switched_off_before_write_is_409_and_unexecuted(env, monkeypatch) -> None:
+    env.settings.set_mode("user-a", "on")
+    queue(env, "m1")
+    real = env.emails.execute
+
+    def flip_then_execute(*args, **kwargs):
+        env.settings.set_mode("user-a", "off")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(env.emails, "execute", flip_then_execute)
+
+    response = post_result(env, "m1")
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "auto_apply_off"}
+    assert env.applications.list(owner_id="user-a", limit=10, cursor=None).items == []
+    assert "executed_at" not in item(env, "m1")["ai_plan"]

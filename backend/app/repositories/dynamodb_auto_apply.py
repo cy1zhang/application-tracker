@@ -34,6 +34,29 @@ class DynamoAutoApplySettings:
                 raise AccountDeleting from None
             raise
 
+    def set_mode_if(
+        self, owner_id: str, mode: AutoApplyMode, *, expected: AutoApplyMode
+    ) -> bool:
+        """Set the mode only while it is still `expected`; False when it moved."""
+        try:
+            self._client.update_item(
+                TableName=self._users_table,
+                Key=self._encode({"owner_id": owner_id}),
+                UpdateExpression="SET auto_apply_mode = :mode",
+                ConditionExpression=(
+                    "auto_apply_mode = :expected "
+                    "AND attribute_not_exists(deletion_state)"
+                ),
+                ExpressionAttributeValues=self._encode(
+                    {":mode": mode, ":expected": expected}
+                ),
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
+
     def _get_item(self, owner_id: str) -> dict:
         response = self._client.get_item(
             TableName=self._users_table,

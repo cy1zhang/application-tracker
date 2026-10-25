@@ -31,12 +31,13 @@ def ref(message_id="m1", received_at=NOW):
 
 
 def run(env, decision, *, message_id="m1", received_at=NOW, version=None,
-        new_id=None, owner=OWNER, extraction=None, emails=None):
+        new_id=None, owner=OWNER, extraction=None, emails=None,
+        **kwargs):
     return (emails or env.emails(owner)).execute(
         owner, message=ref(message_id, received_at), subject="Subject " + "s" * 400,
         sender="jobs@acme.test", decision=decision,
         extraction=extraction or make_extraction(), application_version=version,
-        new_application_id=new_id, occurred_at=received_at,
+        new_application_id=new_id, occurred_at=received_at, **kwargs,
     )
 
 
@@ -267,3 +268,42 @@ def test_plan_changed_since_read_is_not_executed(env, monkeypatch):
     stored = env.event("m1")
     assert stored["ai_plan"] == {"action": "create", "planned_at": "t2"}
     assert env.applications.get(owner_id=OWNER, application_id="app-1").version == 1
+
+
+def set_mode(env, mode, owner=OWNER):
+    env.client.update_item(
+        TableName="Users", Key={"owner_id": {"S": owner}},
+        UpdateExpression="SET auto_apply_mode = :m",
+        ExpressionAttributeValues={":m": {"S": mode}},
+    )
+
+
+@pytest.mark.parametrize("mode", ["off", "plan"])
+def test_require_mode_on_writes_nothing_unless_mode_is_on(env, mode):
+    from app.repositories.dynamodb_email import AutoApplyOff
+
+    env.app()
+    set_mode(env, mode)
+    with pytest.raises(AutoApplyOff):
+        run(env, create_decision(), message_id="c", new_id="new-1",
+            require_mode_on=True)
+    with pytest.raises(AutoApplyOff):
+        run(env, update_decision(), message_id="u", version=1, require_mode_on=True)
+    with pytest.raises(AutoApplyOff):
+        run(env, AutoDecision("ignore", "no_change", None, {}), message_id="i",
+            require_mode_on=True)
+    assert raw_app(env, "new-1") is None
+    assert env.applications.get(owner_id=OWNER, application_id="app-1").version == 1
+    assert all(env.event(m) is None for m in "cui")
+
+
+def test_require_mode_on_writes_when_mode_is_on(env):
+    set_mode(env, "on")
+    outcome = run(env, create_decision(), new_id="new-1", require_mode_on=True)
+    assert outcome.outcome == "applied"
+    assert raw_app(env, "new-1") is not None
+
+
+def test_mode_not_required_by_default(env):
+    set_mode(env, "off")
+    assert run(env, create_decision(), new_id="new-1").outcome == "applied"

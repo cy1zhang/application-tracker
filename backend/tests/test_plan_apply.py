@@ -208,3 +208,21 @@ def test_apply_page_unexpected_error_propagates(env, monkeypatch) -> None:
         env.apply()
 
     assert "executed_at" not in env.item("m1")["ai_plan"]
+
+
+def test_apply_page_mode_switched_off_before_write_writes_nothing(env, monkeypatch):
+    put_plan(env.client, "user-a", "m1", 0)
+    put_plan(env.client, "user-a", "m2", 5, status="interviewing")
+    real = env.emails.execute
+
+    def flip_then_execute(*args, **kwargs):
+        env.settings.set_mode("user-a", "off")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(env.emails, "execute", flip_then_execute)
+
+    assert env.apply() is True
+
+    assert env.apps() == []
+    assert "executed_at" not in env.item("m1")["ai_plan"]
+    assert env.publisher.sent == []

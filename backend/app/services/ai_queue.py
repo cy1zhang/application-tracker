@@ -2,8 +2,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from app.domain.ai import EXTRACTION_JSON_SCHEMA
 from app.repositories.dynamodb_email import (
+    AutoApplyOff,
     PlanConflict,
     extraction_from_plan,
     is_queued,
@@ -23,11 +26,12 @@ from app.services.local_review_ai import (
     LocalAiStale,
     fetch_owner_message,
 )
+from app.services.plan_apply import enqueue_apply_plan
 from app.services.sync_candidates import load_candidates
 
 
-class AutoApplyOff(Exception):
-    pass
+class QueueUnavailable(Exception):
+    """The apply-plan job could not be enqueued."""
 
 
 @dataclass(frozen=True)
@@ -41,13 +45,16 @@ class PlanResult:
     planned: bool
     executed: bool
     action: str | None
+    deferred: bool = False
 
 
 class AiQueueService:
     def __init__(
         self, *, emails, settings, applications, connections, cipher, oauth, fetch,
-        clock=lambda: datetime.now(UTC),
+        clock=lambda: datetime.now(UTC), publisher=None, queue_url=None,
     ) -> None:
+        self._publisher = publisher
+        self._queue_url = queue_url
         self._emails = emails
         self._settings = settings
         self._applications = applications
@@ -109,7 +116,7 @@ class AiQueueService:
             message, _ = self._fetch_message(owner_id, message_id, generation)
             if item.get("thread_id") not in {None, message.thread_id}:
                 raise LocalAiStale
-            return self._execute(
+            return self._execute_or_defer(
                 owner_id, message, load_candidates(owner_id, self._applications),
                 extraction_from_plan(plan),
             )
@@ -136,7 +143,23 @@ class AiQueueService:
             raise LocalAiStale from None
         if mode != "on":
             return PlanResult(planned=True, executed=False, action=None)
-        return self._execute(owner_id, message, candidates, extraction)
+        return self._execute_or_defer(owner_id, message, candidates, extraction)
+
+    def _execute_or_defer(self, owner_id, message, candidates, extraction) -> PlanResult:
+        # Older unexecuted plans go first; the apply worker drains in received order.
+        backlog = any(
+            planned.message_id != message.message_id
+            for planned in self._emails.list_planned(owner_id)
+        )
+        if not backlog:
+            return self._execute(owner_id, message, candidates, extraction)
+        if self._publisher is None or not self._queue_url:
+            raise QueueUnavailable
+        try:
+            enqueue_apply_plan(self._publisher, self._queue_url, owner_id)
+        except (BotoCoreError, ClientError):
+            raise QueueUnavailable from None
+        return PlanResult(planned=True, executed=False, action=None, deferred=True)
 
     def _execute(self, owner_id, message, candidates, extraction) -> PlanResult:
         ref = MessageRef(message.message_id, message.thread_id, message.received_at)
@@ -152,7 +175,7 @@ class AiQueueService:
             owner_id, message=ref, subject=message.subject, sender=message.sender,
             decision=decision, extraction=extraction, application_version=version,
             new_application_id=uuid4().hex if decision.action == "create" else None,
-            occurred_at=self._clock(),
+            occurred_at=self._clock(), require_mode_on=True,
         )
         # Report what was stored, not what was intended: execute may demote to review.
         if stored.outcome == "applied":
