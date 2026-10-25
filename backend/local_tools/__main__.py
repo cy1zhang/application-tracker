@@ -42,10 +42,15 @@ def run_worker(
         log("worker already running")
         return EXIT_LOCKED
     idle = 0
+
+    def refreshing_log(line: str) -> None:
+        lock.refresh()  # run_once logs after every item
+        log(line)
+
     try:
         while True:
             try:
-                summary = run(api, ollama, limit=limit, log=log)
+                summary = run(api, ollama, limit=limit, log=refreshing_log)
             except LoginRequired:
                 log("login required")
                 _append_log(log_path, clock, "login required")
@@ -59,6 +64,7 @@ def run_worker(
             code = _exit_code(summary.stopped)
             if summary.stopped == "login_required":
                 log("login required")
+                _append_log(log_path, clock, "login required")
             if not until_empty or summary.stopped is not None:
                 return code
             if summary == RunSummary():  # nothing attempted: queue is empty

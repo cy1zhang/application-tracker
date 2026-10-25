@@ -1,5 +1,6 @@
 import os
 import stat
+import time
 from datetime import UTC, datetime
 
 from local_tools import __main__ as cli
@@ -52,6 +53,8 @@ def test_lock_released_after_run(tmp_path):
 
 def test_login_required_exits_4(tmp_path):
     assert run(tmp_path, [RunSummary(stopped="login_required")]) == 4
+    lines = (tmp_path / "logs" / "worker.log").read_text().splitlines()
+    assert lines[-1].endswith(" login required")
 
 
 def test_login_required_mid_run_exits_4(tmp_path):
@@ -99,3 +102,45 @@ def test_until_empty_stops_on_empty_queue_and_global_stop(tmp_path):
     assert sleeps == [30]
     assert run(tmp_path, [RunSummary(saved=1), RunSummary(stopped="rate_limited")],
                until_empty=True) == 2
+
+
+def test_release_after_takeover_leaves_new_lock(tmp_path):
+    path = tmp_path / "worker.lock"
+    first = acquire_lock(path, clock=lambda: 1000.0)
+    second = acquire_lock(path, stale_after=7200, clock=lambda: 1000.0 + 7201)
+    assert second is not None
+    first.release()
+    first.refresh()
+    assert path.exists()
+    assert second.token in path.read_text()
+    assert acquire_lock(path, clock=lambda: 1000.0 + 7202) is None
+
+
+def test_refresh_prevents_takeover_in_long_run(tmp_path):
+    path = tmp_path / "worker.lock"
+    now = [1000.0]
+    lock = acquire_lock(path, clock=lambda: now[0])
+    now[0] += 7000
+    lock.refresh()
+    now[0] += 7000
+    assert acquire_lock(path, stale_after=7200, clock=lambda: now[0]) is None
+    lock.release()
+    assert not path.exists()
+
+
+def test_worker_refreshes_lock_per_item(tmp_path):
+    lock_path = tmp_path / "lock" / "worker.lock"
+    stamps = []
+
+    def fake_run_once(api, ollama, *, limit=None, log=print):
+        for _ in range(2):
+            log("item")
+            time.sleep(0.01)
+            stamps.append(lock_path.read_text().split()[1])
+        return RunSummary(saved=1)
+
+    cli.run_worker(
+        object(), object(), log_path=tmp_path / "w.log", lock_path=lock_path,
+        clock=lambda: NOW, run=fake_run_once, log=lambda line: None,
+    )
+    assert len(set(stamps)) == 2  # rewritten per item (real clock advances)
