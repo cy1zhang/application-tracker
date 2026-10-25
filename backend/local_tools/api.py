@@ -45,11 +45,18 @@ class TrackerApi:
 
     def _request(self, method: str, path: str, body: dict | None) -> dict:
         try:
-            return self._send(method, path, body, self._token(self._config))
+            return self._send(method, path, body, self._bearer())
         except ApiError as error:
             if error.status != 401:
                 raise
-        return self._send(method, path, body, self._token(self._config, force=True))
+        return self._send(method, path, body, self._bearer(force=True))
+
+    def _bearer(self, force: bool = False) -> str:
+        try:
+            return self._token(self._config, force=True) if force else self._token(self._config)
+        except (OSError, http.client.HTTPException):
+            # A token refresh that cannot reach Cognito is a network failure too.
+            raise ApiError(0, "network") from None
 
     def _send(self, method: str, path: str, body: dict | None, token: str) -> dict:
         headers = {"Authorization": f"Bearer {token}"}

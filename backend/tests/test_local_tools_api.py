@@ -87,3 +87,28 @@ def test_transport_failure_becomes_network_api_error(monkeypatch, error):
     with pytest.raises(api.ApiError) as caught:
         api.TrackerApi(CONFIG, token=_token).get("/x")
     assert (caught.value.status, caught.value.detail) == (0, "network")
+
+
+@pytest.mark.parametrize(
+    "failure", [urllib.error.URLError("down"), TimeoutError(), ConnectionResetError()]
+)
+def test_token_refresh_transport_failure_is_a_network_error(failure):
+    def token(config, force=False):
+        raise failure
+
+    with pytest.raises(api.ApiError) as caught:
+        api.TrackerApi(CONFIG, token=token).get("/x")
+    assert (caught.value.status, caught.value.detail) == (0, "network")
+
+
+def test_forced_refresh_transport_failure_after_401_is_a_network_error(monkeypatch):
+    _install(monkeypatch, [_http_error(401, {"detail": "expired"})])
+
+    def token(config, force=False):
+        if force:
+            raise urllib.error.URLError("down")
+        return "stale"
+
+    with pytest.raises(api.ApiError) as caught:
+        api.TrackerApi(CONFIG, token=token).get("/x")
+    assert (caught.value.status, caught.value.detail) == (0, "network")

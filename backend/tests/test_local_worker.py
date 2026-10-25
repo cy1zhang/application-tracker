@@ -248,3 +248,20 @@ def test_unknown_detail_is_logged_as_other():
     run_once(api, FakeOllama(), log=lines.append)
     text = "\n".join(lines)
     assert "sentinel" not in text and "detail=other" in text
+
+
+def test_token_refresh_outage_stops_as_network_without_a_traceback():
+    import urllib.error
+
+    from local_tools.api import TrackerApi
+    from local_tools.config import AuthConfig
+
+    def token(config, force=False):
+        raise urllib.error.URLError("sleeping mac")
+
+    lines = []
+    api = TrackerApi(AuthConfig("http://api.invalid", "http://auth.invalid", "c"), token=token)
+    summary = run_once(api, FakeOllama(), log=lines.append)
+
+    assert summary.stopped == "network"
+    assert lines == ["done saved=0 executed=0 skipped=0 failed=0 stopped=network elapsed=0s"]
