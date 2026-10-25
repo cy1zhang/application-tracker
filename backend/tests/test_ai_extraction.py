@@ -301,7 +301,7 @@ def test_body_is_capped_and_sections_match_what_was_sent():
     ("status", "quote", "kept"),
     [
         ("offer", "we offer competitive benefits", False),
-        ("interviewing", "interview tips", True),
+        ("interviewing", "interview tips", False),
         ("interviewing", "if you are selected for an interview", False),
         ("rejected", "we will not be moving forward with your application", True),
         ("offer", "we are pleased to offer you the role", True),
@@ -333,7 +333,14 @@ def test_status_cues_reject_boilerplate_and_hedging(status, quote, kept):
         ("rejected", "The position has been filled", True),
         ("rejected", "We decided to pursue other candidates", True),
         ("oa_received", "Please complete the assessment below", True),
-        ("oa_received", "Here is your take-home challenge", True),
+        ("oa_received", "Here is your take-home challenge", False),
+        ("applied", "tips for applying to jobs", False),
+        ("rejected", "unfortunately, the event is postponed", False),
+        ("interviewing", "interview tips for students", False),
+        ("oa_received", "take our weekly challenge", False),
+        ("interviewing", "we invite you to an interview", True),
+        ("rejected", "unfortunately, we have decided to move forward with other candidates", True),
+        ("applied", "we have received your application", True),
     ],
 )
 def test_expanded_status_cues(status, quote, kept):
