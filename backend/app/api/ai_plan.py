@@ -5,6 +5,7 @@ from urllib.parse import quote
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, ConfigDict
 
 from app.api.dependencies import (
     get_application_repository,
@@ -27,6 +28,18 @@ Emails = Annotated[DynamoEmailRepository, Depends(get_queue_email_repository)]
 Settings = Annotated[DynamoAutoApplySettings, Depends(get_auto_apply_settings)]
 Applications = Annotated[ApplicationRepository, Depends(get_application_repository)]
 Publisher = Annotated[Any, Depends(get_sync_publisher)]
+
+
+class ExpectedPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    analyzed: int
+    create: int
+    update: int
+
+
+class ApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected: ExpectedPlan | None = None
 
 
 def _enum(value):
@@ -68,6 +81,7 @@ def report(owner_id: Owner, emails: Emails, applications: Applications) -> dict:
 @router.post("/apply", status_code=status.HTTP_202_ACCEPTED)
 def apply(
     owner_id: Owner, emails: Emails, settings: Settings, publisher: Publisher,
+    applications: Applications, body: ApplyRequest | None = None,
 ) -> dict:
     queue_url = os.getenv("SYNC_QUEUE_URL")
     if not queue_url:
@@ -75,10 +89,18 @@ def apply(
     previous = settings.get_mode(owner_id)
     if previous == "off":
         raise HTTPException(status_code=409, detail="auto_apply_off")
-    if not emails.list_planned(owner_id):
+    planned = emails.list_planned(owner_id)
+    if not planned:
         raise HTTPException(status_code=409, detail="nothing_planned")
     if emails.list_ai_queue(owner_id):
         raise HTTPException(status_code=409, detail="analysis_incomplete")
+    if body is not None and body.expected is not None:
+        counts = simulate(planned, load_candidates(owner_id, applications)).counts
+        seen = body.expected
+        if (len(planned), counts["create"], counts["update"]) != (
+            seen.analyzed, seen.create, seen.update,
+        ):
+            raise HTTPException(status_code=409, detail="plan_changed")
     settings.set_mode(owner_id, "on")
     try:
         enqueue_apply_plan(publisher, queue_url, owner_id)

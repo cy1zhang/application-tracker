@@ -196,3 +196,50 @@ def test_apply_enqueue_failure_keeps_mode_switched_off_meanwhile(env) -> None:
 
     assert env.api.post("/ai-plan/apply").status_code == 503
     assert env.settings.get_mode("user-a") == "off"
+
+
+def test_apply_with_matching_expected_counts_queues(env) -> None:
+    put_plan(env.client, "user-a", "m1", 0)
+    put_plan(env.client, "user-a", "m2", 5, status="interviewing")
+
+    response = env.api.post(
+        "/ai-plan/apply", json={"expected": {"analyzed": 2, "create": 1, "update": 1}}
+    )
+
+    assert response.status_code == 202
+    assert env.settings.get_mode("user-a") == "on"
+    assert len(env.publisher.sent) == 1
+
+
+def test_apply_with_stale_expected_counts_409_plan_changed(env) -> None:
+    put_plan(env.client, "user-a", "m1", 0)
+    put_plan(env.client, "user-a", "m2", 5, status="interviewing")
+
+    response = env.api.post(
+        "/ai-plan/apply", json={"expected": {"analyzed": 1, "create": 1, "update": 0}}
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "plan_changed"}
+    assert env.settings.get_mode("user-a") == "plan"
+    assert env.publisher.sent == []
+
+
+def test_apply_without_expected_keeps_old_behavior(env) -> None:
+    put_plan(env.client, "user-a", "m1", 0)
+
+    assert env.api.post("/ai-plan/apply", json={}).status_code == 202
+    assert env.api.post("/ai-plan/apply").status_code == 202
+
+
+def test_apply_expected_rejects_extra_fields_422(env) -> None:
+    put_plan(env.client, "user-a", "m1", 0)
+
+    response = env.api.post(
+        "/ai-plan/apply",
+        json={"expected": {"analyzed": 1, "create": 1, "update": 0, "secret": "x-private"}},
+    )
+
+    assert response.status_code == 422
+    assert "x-private" not in response.text
+    assert env.publisher.sent == []
