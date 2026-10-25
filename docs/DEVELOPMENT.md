@@ -699,7 +699,10 @@ signed-in session and Ollama. Run these from `backend/`.
 
    The plist is written to `~/Library/LaunchAgents/com.applicationtracker.worker.plist`
    with the absolute `uv` path and this `backend/` directory, because launchd
-   has a minimal `PATH`. Re-run `install` after moving the repo or `uv`.
+   has a minimal `PATH`. Re-running `install` replaces a loaded agent, so do that after moving the
+   repo or `uv`.
 3. Uninstall: `uv run --group local python -m local_tools.launchagent uninstall`.
+   If `launchctl bootout` fails for any reason other than "not loaded", the
+   plist is kept so you can retry.
 4. A sleeping Mac does not run the job. To let a backlog drain, keep it awake
    (for example `caffeinate -i`) while on power.
