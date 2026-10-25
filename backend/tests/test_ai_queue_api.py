@@ -163,6 +163,38 @@ def test_backfill_marks_no_event_and_unresolved_reviews_only(env) -> None:
     assert marked == {"no-event", "review"}
 
 
+def _put_event(env, message_id, outcome, reason, **extra):
+    env.client.put_item(TableName="Events", Item={
+        "owner_id": {"S": "user-a"}, "event_id": {"S": f"gmail#{message_id}"},
+        "source_message_id": {"S": message_id}, "outcome": {"S": outcome},
+        "reason": {"S": reason}, "received_at": {"S": NOW.isoformat()}, **extra,
+    })
+
+
+def test_backfill_skips_items_that_exhausted_ai_attempts(env) -> None:
+    _put_event(env, "invalid", "review_required", "needs_look",
+               rule_reason={"S": "ai_invalid_output"}, ai_attempts={"N": "3"})
+    _put_event(env, "attempts", "ignored", "no_event", ai_attempts={"N": "3"})
+    _put_event(env, "fresh", "review_required", "ambiguous_application",
+               ai_attempts={"N": "1"})
+
+    assert env.api.post("/ai-queue/backfill").json() == {"marked": 1}
+
+    assert item(env, "fresh").get("ai_backfill") is True
+    for name in ("invalid", "attempts"):
+        assert "ai_backfill" not in item(env, name)
+    assert env.api.get("/ai-queue").json()["remaining"] == 1
+
+
+def test_backfill_skips_unavailable_messages(env) -> None:
+    _put_event(env, "gone", "ignored", "message_unavailable")
+
+    assert env.api.post("/ai-queue/backfill").json() == {"marked": 0}
+
+    assert "ai_backfill" not in item(env, "gone")
+    assert env.api.get("/ai-queue").json() == {"items": [], "remaining": 0}
+
+
 def test_backfill_second_call_marks_zero(env) -> None:
     env.client.put_item(TableName="Events", Item={
         "owner_id": {"S": "user-a"}, "event_id": {"S": "gmail#m1"},

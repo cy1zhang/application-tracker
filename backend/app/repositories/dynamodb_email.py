@@ -247,6 +247,11 @@ class DynamoEmailRepository:
         for item in self._owner_events(owner_id):
             if "ai_plan" in item or "ai_backfill" in item or "resolution" in item:
                 continue
+            if (
+                item.get("rule_reason") == "ai_invalid_output"
+                or int(item.get("ai_attempts", 0)) >= 3
+            ):
+                continue
             outcome, reason = item.get("outcome"), item.get("reason")
             if not (
                 (outcome == "ignored" and reason == "no_event")
