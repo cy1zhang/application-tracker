@@ -26,8 +26,19 @@ class OllamaProvider:
             (prompt_input.system + prompt_input.user + model).encode()
         ).hexdigest()
         path = self._cache_dir / f"{digest}.json"
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            cached = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(cached, dict):
+                return cached
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError):
+            pass
+        # A damaged entry is a cache miss: drop it and ask Ollama again.
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
         result = self._call(model, prompt_input)
         self._cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self._cache_dir, 0o700)

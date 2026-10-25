@@ -475,12 +475,14 @@ def test_auto_pipeline_provider_failure_and_invalid_output_need_a_look():
     from app.services.ai_providers import ProviderError
     from evaluation.answer_key.score import AutoPipeline
 
-    for response in (ProviderError("boom"), {"company": "Acme"}):
+    for response, unavailable in (
+        (ProviderError("boom"), True), ({"company": "Acme"}, False),
+    ):
         outcomes = AutoPipeline(StubProvider(response)).run(
             [("E1", message("m1", AMBIGUOUS_TEXT))]
         )
         assert [o.action for o in outcomes] == ["needs_look"]
-    assert outcomes[0].ai_unavailable is False
+        assert outcomes[0].ai_unavailable is unavailable
 
 
 def test_auto_pipeline_rules_update_shares_candidates_with_ai_create():
@@ -526,3 +528,65 @@ def test_auto_cli_gates_through_run_cli(tmp_path, monkeypatch):
     assert module.main(argv + ["--check"]) == 1  # precision 0.5 fails the gate
     assert isinstance(seen["pipeline"], module.AutoPipeline)
     assert module.main(argv) == 0
+
+
+def _prompt():
+    return SimpleNamespace(system="s", user="u")
+
+
+def _cache_file(cache):
+    (path,) = cache.glob("*.json")
+    return path
+
+
+@pytest.mark.parametrize("damage", [b"{not json", b"[1, 2]", b"\xff\xfe"])
+def test_ollama_corrupt_cache_entry_is_refetched(tmp_path, damage):
+    _Fake.bodies = []
+    server = HTTPServer(("127.0.0.1", 0), _Fake)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    cache = tmp_path / "cache"
+    try:
+        provider = OllamaProvider(
+            cache_dir=cache, base_url=f"http://127.0.0.1:{server.server_port}"
+        )
+        provider.extract("k", "m", _prompt())
+        _cache_file(cache).write_bytes(damage)
+        assert provider.extract("k", "m", _prompt()) == {"company": "Acme"}
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert len(_Fake.bodies) == 2
+    assert json.loads(_cache_file(cache).read_text()) == {"company": "Acme"}
+    assert stat.S_IMODE(_cache_file(cache).stat().st_mode) == 0o600
+    assert stat.S_IMODE(cache.stat().st_mode) == 0o700
+
+
+def test_corrupt_cache_and_ollama_down_gives_needs_look(tmp_path, monkeypatch):
+    import hashlib
+
+    from evaluation.answer_key.score import AutoPipeline
+
+    # The prompt delimiter is random; pin it so the cache key is stable.
+    monkeypatch.setattr("app.services.ai_extraction.secrets.token_hex", lambda n: "0" * 16)
+    seen = []
+
+    class Spy:
+        def extract(self, api_key, model, prompt_input):
+            seen.append(prompt_input)
+            return {"company": "Acme"}
+
+    items = [("E1", message("m1", AMBIGUOUS_TEXT))]
+    AutoPipeline(Spy()).run(items)
+    prompt = seen[0]
+    cache = tmp_path / "cache"
+    cache.mkdir(mode=0o700)
+    digest = hashlib.sha256((prompt.system + prompt.user + "gemma4:latest").encode())
+    entry = cache / f"{digest.hexdigest()}.json"
+    entry.write_text("{corrupt")
+    provider = OllamaProvider(
+        "gemma4:latest", cache_dir=cache, base_url="http://127.0.0.1:1"
+    )
+    outcomes = AutoPipeline(provider).run(items)
+    assert [o.action for o in outcomes] == ["needs_look"]
+    assert outcomes[0].ai_unavailable is True
+    assert not entry.exists()
