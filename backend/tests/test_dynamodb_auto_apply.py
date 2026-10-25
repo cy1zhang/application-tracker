@@ -178,6 +178,36 @@ def test_ignore_and_needs_look_leave_application_untouched(env):
     assert env.applications.get(owner_id=OWNER, application_id="app-1").version == 1
 
 
+def test_plan_changed_since_read_is_not_executed_on_create(env, monkeypatch):
+    seed_plan(env)
+    env.client.update_item(
+        TableName="Events",
+        Key={"owner_id": {"S": OWNER}, "event_id": {"S": "gmail#m1"}},
+        UpdateExpression="SET ai_plan.planned_at = :p",
+        ExpressionAttributeValues={":p": {"S": "t1"}},
+    )
+    emails = env.emails()
+    original = emails._get_event_item
+
+    def read_then_replan(owner_id, message_id):
+        item = original(owner_id, message_id)
+        env.client.update_item(
+            TableName="Events",
+            Key={"owner_id": {"S": owner_id}, "event_id": {"S": f"gmail#{message_id}"}},
+            UpdateExpression="SET ai_plan.planned_at = :p",
+            ExpressionAttributeValues={":p": {"S": "t2"}},
+        )
+        return item
+
+    monkeypatch.setattr(emails, "_get_event_item", read_then_replan)
+
+    outcome = run(env, create_decision(), new_id="new-1", emails=emails)
+
+    assert outcome.outcome == "review_required" and outcome.reason == "planned"
+    assert raw_app(env, "new-1") is None
+    assert env.event("m1")["ai_plan"] == {"action": "create", "planned_at": "t2"}
+
+
 def test_execute_overwrites_planned_review_item_but_not_resolved_one(env):
     seed_plan(env)
     seed_plan(env, "m2", resolution="dismissed")

@@ -590,3 +590,33 @@ def test_corrupt_cache_and_ollama_down_gives_needs_look(tmp_path, monkeypatch):
     assert [o.action for o in outcomes] == ["needs_look"]
     assert outcomes[0].ai_unavailable is True
     assert not entry.exists()
+
+
+def test_precision_checks_role_type_against_the_label():
+    labels = {
+        "E1": label("E1", key="a", company="Acme", role_type="internship"),
+        "E2": label("E2", key="b", company="Beta", role_type="internship"),
+        "E3": label("E3", key="c", company="Gamma"),
+    }
+    outcomes = [
+        out("E1", "created", "r1", company="Acme", role_type="internship"),
+        out("E2", "created", "r2", company="Beta", role_type="full_time_new_grad"),
+        out("E3", "created", "r3", company="Gamma", role_type="co_op"),
+    ]
+    assert score(labels, outcomes).precision == pytest.approx(1 / 3)
+
+
+def test_precision_checks_requisition_id_only_when_one_was_written():
+    labels = {
+        "E1": label("E1", key="a", company="Acme", requisition_id="R-1"),
+        "E2": label("E2", key="b", company="Beta", requisition_id="R-2"),
+        "E3": label("E3", key="c", company="Gamma", requisition_id="R-3"),
+        "E4": label("E4", key="d", company="Delta"),
+    }
+    outcomes = [
+        out("E1", "created", "r1", company="Acme", requisition_id="R-1"),
+        out("E2", "created", "r2", company="Beta", requisition_id="R-9"),
+        out("E3", "created", "r3", company="Gamma"),
+        out("E4", "created", "r4", company="Delta", requisition_id="R-4"),
+    ]
+    assert score(labels, outcomes).precision == pytest.approx(2 / 4)

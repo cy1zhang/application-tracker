@@ -66,6 +66,8 @@ class EmailOutcome:
     season: str | None
     year: int | None
     ai_unavailable: bool = False
+    role_type: str | None = None
+    requisition_id: str | None = None
 
 
 class PipelineRun(Protocol):
@@ -111,8 +113,15 @@ def _correct(label: Label, outcome: EmailOutcome, row_keys: dict) -> bool:
         return False
     if row_keys[outcome.row] != {label.application_key}:
         return False
-    return all(
-        getattr(outcome, name) in (None, _value(label, name)) for name in FIELDS
+    if not all(
+        getattr(outcome, name) in (None, _value(label, name))
+        for name in (*FIELDS, "role_type")
+    ):
+        return False
+    return outcome.requisition_id is None or (
+        label.requisition_id is not None
+        and outcome.requisition_id.strip().lower()
+        == label.requisition_id.strip().lower()
     )
 
 
@@ -227,11 +236,15 @@ class CurrentPipeline:
             stored = process_message(
                 OWNER, _payload(content), candidates, emails, escalator=escalator
             )
-            outcome = _outcome(label_id, stored, before, applications)
-            note = client.get_item(
+            event = client.get_item(
                 TableName="Events",
                 Key={"owner_id": {"S": OWNER}, "event_id": {"S": f"gmail#{content.message_id}"}},
-            ).get("Item", {}).get("ai_note", {}).get("S")
+            ).get("Item", {})
+            note = event.get("ai_note", {}).get("S")
+            outcome = _outcome(
+                label_id, stored, before, applications,
+                event.get("requisition_id", {}).get("S"),
+            )
             outcomes.append(replace(outcome, ai_unavailable=note == "ai_unavailable"))
         return outcomes
 
@@ -303,16 +316,19 @@ class AutoPipeline:
         for step, decision, target in simulate_items(steps, [], decide_step):
             empty = {"status": None, "company": None, "role": None, "season": None,
                      "year": None}
+            written = (*FIELDS, "role_type")
             if decision.action == "create":
                 outcome = EmailOutcome(
                     step.label_id, "created", target,
-                    **{**empty, **{n: _value_of(decision.fields.get(n)) for n in FIELDS}},
+                    **{**empty, **{n: _value_of(decision.fields.get(n)) for n in written}},
+                    requisition_id=decision.requisition_id,
                 )
             elif decision.action == "update":
                 outcome = EmailOutcome(
                     step.label_id, "updated", target,
                     **{**empty, **{n: _value_of(decision.fields[n])
-                                   for n in FIELDS if n in decision.fields}},
+                                   for n in written if n in decision.fields}},
+                    requisition_id=decision.requisition_id,
                 )
             else:
                 action = "needs_look" if decision.action == "needs_look" else "ignored"
@@ -335,7 +351,9 @@ def _payload(content: MessageContent) -> dict:
     }})
 
 
-def _outcome(label_id, stored, before, applications) -> EmailOutcome:
+def _outcome(
+    label_id, stored, before, applications, requisition_id=None
+) -> EmailOutcome:
     empty = {"status": None, "company": None, "role": None, "season": None, "year": None}
     if stored.outcome == "review_required":
         return EmailOutcome(label_id, "needs_look", None, **empty)
@@ -343,11 +361,14 @@ def _outcome(label_id, stored, before, applications) -> EmailOutcome:
         after = applications.get(owner_id=OWNER, application_id=stored.application_id)
         old = before.get(stored.application_id)
         changed = {
-            name: _value(after, name) for name in FIELDS
+            name: _value(after, name) for name in (*FIELDS, "role_type")
             if old is None or _value(after, name) != _value(old, name)
         }
+        if changed.get("role_type") == "unknown":
+            del changed["role_type"]
         return EmailOutcome(
-            label_id, "updated", stored.application_id, **{**empty, **changed}
+            label_id, "updated", stored.application_id, **{**empty, **changed},
+            requisition_id=requisition_id,
         )
     return EmailOutcome(label_id, "ignored", None, **empty)
 
