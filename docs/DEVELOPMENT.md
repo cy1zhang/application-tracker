@@ -681,3 +681,25 @@ IDs, and tokens are never printed, and errors print only the exception type.
 Local AWS SSO-style login sessions may need
 `uv run --with "botocore[crt]==1.43.101" python -m scripts.recheck_reviews ...`
 (this does not change `uv.lock`).
+
+## Automatic local analysis
+
+The local worker (`python -m local_tools worker`) can run on a schedule as a
+macOS LaunchAgent. It runs at load and every 30 minutes, and it needs a
+signed-in session and Ollama. Run these from `backend/`.
+
+1. Log in once: `uv run --group local python -m local_tools login`.
+2. Install, check, and read the log:
+
+   ```bash
+   uv run --group local python -m local_tools.launchagent install
+   uv run --group local python -m local_tools.launchagent status
+   tail -f ~/Library/Logs/application-tracker/worker.log
+   ```
+
+   The plist is written to `~/Library/LaunchAgents/com.applicationtracker.worker.plist`
+   with the absolute `uv` path and this `backend/` directory, because launchd
+   has a minimal `PATH`. Re-run `install` after moving the repo or `uv`.
+3. Uninstall: `uv run --group local python -m local_tools.launchagent uninstall`.
+4. A sleeping Mac does not run the job. To let a backlog drain, keep it awake
+   (for example `caffeinate -i`) while on power.
