@@ -221,7 +221,7 @@ test("keeps filters after opening a detail and going back", async () => {
   fireEvent.change(await screen.findByLabelText("Search"), {
     target: { value: "acme" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Acme" }));
+  fireEvent.click(screen.getByRole("button", { name: "Open details for Acme" }));
   fireEvent.click(
     await screen.findByRole("button", { name: "← Back to applications" }),
   );
@@ -246,7 +246,7 @@ test("an older list response does not overwrite a newer one", async () => {
   render(<App />);
 
   async function openAndGoBack() {
-    fireEvent.click(await screen.findByRole("button", { name: "Acme" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open details for Acme" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "← Back to applications" }),
     );

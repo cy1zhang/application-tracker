@@ -33,9 +33,9 @@ export function SheetGrid({ applications, sortKey, direction, onSort, onSelect, 
         ))}</tr></thead>
         <tbody>{applications.map((application) => (
           <tr key={application.application_id}>
-            <td aria-label={application.company ?? UNKNOWN}>
+            <td>
               <EditableCell application={application} field="company" onSaved={onReload} onConflict={onReload} />
-              <button type="button" className="sheet-detail-button" aria-label={application.company ?? UNKNOWN} title="Open details" onClick={() => onSelect(application.application_id)} />
+              <button type="button" className="sheet-detail-button" aria-label={`Open details for ${application.company ?? UNKNOWN}`} title="Open details" onClick={() => onSelect(application.application_id)} />
             </td>
             {(["role", "role_type", "cycle", "status", "application_date"] as EditableField[]).map((field) => (
               <td key={field}><EditableCell application={application} field={field} onSaved={onReload} onConflict={onReload} /></td>

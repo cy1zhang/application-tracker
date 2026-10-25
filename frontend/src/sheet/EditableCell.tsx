@@ -1,4 +1,4 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 
 import { ApiError, updateApplication } from "../api/client";
 import type { Application, ApplicationValues, ApplicationStatus, RoleType, Season } from "../api/types";
@@ -39,8 +39,21 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
   const [year, setYear] = useState("");
   const [error, setError] = useState<string | null>(null);
   const saving = useRef(false);
+  const cancelled = useRef(false);
+  const original = useRef<Application | null>(null);
+  const restoreFocus = useRef(false);
+  const editButton = useRef<HTMLButtonElement>(null);
+
+  useLayoutEffect(() => {
+    if (!editing && restoreFocus.current) {
+      editButton.current?.focus();
+      restoreFocus.current = false;
+    }
+  }, [editing]);
 
   function startEditing() {
+    original.current = { ...application };
+    cancelled.current = false;
     setValue(field === "cycle" ? "" : field === "role_type" ? application.role_type ?? "unknown" : String(application[field] ?? ""));
     setSeason(application.season ?? "");
     setYear(application.year === null ? "" : String(application.year));
@@ -48,16 +61,17 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
     setEditing(true);
   }
 
-  async function save() {
-    if (saving.current) return;
+  async function save(restoreFocusAfterSave: boolean) {
+    if (saving.current || cancelled.current || original.current === null) return;
+    const snapshot = original.current;
     const values: ApplicationValues = {
-      company: application.company,
-      role: application.role,
-      role_type: application.role_type ?? "unknown",
-      season: application.season,
-      year: application.year,
-      status: application.status,
-      application_date: application.application_date,
+      company: snapshot.company,
+      role: snapshot.role,
+      role_type: snapshot.role_type ?? "unknown",
+      season: snapshot.season,
+      year: snapshot.year,
+      status: snapshot.status,
+      application_date: snapshot.application_date,
     };
     if (field === "company" || field === "role") values[field] = value.trim() || null;
     if (field === "role_type") values.role_type = value as RoleType;
@@ -71,14 +85,16 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
       values.season = season || null;
       values.year = year === "" ? null : Number(year);
     }
-    const patch = buildPatch(application, values);
+    const patch = buildPatch(snapshot, values);
     if (patch === null) {
+      restoreFocus.current = restoreFocusAfterSave;
       setEditing(false);
       return;
     }
     saving.current = true;
     try {
-      const saved = await updateApplication(application.application_id, patch);
+      const saved = await updateApplication(snapshot.application_id, patch);
+      restoreFocus.current = restoreFocusAfterSave;
       setEditing(false);
       setError(null);
       await onSaved(saved);
@@ -117,20 +133,22 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      cancelled.current = true;
+      restoreFocus.current = true;
       setEditing(false);
       setError(null);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      void save();
+      void save(true);
     } else if (event.key === "Tab" && focusAdjacent(event.shiftKey)) {
       event.preventDefault();
-      void save();
+      void save(false);
     }
   }
 
   return (
     <span data-sheet-cell className="sheet-cell" onKeyDown={handleKeyDown} onBlur={(event) => {
-      if (editing && !event.currentTarget.contains(event.relatedTarget)) void save();
+      if (editing && !cancelled.current && !event.currentTarget.contains(event.relatedTarget)) void save(event.relatedTarget === null);
     }}>
       {editing ? field === "cycle" ? (
         <span className="sheet-cycle-editor">
@@ -150,7 +168,7 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
       ) : (
         <input aria-label={LABELS[field]} type={field === "application_date" ? "date" : "text"} value={value} onChange={(event) => setValue(event.target.value)} autoFocus />
       ) : (
-        <button type="button" className="sheet-cell-button" aria-label={field === "company" ? "Edit Company" : undefined} title={`Edit ${LABELS[field]}`} onClick={startEditing}>{displayValue(application, field)}</button>
+        <button ref={editButton} type="button" className="sheet-cell-button" aria-label={field === "company" ? "Edit Company" : undefined} title={`Edit ${LABELS[field]}`} onClick={startEditing}>{displayValue(application, field)}</button>
       )}
       {error && <span role="alert" className="sheet-cell-error">{error}</span>}
     </span>
