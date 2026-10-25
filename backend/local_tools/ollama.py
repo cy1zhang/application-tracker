@@ -1,6 +1,7 @@
 """Minimal local Ollama chat client; errors carry only a category, never text."""
 
 import json
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -53,8 +54,17 @@ class OllamaClient:
             raise OllamaFailed("http") from None
         except TimeoutError:
             raise OllamaFailed("timeout") from None
-        except (urllib.error.URLError, ConnectionError):
+        except urllib.error.URLError as error:
+            reason = error.reason
+            if isinstance(reason, TimeoutError):
+                raise OllamaFailed("timeout") from None
+            if isinstance(reason, (ConnectionRefusedError, socket.gaierror)):
+                raise OllamaUnreachable from None
+            raise OllamaFailed("http") from None
+        except ConnectionRefusedError:
             raise OllamaUnreachable from None
+        except ConnectionError:
+            raise OllamaFailed("http") from None
         except Exception:  # noqa: BLE001 - never surface model output
             raise OllamaFailed("invalid_json") from None
         if not isinstance(parsed, dict):

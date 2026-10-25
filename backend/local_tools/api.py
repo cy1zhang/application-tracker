@@ -1,5 +1,6 @@
 """Small authenticated client for the tracker API."""
 
+import http.client
 import json
 import re
 import urllib.error
@@ -64,3 +65,6 @@ class TrackerApi:
                 return json.loads(response.read())
         except urllib.error.HTTPError as error:
             raise ApiError(error.code, _safe_detail(error.read())) from None
+        except (OSError, http.client.HTTPException):
+            # URLError, timeouts and connection resets: a sleeping or offline Mac.
+            raise ApiError(0, "network") from None

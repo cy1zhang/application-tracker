@@ -145,7 +145,7 @@ def test_global_stops(where, spec, stopped):
     summary = run_once(api, FakeOllama(), log=lambda line: None)
     assert summary.stopped == stopped and summary.saved == 0
     assert summary.failed == 0 and summary.skipped == 0
-    assert api.queue == ["m0", "m1"] or api.queue == ["m0", "m1"][0:2]
+    assert api.queue == ["m0", "m1"]
 
 
 def test_queue_listing_failure_stops():
@@ -192,3 +192,59 @@ def test_log_lines_contain_no_payload_text():
     assert lines
     for forbidden in (SENTINEL, "m0", "m1", "m2", "sys", "user"):
         assert forbidden not in text
+
+
+def test_auto_apply_off_on_first_queue_listing_exits_quietly():
+    class Off(FakeApi):
+        def get(self, path, params=None):
+            raise ApiError(409, "auto_apply_off")
+
+    ollama = FakeOllama()
+    summary = run_once(Off([]), ollama, log=lambda line: None)
+    assert summary.stopped == "auto_apply_off" and ollama.calls == 0
+
+
+@pytest.mark.parametrize("where", ["input", "result"])
+def test_single_network_failure_is_per_item(where):
+    api = FakeApi(["m0", "m1"], **{f"fail_{where}": {"m0": (0, "network")}})
+    summary = run_once(api, FakeOllama(), log=lambda line: None)
+    assert (summary.failed, summary.saved, summary.stopped) == (1, 1, None)
+
+
+@pytest.mark.parametrize("where", ["input", "result"])
+def test_three_consecutive_network_failures_stop(where):
+    failing = {f"m{i}": (0, "network") for i in range(4)}
+    api = FakeApi([f"m{i}" for i in range(5)], **{f"fail_{where}": failing})
+    summary = run_once(api, FakeOllama(), log=lambda line: None)
+    assert summary.stopped == "network" and summary.failed == 3
+
+
+def test_network_streak_resets_on_success():
+    fail = {"m0": (0, "network"), "m1": (0, "network"), "m3": (0, "network"),
+            "m4": (0, "network")}
+    api = FakeApi([f"m{i}" for i in range(6)], fail_input=fail)
+    summary = run_once(api, FakeOllama(), log=lambda line: None)
+    assert summary.stopped is None and summary.failed == 4 and summary.saved == 2
+
+
+def test_items_past_a_failed_prefix_are_reached():
+    ids = [f"m{i}" for i in range(30)]
+    api = FakeApi(ids, fail_result={f"m{i}": (422, "x") for i in range(25)})
+    summary = run_once(api, FakeOllama(), log=lambda line: None)
+    assert summary.failed == 25 and summary.saved == 5
+    assert [mid for mid, _ in api.posted] == ids[25:]
+
+
+def test_queue_window_exhausted_stops_instead_of_completing():
+    ids = [f"m{i}" for i in range(200)]
+    api = FakeApi(ids, fail_result={i: (422, "x") for i in ids})
+    summary = run_once(api, FakeOllama(), log=lambda line: None)
+    assert summary.stopped == "queue_window" and summary.saved == 0
+
+
+def test_unknown_detail_is_logged_as_other():
+    lines = []
+    api = FakeApi(["m0"], fail_result={"m0": (422, "leaked text sentinel")})
+    run_once(api, FakeOllama(), log=lines.append)
+    text = "\n".join(lines)
+    assert "sentinel" not in text and "detail=other" in text
