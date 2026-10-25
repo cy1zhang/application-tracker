@@ -85,7 +85,26 @@ def test_generic_sender_without_subject_template_not_filtered(sender, subject):
 
 
 def test_offers_wording_vetoes_marketing_filter():
-    assert filter_reason(msg("Acme <offers@acme.test>", "Your offers are ready")) is None
+    sender = "Acme <noreply@acme.test>"
+    assert filter_reason(msg(sender, "Spring savings")) == "marketing"
+    assert filter_reason(msg(sender, "Spring savings on your offers")) is None
+
+
+def test_indeed_rejection_is_not_filtered_as_job_alert():
+    m = msg("Indeed <noreply@indeed.com>", "An update on your job",
+            "We regret to inform you that you were not selected.")
+    assert filter_reason(m) is None
+    assert filter_reason(msg("Indeed <noreply@indeed.com>", "An update")) == "job_alert"
+
+
+@pytest.mark.parametrize("phrase", [
+    "regret to inform", "not selected", "not be moving forward",
+    "moving forward with other", "other candidates", "next steps",
+    "application status", "coding challenge", "HackerRank", "CodeSignal",
+])
+def test_new_veto_phrases(phrase):
+    m = msg("Indeed <noreply@indeed.com>", "An update", f"Note: {phrase} today.")
+    assert filter_reason(m) is None
 
 
 def test_sender_case_insensitive_and_bare_address():

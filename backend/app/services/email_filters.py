@@ -16,7 +16,10 @@ VETO_BODY_CHARS = 1000
 
 # Application wording in the subject or the start of the body keeps the email.
 VETO_PATTERNS = re.compile(
-    r"your application|thank you for applying|interview|assessment|\boffers?\b|unfortunately",
+    r"your application|thank you for applying|interview|assessment|\boffers?\b"
+    r"|unfortunately|regret to inform|not selected|not be moving forward"
+    r"|moving forward with other|other candidates|next steps|application status"
+    r"|coding challenge|hackerrank|codesignal",
     re.IGNORECASE,
 )
 
