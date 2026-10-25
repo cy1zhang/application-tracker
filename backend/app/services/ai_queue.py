@@ -9,11 +9,16 @@ from app.repositories.dynamodb_email import (
     is_queued,
 )
 from app.repositories.dynamodb_reviews import GmailConnectionChanged
-from app.services.ai_extraction import build_prompt, validate_extraction
+from app.services.ai_extraction import (
+    InvalidExtraction,
+    build_prompt,
+    validate_extraction,
+)
 from app.services.auto_apply import MessageRef, decide
 from app.services.local_review_ai import (
     LocalAiConnectionChanged,
     LocalAiInput,
+    LocalAiMessageUnavailable,
     LocalAiNotFound,
     LocalAiStale,
     fetch_owner_message,
@@ -76,7 +81,7 @@ class AiQueueService:
     def prepare(self, owner_id: str, message_id: str) -> LocalAiInput:
         self._mode(owner_id)
         item = self._queued_item(owner_id, message_id)
-        message, generation = self._fetch_message(owner_id, message_id)
+        message, generation = self._fetch_queued(owner_id, message_id)
         if item.get("thread_id") not in {None, message.thread_id}:
             raise LocalAiStale
         prompt = build_prompt(message, load_candidates(owner_id, self._applications))
@@ -110,12 +115,16 @@ class AiQueueService:
             )
         if not is_queued(item):
             raise LocalAiNotFound
-        message, _ = self._fetch_message(owner_id, message_id, generation)
+        message, _ = self._fetch_queued(owner_id, message_id, generation)
         if item.get("thread_id") not in {None, message.thread_id}:
             raise LocalAiStale
         candidates = load_candidates(owner_id, self._applications)
-        # Raises InvalidExtraction; the route maps it to a body-free 422.
-        extraction = validate_extraction(raw, build_prompt(message, candidates))
+        try:
+            extraction = validate_extraction(raw, build_prompt(message, candidates))
+        except InvalidExtraction:
+            # Bounded retries; the route maps this to a body-free 422.
+            self._emails.record_invalid_output(owner_id, message_id)
+            raise
         try:
             self._emails.save_plan(
                 owner_id, message_id, extraction=extraction, model=model,
@@ -159,6 +168,13 @@ class AiQueueService:
         if item is None or not is_queued(item):
             raise LocalAiNotFound
         return item
+
+    def _fetch_queued(self, owner_id, message_id, expected_generation=None):
+        try:
+            return self._fetch_message(owner_id, message_id, expected_generation)
+        except LocalAiMessageUnavailable:
+            self._emails.ignore_unavailable_queued(owner_id, message_id)
+            raise
 
     def _fetch_message(self, owner_id, message_id, expected_generation=None):
         return fetch_owner_message(

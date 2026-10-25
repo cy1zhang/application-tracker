@@ -366,3 +366,67 @@ def test_response_reports_stored_outcome_when_application_went_stale(env, monkey
     assert response.status_code == 200
     assert response.json() == {"planned": True, "executed": True, "action": "needs_look"}
     assert item(env, "m1")["outcome"] == "review_required"
+
+
+def _unavailable(env):
+    from app.services.gmail_fetch import MessageUnavailable
+
+    def gone(access_token, message_id):
+        raise MessageUnavailable
+
+    env.fetch.get_message = gone
+
+
+def test_unavailable_message_leaves_the_queue_on_input(env) -> None:
+    env.client.put_item(TableName="Events", Item={
+        "owner_id": {"S": "user-a"}, "event_id": {"S": "gmail#old"},
+        "source_message_id": {"S": "old"}, "outcome": {"S": "ignored"},
+        "reason": {"S": "no_event"}, "received_at": {"S": NOW.isoformat()},
+        "ai_backfill": {"BOOL": True},
+    })
+    queue(env, "m1")
+    _unavailable(env)
+
+    for message_id in ("m1", "old"):
+        response = env.api.get(f"/ai-queue/{message_id}/input")
+        assert response.status_code == 503
+        assert response.json() == {"detail": "message_unavailable"}
+        stored = item(env, message_id)
+        assert (stored["outcome"], stored["reason"]) == ("ignored", "message_unavailable")
+        assert "ai_backfill" not in stored
+    assert env.api.get("/ai-queue").json() == {"items": [], "remaining": 0}
+
+
+def test_unavailable_message_leaves_the_queue_on_result(env) -> None:
+    queue(env, "m1")
+    _unavailable(env)
+
+    response = post_result(env, "m1")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "message_unavailable"}
+    assert item(env, "m1")["reason"] == "message_unavailable"
+    assert env.api.get("/ai-queue").json()["remaining"] == 0
+
+
+def test_three_invalid_outputs_send_the_item_to_review(env) -> None:
+    from app.repositories.dynamodb_reviews import DynamoReviewRepository
+
+    queue(env, "m1")
+    bad = {"generation": 1, "model": "m", "extraction": {"company": "x"}}
+
+    for attempt in (1, 2):
+        assert env.api.post("/ai-queue/m1/result", json=bad).status_code == 422
+        assert item(env, "m1")["ai_attempts"] == attempt
+        assert env.api.get("/ai-queue").json()["remaining"] == 1
+    assert env.api.post("/ai-queue/m1/result", json=bad).status_code == 422
+
+    stored = item(env, "m1")
+    assert stored["outcome"] == "review_required"
+    assert (stored["reason"], stored["rule_reason"]) == ("needs_look", "ai_invalid_output")
+    assert "ai_backfill" not in stored and "ai_plan" not in stored
+    assert env.api.get("/ai-queue").json() == {"items": [], "remaining": 0}
+    reviews = DynamoReviewRepository(
+        client=env.client, applications_table="Applications", events_table="Events"
+    ).list_pending(owner_id="user-a", limit=10, cursor=None)
+    assert [review.message_id for review in reviews.items] == ["m1"]

@@ -273,6 +273,64 @@ class DynamoEmailRepository:
             marked += 1
         return marked
 
+    def _update_queued(
+        self, owner_id: str, message_id: str, update: str, values: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Update an item only while it is still queued; None when it is not."""
+        try:
+            response = self._client.update_item(
+                TableName=self._events_table,
+                Key=self._encode(
+                    {"owner_id": owner_id, "event_id": f"gmail#{message_id}"}
+                ),
+                UpdateExpression=update,
+                ConditionExpression=(
+                    "attribute_exists(event_id) AND attribute_not_exists(ai_plan) "
+                    "AND attribute_not_exists(resolution) "
+                    "AND (#outcome = :pending OR ai_backfill = :true)"
+                ),
+                ExpressionAttributeNames={
+                    name: name[1:] for name in ("#outcome", "#reason")
+                    if name in update or name == "#outcome"
+                },
+                ExpressionAttributeValues=self._encode({
+                    ":pending": "pending_ai", ":true": True, **values,
+                }),
+                ReturnValues="ALL_NEW",
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+            return None
+        return self._decode(response["Attributes"])
+
+    def ignore_unavailable_queued(self, owner_id: str, message_id: str) -> None:
+        """Take a queued item whose Gmail message is gone out of the queue."""
+        self._update_queued(
+            owner_id, message_id,
+            "SET #outcome = :ignored, #reason = :reason REMOVE ai_backfill",
+            {":ignored": "ignored", ":reason": "message_unavailable"},
+        )
+
+    def record_invalid_output(
+        self, owner_id: str, message_id: str, *, max_attempts: int = 3
+    ) -> None:
+        """Count an invalid model output; the last allowed one goes to review."""
+        item = self._update_queued(
+            owner_id, message_id, "ADD ai_attempts :one", {":one": 1}
+        )
+        if item is None or int(item["ai_attempts"]) < max_attempts:
+            return
+        self._update_queued(
+            owner_id, message_id,
+            "SET #outcome = :review, #reason = :needs_look, "
+            "rule_reason = :rule REMOVE ai_backfill",
+            {
+                ":review": "review_required", ":needs_look": "needs_look",
+                ":rule": "ai_invalid_output",
+            },
+        )
+
     def save_plan(
         self, owner_id: str, message_id: str, *, extraction: ValidatedExtraction,
         model: str, generation: int, planned_at: datetime,
