@@ -109,3 +109,31 @@ def test_install_fails_without_uv(tmp_path, monkeypatch):
     plist = tmp_path / "x.plist"
     assert launchagent.install(tmp_path, plist_path=plist, uid=1) == 1
     assert not plist.exists() and not ran
+
+
+def test_install_creates_private_log_before_bootstrap(tmp_path, monkeypatch):
+    calls = _fake_launchctl(monkeypatch, {"print": 113})
+    log = tmp_path / "logs" / "w.log"
+    seen = {}
+    monkeypatch.setattr(
+        launchagent, "_launchctl",
+        lambda *args: seen.update(exists=log.exists()) or calls.append(list(args)) or 0,
+    )
+
+    assert launchagent.install(tmp_path, plist_path=tmp_path / "x.plist", uid=1, log_path=log) == 0
+
+    assert seen["exists"] is True
+    assert log.parent.stat().st_mode & 0o777 == 0o700
+    assert log.stat().st_mode & 0o777 == 0o600
+
+
+def test_install_tightens_an_existing_log_file(tmp_path, monkeypatch):
+    _fake_launchctl(monkeypatch, {"print": 113})
+    log = tmp_path / "w.log"
+    log.write_text("old\n")
+    log.chmod(0o644)
+
+    launchagent.install(tmp_path, plist_path=tmp_path / "x.plist", uid=1, log_path=log)
+
+    assert log.stat().st_mode & 0o777 == 0o600
+    assert log.read_text() == "old\n"

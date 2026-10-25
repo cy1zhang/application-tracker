@@ -45,6 +45,8 @@ def install(
     uid = os.getuid() if uid is None else uid
     plist_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.close(os.open(log_path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600))
+    log_path.chmod(0o600)  # launchd opens this file; keep it private
     if status(uid=uid) == 0:  # already loaded: replace it
         code = _launchctl("bootout", f"gui/{uid}", str(plist_path))
         if code not in (0, *NOT_LOADED_CODES):
