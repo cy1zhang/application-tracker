@@ -1,6 +1,6 @@
 # Handoff: automatic tracking (overnight run)
 
-**Updated:** 2026-10-25 ~08:15 UTC (about 4:15 am Indiana)
+**Updated:** 2026-10-25 ~11:25 UTC (about 7:25 am Indiana)
 
 **Branch:** `claude/auto-apply-sheet`, stacked on `codex/local-ollama-review` and the earlier milestone branches. Unmerged and not pushed.
 
@@ -9,7 +9,10 @@
 ## What is running right now
 
 - The local worker (`python -m local_tools worker --until-empty`) is analyzing the backlog with Ollama on this Mac. The tracker is in mode **`on`**, so each analyzed email is applied straight away, oldest first.
-- Progress at 08:12 UTC: **16 applications** (15 applied, 1 rejected), with **1,014 emails** still to analyze. The pace was about 13–20 s per email while the Mac was otherwise idle.
+- Progress at 11:24 UTC: **135 applications** (111 applied, 24 rejected), with **625 emails** still to analyze, at about 25–35 s per email. Expected to finish around 16:30 UTC (12:30 pm Indiana).
+- Checks on the live data, counts only:
+  - 0 duplicate rows.
+  - On the overlap with the answer key, 26 of 26 created rows had the right company and status.
 - Check progress:
   ```bash
   cd backend && PYTHONPATH=. uv run --group local python /private/tmp/claude-501/-Users-alexz-application-tracker/aaf4cbf0-9d72-45a3-8783-765a5691b3a5/scratchpad/status.py
@@ -32,13 +35,22 @@
 
 - **Plan 2, automatic pipeline:** filters, kind, matching (requisition id with company check, role-type compatibility), create/update decisions, AI queue, plan report and apply, undo, and the scorer.
 - **Plan 3, Mac worker:** the worker loop, the CLI with lock and exit codes, the LaunchAgent code (**not installed**), and the browser panel on the AI queue.
-- **Plan 4, spreadsheet view (layout B):** the grid with sorting and click-to-edit, AI markers with Undo, the Needs a look and AI changes tabs, the row menu (history, merge, delete), the plan banner, and Settings behind a button.
+- **Plan 4, spreadsheet view (layout B):** the grid with sorting and click-to-edit, AI markers with Undo, the Needs a look and AI changes tabs, the row menu (history, merge, delete), the plan banner, and Settings behind a button. The deployed version is `11678eb`; the final fixes are not yet deployed.
 - **Tests at head:** about 1,213 backend and 221 frontend, with ruff, ESLint, TypeScript, the build, SAM lint, the deploy tests and the evaluation gate all green.
+
+## Morning steps (in order)
+
+1. Owner runs `aws login --profile application-tracker-bootstrap --region us-east-1`. The session expired around 11:20 UTC, which blocked the deploy.
+2. Deploy these commits, which are already committed and reviewed:
+   - `88a6005`: narrows the prompt-injection guard so AI company names stop dropping statuses, and accepts "under review" wording.
+   - `c973048` and `b3b821e`: Apply is bound to the counts the owner reviewed; save errors survive tab switches; Tab works in Cycle; stale markers are fixed; "Applying…" refreshes.
+   - `3e4f020`: safe LaunchAgent uninstall and reinstall.
+3. Re-queue the emails ignored as `no_status_no_match`. There were 98 at 11:00 UTC. On the answer-key overlap, 19 of 22 are real applications whose status was dropped by the old guard or cues. Remove `ai_plan` and set `ai_backfill` with a conditional update (reason `no_status_no_match`, no resolution, no undone_at). The worker then re-analyzes them with the fixed validator.
 
 ## Not done or needs the owner
 
 1. Install the background worker LaunchAgent (`uv run --group local python -m local_tools launchagent install`). It changes macOS login config, so it waits for the owner's OK.
-2. Final whole-branch Codex reviews of Plans 3 and 4, and the Codex review of Plan 3 Task 3. These were deferred so Ollama gets the CPU overnight.
+2. Plans 3 and 4 are complete and reviewed task by task. Plan 4 also had a final whole-branch Codex review, and its fix wave was re-reviewed clean. The final whole-branch review of Plan 3 is still pending.
 3. Known follow-ups:
    - `POST /ai-queue/backfill` times out at the 15 s Lambda limit on about 1,100 items. Repeating the call finishes the job.
    - The answer-key score has not been re-run with the final validator.
