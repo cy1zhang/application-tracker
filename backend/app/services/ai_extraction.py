@@ -34,7 +34,7 @@ SYSTEM_PROMPT = (
 )
 
 _CUES = {
-    ApplicationStatus.APPLIED: r"applied|application (?:has been )?(?:received|submitted)|thank(?:s| you) for applying|application (?:has been |was )?(?:received|submitted)|received your application|(?:we|have) received your|submitted your application|thank(?:s| you) for (?:your )?(?:application|applying|submitting|your interest|interest in)|application (?:confirmation|for)|successfully (?:applied|submitted)|receipt of your|your application has landed safely with us|thank you for taking the time to (?:submit your application|apply)|we appreciate you taking the time to apply|job application is considered|thank you for your recent application|online application was successfully received",
+    ApplicationStatus.APPLIED: r"applied|application (?:has been )?(?:received|submitted)|thank(?:s| you) for applying|application (?:has been |was )?(?:received|submitted)|received your application|(?:we|have) received your|submitted your application|thank(?:s| you) for (?:your )?(?:application|applying|submitting|your interest|interest in)|application (?:confirmation|for)|successfully (?:applied|submitted)|receipt of your|your application has landed safely with us|thank you for taking the time to (?:submit your application|apply)|we appreciate you taking the time to apply|job application is considered|thank you for your recent application|online application was successfully received|(?:is|are) (?:currently )?under review|being reviewed|review(?:ing)? your application|your application (?:is|will be) (?:being )?reviewed",
     ApplicationStatus.OA_RECEIVED: r"(?:online|technical|coding) assessment|coding challenge|online test|hackerrank|codesignal|assessment",
     ApplicationStatus.INTERVIEWING: r"invite you to (?:an? |the )?(?:\w+ )?interview|schedule (?:an? |your )?(?:\w+ )?interview|interview (?:is )?(?:scheduled|confirmed)|next round of interviews|(?:invite|invitation|invited|schedule|scheduled|scheduling|confirm|next|first|phone|video|virtual|technical|onsite|on-site|final|your|an|the) (?:\w+ )?interview|interview (?:invitation|request|with|for|is scheduled|has been scheduled)|phone screen|recruiter (?:call|screen)|next round|schedule (?:a |an |your )?(?:call|chat|time|meeting)|your availability",
     ApplicationStatus.OFFER: r"pleased to offer|offer (?:you|of employment)|offer letter|extend(?:ing)? (?:you )?an offer|(?:formal|verbal|written) offer",
@@ -57,9 +57,10 @@ _NEGATION = re.compile(r"\b(?:not|no|never|yet to)\b|n['’]t\b", re.IGNORECASE)
 # Meta-instruction language aimed at an automated reader. A status quote inside
 # such a sentence is the email talking to the model, not reporting an event.
 _INJECTION = re.compile(
-    r"automated (?:reader|system|assistant)s?|\bai\b|assistant|language model|\bllm\b|"
-    r"record (?:the|this) status|set (?:the|this) status|"
-    r"ignore (?:all |any )?(?:previous|prior|above)|instructions?|system prompt",
+    r"automated (?:reader|system|assistant)s?|\b(?:ai|virtual) (?:assistant|model|reader|system)s?\b|"
+    r"language model|\bllm\b|record (?:the|this) status|set (?:the|this) status|"
+    r"ignore (?:all |any )?(?:previous|prior|above)|(?:previous|prior|above|these|system|hidden) instructions?|"
+    r"system prompt",
     re.IGNORECASE,
 )
 
