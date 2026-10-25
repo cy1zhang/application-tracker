@@ -20,7 +20,7 @@
 ## Review Focus
 
 - **The Mac sleeps mid-request.** On wake, the in-flight request fails as a per-item failure. It is retried on the next run, and no duplicate is created, thanks to `save_plan`'s no-existing-plan condition. Covered in Task 1.
-- **Two runs overlap** (LaunchAgent plus a manual run). The second run exits 0 with "already running". A stale lock older than 2 hours is taken over. Covered in Task 2.
+- **Two runs overlap** (LaunchAgent plus a manual run). The second run exits 3 with "already running". A stale lock older than 2 hours is taken over. Covered in Task 2.
 - **Ollama is not running at login.** The worker retries the connection 3 times, 30 s apart, then exits with code 2 without marking items failed. Covered in Task 1.
 - **The refresh token has expired** (30 days). The worker exits with code 4 and the log line `login required`. The browser panel keeps working. Covered in Task 2.
 - **The queue is empty.** One request is made and the worker exits 0 in under 2 s. Ollama is not called and the model is not loaded. Covered in Task 1.
