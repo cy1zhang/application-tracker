@@ -8,16 +8,19 @@ import {
   deleteAccount,
   disconnectGmail,
   getAccountStatus,
+  getAiQueueInput,
   getGmailConnection,
   getLatestSync,
   getLocalAiInput,
   getPlanReport,
   getSettings,
+  listAiQueue,
   listAllApplications,
   setAutoApplyMode,
   startGmailConnection,
   startSync,
   submitLocalAiSuggestion,
+  submitAiQueueResult,
   updateApplication,
 } from "./client";
 
@@ -90,6 +93,30 @@ test("local AI API sends model output only to the selected review", async () => 
   expect(fetchMock.mock.calls[1][0]).toBe("/api/reviews/msg%2F1/local-ai-suggestion");
   expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
     generation: 2, model: "gemma4:latest", extraction: { status: null },
+  });
+});
+
+test("AI queue API reads a bounded page and posts the selected result", async () => {
+  const prepared = { system_prompt: "Synthetic", user_prompt: "Email", format: {}, generation: 2 };
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(fakeResponse({ items: [{ message_id: "msg/1", received_at: null }], remaining: 1 }))
+    .mockResolvedValueOnce(fakeResponse(prepared))
+    .mockResolvedValueOnce(fakeResponse({ planned: true, executed: false, action: null }));
+  vi.stubGlobal("fetch", fetchMock);
+  const signal = new AbortController().signal;
+
+  await expect(listAiQueue(5, signal)).resolves.toMatchObject({ remaining: 1 });
+  await expect(getAiQueueInput("msg/1", signal)).resolves.toEqual(prepared);
+  await expect(submitAiQueueResult("msg/1", {
+    generation: 2, model: "gemma4:latest", extraction: { kind: "application_update" },
+  }, signal)).resolves.toEqual({ planned: true, executed: false, action: null });
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method, init?.signal])).toEqual([
+    ["/api/ai-queue?limit=5", undefined, signal],
+    ["/api/ai-queue/msg%2F1/input", undefined, signal],
+    ["/api/ai-queue/msg%2F1/result", "POST", signal],
+  ]);
+  expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({
+    generation: 2, model: "gemma4:latest", extraction: { kind: "application_update" },
   });
 });
 

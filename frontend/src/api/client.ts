@@ -2,6 +2,8 @@ import type {
   AccountStatus,
   AiSettings,
   AiSettingsUpdate,
+  AiQueuePage,
+  AiQueueResult,
   AiChangePage,
   AutoApplyMode,
   Application,
@@ -176,6 +178,25 @@ export function resolveReview(
 export function getLocalAiInput(messageId: string, signal?: AbortSignal): Promise<LocalAiInput> {
   return request<LocalAiInput>(
     `/reviews/${encodeURIComponent(messageId)}/local-ai-input`, { signal },
+  );
+}
+
+export function listAiQueue(limit: number, signal?: AbortSignal): Promise<AiQueuePage> {
+  return request<AiQueuePage>(`/ai-queue?limit=${limit}`, { signal });
+}
+
+export function getAiQueueInput(messageId: string, signal?: AbortSignal): Promise<LocalAiInput> {
+  return request<LocalAiInput>(`/ai-queue/${encodeURIComponent(messageId)}/input`, { signal });
+}
+
+export function submitAiQueueResult(
+  messageId: string,
+  payload: { generation: number; model: string; extraction: Record<string, unknown> },
+  signal?: AbortSignal,
+): Promise<AiQueueResult> {
+  return request<AiQueueResult>(
+    `/ai-queue/${encodeURIComponent(messageId)}/result`,
+    { method: "POST", body: JSON.stringify(payload), signal },
   );
 }
 

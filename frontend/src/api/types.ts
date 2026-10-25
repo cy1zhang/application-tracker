@@ -189,6 +189,18 @@ export interface LocalAiInput {
   generation: number;
 }
 
+export interface AiQueuePage {
+  items: { message_id: string; received_at: string | null }[];
+  remaining: number;
+}
+
+export interface AiQueueResult {
+  planned: boolean;
+  executed: boolean;
+  action: string | null;
+  deferred?: boolean;
+}
+
 export interface LocalAiSuggestionResult {
   saved: boolean;
   review: ReviewItem | null;
