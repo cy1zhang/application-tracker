@@ -1,6 +1,11 @@
 from datetime import UTC, datetime
 
-from app.domain.applications import Application, ApplicationStatus, Season
+from app.domain.applications import (
+    Application,
+    ApplicationStatus,
+    RoleType,
+    Season,
+)
 from app.services.application_matching import (
     Ambiguous,
     Matched,
@@ -23,13 +28,14 @@ def _candidate(
     year=None,
     thread_ids=(),
     requisition_ids=(),
+    role_type=None,
 ):
     return ApplicationCandidate(
         application=Application(
             application_id=application_id,
             company=company,
             role=role,
-            role_type=None,
+            role_type=role_type,
             season=season,
             year=year,
             status=ApplicationStatus.APPLIED,
@@ -90,7 +96,7 @@ def test_company_suffix_ignored():
 
 
 def test_requisition_beats_name():
-    target = _candidate("app-1", company="Other", role="Data Intern",
+    target = _candidate("app-1", role="Data Intern",
                         requisition_ids={"R-123"})
     decoy = _candidate("app-2")
     result = _match(
@@ -167,3 +173,53 @@ def test_multiple_requisition_matches_ambiguous():
     rows = [_candidate("a", requisition_ids={"R1"}),
             _candidate("b", requisition_ids={"R1"})]
     assert _match(rows, requisition_id="r1") == Ambiguous(2)
+
+
+def test_requisition_match_at_different_company_is_ambiguous():
+    target = _candidate("a", company="Other", requisition_ids={"R1"})
+    result = _match([target], requisition_id="R1", company="Acme")
+    assert result == Ambiguous(1)
+
+
+def test_requisition_match_with_unknown_company_still_matches():
+    target = _candidate("a", company=None, requisition_ids={"R1"})
+    assert _match([target], requisition_id="R1", company="Acme") == Matched(
+        target
+    )
+    target = _candidate("a", requisition_ids={"R1"})
+    assert _match([target], requisition_id="R1") == Matched(target)
+
+
+def test_intern_email_does_not_match_full_time_row():
+    row = _candidate(
+        role="Software Engineer", role_type=RoleType.FULL_TIME_NEW_GRAD
+    )
+    result = _match([row], company="Acme", role="Software Engineer Intern")
+    assert result == NoMatch()
+
+
+def test_swe_intern_still_matches_software_engineering_intern():
+    result = _match([_candidate()], company="Acme", role="SWE Intern")
+    assert isinstance(result, Matched)
+
+
+def test_explicit_role_type_conflicts_with_row_keyword():
+    row = _candidate(role="Software Engineer Intern")
+    result = _match(
+        [row],
+        company="Acme",
+        role="Software Engineer",
+        role_type=RoleType.FULL_TIME_NEW_GRAD,
+    )
+    assert result == NoMatch()
+
+
+def test_roleless_internship_email_matches_only_internship_row():
+    intern = _candidate("i", role="Software Engineering Intern")
+    assert _match([intern], company="Acme", role="Internship") == Matched(intern)
+    full_time = _candidate(
+        "f", role="Software Engineer", role_type=RoleType.FULL_TIME_NEW_GRAD
+    )
+    assert _match([full_time], company="Acme", role="Internship") == NoMatch()
+    both = _match([intern, full_time], company="Acme", role="Internship")
+    assert both == Matched(intern)

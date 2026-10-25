@@ -1,13 +1,18 @@
 import re
 from dataclasses import dataclass
 
-from app.domain.applications import Season
+from app.domain.applications import RoleType, Season
 from app.services.email_rules import ApplicationCandidate
 
 _COMPANY_SUFFIXES = {"inc", "llc", "ltd", "corp", "corporation", "co"}
 _ROLE_NOISE = re.compile(
     r"\b(?:intern|internship|coop|summer|fall|spring|winter|\d{4})\b"
 )
+
+
+_INTERN = re.compile(r"\b(?:intern|internship)\b")
+_CO_OP = re.compile(r"\bco-?op\b")
+_FULL_TIME = re.compile(r"\b(?:new[- ]grad|full[- ]time)\b")
 
 
 @dataclass(frozen=True)
@@ -53,6 +58,19 @@ def _outcome(found: list[ApplicationCandidate]) -> MatchResult | None:
     return None
 
 
+def _role_type(explicit: RoleType | None, role: str | None) -> RoleType | None:
+    if explicit is not None and explicit != RoleType.UNKNOWN:
+        return explicit
+    text = (role or "").lower()
+    if _CO_OP.search(text):
+        return RoleType.CO_OP
+    if _INTERN.search(text):
+        return RoleType.INTERNSHIP
+    if _FULL_TIME.search(text):
+        return RoleType.FULL_TIME_NEW_GRAD
+    return None
+
+
 def _compatible(left, right) -> bool:
     return left is None or right is None or left == right
 
@@ -66,19 +84,28 @@ def match_application(
     role: str | None,
     season: Season | None,
     year: int | None,
+    role_type: RoleType | None = None,
 ) -> MatchResult:
     requisition = requisition_id.strip().lower() if requisition_id else ""
     if requisition:
-        result = _outcome(
-            [
+        by_requisition = [
+            c
+            for c in candidates
+            if requisition in {r.strip().lower() for r in c.requisition_ids}
+        ]
+        if by_requisition:
+            email_name = normalize_company(company) if company else None
+            compatible = [
                 c
-                for c in candidates
-                if requisition
-                in {r.strip().lower() for r in c.requisition_ids}
+                for c in by_requisition
+                if _compatible(
+                    normalize_company(c.application.company)
+                    if c.application.company
+                    else None,
+                    email_name or None,
+                )
             ]
-        )
-        if result:
-            return result
+            return _outcome(compatible) or Ambiguous(1)
 
     if thread_id:
         result = _outcome([c for c in candidates if thread_id in c.thread_ids])
@@ -88,11 +115,15 @@ def match_application(
     email_company = normalize_company(company) if company else ""
     if not email_company:
         return NoMatch()
+    email_type = _role_type(role_type, role)
     same_company = [
         c
         for c in candidates
         if c.application.company
         and normalize_company(c.application.company) == email_company
+        and _compatible(
+            _role_type(c.application.role_type, c.application.role), email_type
+        )
     ]
     email_role = normalize_role(role) if role else ""
     if not email_role:

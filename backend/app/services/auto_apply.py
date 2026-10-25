@@ -76,6 +76,7 @@ def decide(
         role=extraction.role,
         season=extraction.season,
         year=extraction.year,
+        role_type=extraction.employment_type,
     )
     if isinstance(match, Ambiguous):
         return AutoDecision("needs_look", "ambiguous_match", None, {})

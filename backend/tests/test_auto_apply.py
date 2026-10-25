@@ -262,3 +262,18 @@ def test_update_fills_missing_role():
     d = decide(extraction(), message_ref=REF, candidates=[c])
     assert d.action == "update"
     assert d.fields == {"role": "Software Engineering Intern"}
+
+
+def test_requisition_match_at_different_company_needs_look():
+    c = ApplicationCandidate(
+        application=candidate().application.model_copy(
+            update={"company": "Globex"}
+        ),
+        requisition_ids=frozenset({"R-1"}),
+    )
+    d = decide(
+        extraction(requisition_id="R-1"),
+        message_ref=MessageRef("m1", None, NOW),
+        candidates=[c],
+    )
+    assert (d.action, d.reason) == ("needs_look", "ambiguous_match")
