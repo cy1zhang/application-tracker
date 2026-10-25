@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 import { createApplication, listAiChanges } from "../api/client";
-import type { AiChange, Application, ApplicationCreate, ApplicationValues, ReviewItem } from "../api/types";
+import type { AiChange, Application, ApplicationCreate, ApplicationValues, AutoApplyMode, ReviewItem } from "../api/types";
 import { ApplicationDetail } from "../applications/ApplicationDetail";
 import { ApplicationForm } from "../applications/ApplicationForm";
 import { ALL, DEFAULT_FILTERS, UNKNOWN_VALUE, filterApplications, yearOptions, type Filters } from "../applications/filtering";
 import { ROLE_TYPE_LABELS, SEASON_LABELS, STATUS_LABELS, UNKNOWN } from "../applications/labels";
 import { ReviewQueue } from "../reviews/ReviewQueue";
 import { AiChangesTab } from "./AiChangesTab";
+import { PlanBanner } from "./PlanBanner";
 import { SettingsPanel } from "./SettingsPanel";
 import { SheetGrid } from "./SheetGrid";
 import { latestAiFieldChanges } from "./aiMarkers";
@@ -17,7 +18,7 @@ type Props = {
   applications: Application[];
   reviews: ReviewItem[];
   onReload: () => Promise<void> | void;
-  mode: "plan" | "live";
+  mode: AutoApplyMode | "live";
   onAccountDeleted?: () => void;
   reviewError?: string | null;
 };
@@ -25,7 +26,8 @@ type Props = {
 const TAB_ORDER = ["applications", "reviews", "ai"] as const;
 type SheetTab = typeof TAB_ORDER[number];
 
-export function Sheet({ applications, reviews, onReload, onAccountDeleted, reviewError }: Props) {
+export function Sheet({ applications, reviews, onReload, mode, onAccountDeleted, reviewError }: Props) {
+  const [autoApplyMode, setAutoApplyMode] = useState<AutoApplyMode>(mode === "live" ? "on" : mode);
   const [tab, setTab] = useState<SheetTab>("applications");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -39,6 +41,8 @@ export function Sheet({ applications, reviews, onReload, onAccountDeleted, revie
   const [aiRevision, setAiRevision] = useState(0);
   const visible = sortApplications(filterApplications(applications, filters), sortKey, direction);
   const markers = useMemo(() => latestAiFieldChanges(aiChanges), [aiChanges]);
+
+  useEffect(() => { setAutoApplyMode(mode === "live" ? "on" : mode); }, [mode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,7 +125,8 @@ export function Sheet({ applications, reviews, onReload, onAccountDeleted, revie
               <button type="button" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>Settings</button>
             </div>
           </div>
-          {settingsOpen && <SettingsPanel reviews={reviews} onReload={onReload} onAccountDeleted={onAccountDeleted} />}
+          {settingsOpen && <SettingsPanel reviews={reviews} onReload={onReload} onAccountDeleted={onAccountDeleted} autoApplyMode={autoApplyMode} onModeChange={setAutoApplyMode} />}
+          {autoApplyMode === "plan" && <PlanBanner mode={autoApplyMode} />}
           <div id="sheet-panel-applications" className="sheet-page" role="tabpanel" aria-labelledby="sheet-tab-applications" tabIndex={0} hidden={tab !== "applications"}>
             {tab === "applications" && <>
               <div className="filters sheet-filters">

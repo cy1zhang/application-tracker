@@ -3,6 +3,7 @@ import type {
   AiSettings,
   AiSettingsUpdate,
   AiChangePage,
+  AutoApplyMode,
   Application,
   ApplicationCreate,
   ApplicationEvent,
@@ -11,6 +12,7 @@ import type {
   LocalAiInput,
   LocalAiSuggestionResult,
   MergeRequest,
+  PlanReportResponse,
   ReviewItem,
   ReviewPage,
   ReviewResolution,
@@ -216,7 +218,23 @@ export function startSync(): Promise<SyncRun> {
 }
 
 export async function getSettings(): Promise<AiSettings> {
-  return (await request<{ ai: AiSettings }>("/settings")).ai;
+  const settings = await request<{ ai: AiSettings; auto_apply_mode: AutoApplyMode }>("/settings");
+  return { ...settings.ai, auto_apply_mode: settings.auto_apply_mode };
+}
+
+export function getPlanReport(): Promise<PlanReportResponse> {
+  return request<PlanReportResponse>("/ai-plan/report");
+}
+
+export function applyPlan(): Promise<{ queued: boolean }> {
+  return request<{ queued: boolean }>("/ai-plan/apply", { method: "POST" });
+}
+
+export function setAutoApplyMode(mode: "off" | "plan"): Promise<{ auto_apply_mode: AutoApplyMode }> {
+  return request<{ auto_apply_mode: AutoApplyMode }>("/settings/auto-apply", {
+    method: "PUT",
+    body: JSON.stringify({ mode }),
+  });
 }
 
 export async function saveAiSettings(payload: AiSettingsUpdate): Promise<AiSettings> {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { ApiError, listAllApplications, listAllReviews } from "./api/client";
-import type { Application, ReviewItem } from "./api/types";
+import { ApiError, getSettings, listAllApplications, listAllReviews } from "./api/client";
+import type { Application, AutoApplyMode, ReviewItem } from "./api/types";
 import { DeleteAccount } from "./settings/DeleteAccount";
 import { SettingsPanel } from "./sheet/SettingsPanel";
 import { Sheet } from "./sheet/Sheet";
@@ -19,6 +19,7 @@ function App({ email, onSignOut, onAccountDeleted }: AppProps) {
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [autoApplyMode, setAutoApplyMode] = useState<AutoApplyMode>("off");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   // Loads can overlap; only the most recently started one may update state.
@@ -80,6 +81,7 @@ function App({ email, onSignOut, onAccountDeleted }: AppProps) {
   useEffect(() => {
     void loadApplications();
     void loadReviews();
+    void getSettings().then((settings) => setAutoApplyMode(settings.auto_apply_mode ?? "off")).catch(() => {});
   }, []);
 
   return (
@@ -116,7 +118,7 @@ function App({ email, onSignOut, onAccountDeleted }: AppProps) {
               </div>
               {email && onSignOut && (
                 <><button type="button" onClick={() => setErrorSettingsOpen((open) => !open)}>Settings</button>
-                {errorSettingsOpen && <SettingsPanel reviews={reviews} onReload={refreshAfterReview} onAccountDeleted={() => onAccountDeleted?.()} />}</>
+                {errorSettingsOpen && <SettingsPanel reviews={reviews} onReload={refreshAfterReview} onAccountDeleted={() => onAccountDeleted?.()} autoApplyMode={autoApplyMode} onModeChange={setAutoApplyMode} />}</>
               )}
             </>
           ) : applications === null ? (
@@ -126,7 +128,7 @@ function App({ email, onSignOut, onAccountDeleted }: AppProps) {
               applications={applications}
               reviews={reviews}
               onReload={refreshAfterReview}
-              mode="live"
+              mode={autoApplyMode}
               reviewError={reviewError}
               onAccountDeleted={email && onSignOut ? () => onAccountDeleted?.() : undefined}
             />

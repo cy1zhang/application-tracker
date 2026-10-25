@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import { makeApplication } from "../test/fixtures";
 import {
   ApiError,
+  applyPlan,
   createApplication,
   deleteAccount,
   disconnectGmail,
@@ -10,7 +11,10 @@ import {
   getGmailConnection,
   getLatestSync,
   getLocalAiInput,
+  getPlanReport,
+  getSettings,
   listAllApplications,
+  setAutoApplyMode,
   startGmailConnection,
   startSync,
   submitLocalAiSuggestion,
@@ -169,6 +173,29 @@ test("sync API starts work and reads the latest status", async () => {
   expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
     ["/api/syncs", "POST"], ["/api/syncs/latest", undefined],
   ]);
+});
+
+test("plan API reads the report and sends the approved mode and apply requests", async () => {
+  const plan = { analyzed: 2, waiting: 0, report: { counts: { create: 1 }, reasons: {}, sample: [] } };
+  const ai = { available_providers: [], enabled: false };
+  const fetchMock = vi.fn()
+    .mockResolvedValueOnce(fakeResponse({ ai, auto_apply_mode: "off" }))
+    .mockResolvedValueOnce(fakeResponse({ ai, auto_apply_mode: "plan" }))
+    .mockResolvedValueOnce(fakeResponse(plan))
+    .mockResolvedValueOnce(fakeResponse({ queued: true }, 202));
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(getSettings()).resolves.toMatchObject({ auto_apply_mode: "off" });
+  await expect(setAutoApplyMode("plan")).resolves.toMatchObject({ auto_apply_mode: "plan" });
+  await expect(getPlanReport()).resolves.toEqual(plan);
+  await expect(applyPlan()).resolves.toEqual({ queued: true });
+  expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
+    ["/api/settings", undefined],
+    ["/api/settings/auto-apply", "PUT"],
+    ["/api/ai-plan/report", undefined],
+    ["/api/ai-plan/apply", "POST"],
+  ]);
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ mode: "plan" });
 });
 
 test("account API sends the DELETE confirmation body and reads status", async () => {

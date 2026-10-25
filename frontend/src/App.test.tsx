@@ -11,6 +11,7 @@ import {
   listApplicationEvents,
   getAccountStatus,
   getGmailConnection,
+  getPlanReport,
   getSettings,
 } from "./api/client";
 import type { Application } from "./api/types";
@@ -28,6 +29,7 @@ vi.mock("./api/client", async (importOriginal) => {
     updateApplication: vi.fn(),
     getAccountStatus: vi.fn(),
     getGmailConnection: vi.fn(),
+    getPlanReport: vi.fn(),
     getSettings: vi.fn(),
   };
 });
@@ -61,6 +63,20 @@ test("shows all applications in the sheet by default", async () => {
   expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "Globex" })).toBeInTheDocument();
   expect(screen.getByRole("tab", { name: "Applications (2)" })).toBeInTheDocument();
+});
+
+test("shows the plan banner when settings reports plan mode", async () => {
+  vi.mocked(listAllApplications).mockResolvedValue([]);
+  vi.mocked(getSettings).mockResolvedValue({
+    available_providers: [], hugging_face_host: null, provider: null, key_hint: null, enabled: false,
+    key_status: null, requests_today: 0, daily_limit: 50, usage_day: "2026-10-20",
+    auto_apply_mode: "plan",
+  });
+  vi.mocked(getPlanReport).mockResolvedValue({ analyzed: 2, waiting: 1, report: { counts: {}, reasons: {}, sample: [] } });
+
+  render(<App />);
+
+  expect(await screen.findByText("AI analyzed 2 of 3 emails")).toBeInTheDocument();
 });
 
 test("filters, searches, and explains empty results", async () => {

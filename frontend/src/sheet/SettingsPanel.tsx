@@ -1,22 +1,26 @@
 import { useRef, useState } from "react";
 
-import type { ReviewItem } from "../api/types";
+import type { AutoApplyMode, ReviewItem } from "../api/types";
 import { GmailConnection } from "../gmail/GmailConnection";
 import { LocalOllamaPanel } from "../reviews/LocalOllamaPanel";
 import { AiSettings } from "../settings/AiSettings";
 import { DeleteAccount } from "../settings/DeleteAccount";
+import { PlanBanner } from "./PlanBanner";
 
 type Props = {
   reviews: ReviewItem[];
   onReload: () => Promise<void> | void;
   onAccountDeleted?: () => void;
+  autoApplyMode?: AutoApplyMode;
+  onModeChange?: (mode: AutoApplyMode) => void;
 };
 
-export function SettingsPanel({ reviews, onReload, onAccountDeleted }: Props) {
+export function SettingsPanel({ reviews, onReload, onAccountDeleted, autoApplyMode, onModeChange }: Props) {
   const [showOllama, setShowOllama] = useState(false);
   const failedIds = useRef(new Set<string>());
   return (
     <section className="sheet-settings" aria-label="Settings panel">
+      {autoApplyMode === "off" && <PlanBanner mode="off" onModeChange={onModeChange} />}
       <GmailConnection />
       <AiSettings />
       <div className="sheet-ollama">

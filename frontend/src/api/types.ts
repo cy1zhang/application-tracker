@@ -14,6 +14,32 @@ export type ApplicationStatus =
 export type EventType = "created" | "updated" | "deleted" | "attached" | "merged";
 export type EventOrigin = "user" | "rules" | "ai";
 export type FieldValue = string | number | null;
+export type AutoApplyMode = "off" | "plan" | "on";
+
+export interface PlanLine {
+  message_id: string;
+  action: "create" | "update" | "ignore" | "needs_look";
+  reason: string;
+  company: string | null;
+  role: string | null;
+  status: ApplicationStatus | null;
+  season: Season | null;
+  year: number | null;
+  target: string | null;
+  subject: string | null;
+  sender: string | null;
+  source_url: string | null;
+}
+
+export interface PlanReportResponse {
+  analyzed: number;
+  waiting: number;
+  report: {
+    counts: Record<string, number>;
+    reasons: Record<string, number>;
+    sample: PlanLine[];
+  };
+}
 
 export interface Application {
   application_id: string;
@@ -132,6 +158,7 @@ export interface AiProposal {
 export type AiProviderName = "openai" | "anthropic" | "gemini" | "huggingface";
 
 export interface AiSettings {
+  auto_apply_mode?: AutoApplyMode;
   available_providers: AiProviderName[];
   hugging_face_host: string | null;
   provider: AiProviderName | null;
