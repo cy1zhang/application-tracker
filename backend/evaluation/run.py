@@ -189,8 +189,10 @@ def evaluate_auto(scenarios: list[dict]) -> AutoEvaluation:
             key = f"{scenario['id']}:{want['key']}" if want["key"] else None
             labels[label_id] = Label(
                 id=label_id, kind=want["kind"], company=want["company"],
-                role=want["role"], role_type=None, season=want["season"],
-                year=want["year"], status=want["status"], requisition_id=None,
+                role=want["role"], role_type=want.get("role_type"),
+                season=want["season"],
+                year=want["year"], status=want["status"],
+                requisition_id=want.get("requisition_id"),
                 application_key=key,
             )
             expected[label_id] = want["action"]
