@@ -452,3 +452,19 @@ def test_stored_proposal_without_kind_still_reads():
 def test_prompt_exempts_kind_from_quote_rule():
     system = _prompt("body").system
     assert "For every non-null field except kind, copy a short exact quote" in system
+
+
+@pytest.mark.parametrize(
+    ("status", "quote", "kept"),
+    [
+        ("interviewing", "We would like to invite you to an interview", True),
+        ("interviewing", "we'd like to invite you to an interview", True),
+        ("offer", "We would like to offer you the position", True),
+        ("interviewing", "If selected, we would like to invite you to an interview", False),
+        ("interviewing", "We would be happy to schedule an interview", False),
+        ("interviewing", "You may be invited to interview", False),
+    ],
+)
+def test_would_like_to_is_not_a_hedge(status, quote, kept):
+    result = validate_extraction(_raw(status=(status, quote)), _prompt(quote + "."))
+    assert (result.status is not None) is kept

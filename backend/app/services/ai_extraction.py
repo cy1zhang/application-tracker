@@ -46,6 +46,10 @@ _CUES = {
 }
 
 
+# "would like to" is courtesy phrasing, not a hedge, so it is dropped before the UNCERTAIN check.
+_COURTESY = re.compile(r"\bwould (?:like|love) to\b|['’]d (?:like|love) to\b")
+
+
 # Rejection cues are inherently negative, so REJECTED is exempt from this check.
 _NEGATION = re.compile(r"\b(?:not|no|never|yet to)\b|n['’]t\b", re.IGNORECASE)
 
@@ -195,7 +199,9 @@ def _supports(field: str, value: object, quote: str) -> bool:
         return str(value) in quote
     if field == "season":
         return value.value in lowered
-    if field == "status" and (HYPOTHETICAL.search(quote) or UNCERTAIN.search(quote)):
+    if field == "status" and (
+        HYPOTHETICAL.search(quote) or UNCERTAIN.search(_COURTESY.sub(" ", lowered))
+    ):
         return False
     if field == "status" and value != ApplicationStatus.REJECTED and _NEGATION.search(quote):
         return False
