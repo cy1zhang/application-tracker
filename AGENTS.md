@@ -130,8 +130,19 @@ tables for both the tests and `scripts/create_local_tables.py`.
 
 ## Agent coordination
 
-Claude Code and Codex both work in this repo. The user only makes decisions and
-approves work; the repo, not chat history, carries shared context.
+Claude Code and Codex both work in this repo. The repo, not chat history, carries
+shared context.
+
+- **Decisions.** Agents make implementation and product-detail decisions
+  themselves, within the approved spec. Record each one in the active plan file
+  with its reason and what it costs if wrong. Do not stop to ask. Still ask the
+  owner before you:
+  - merge to `main`;
+  - deploy to production;
+  - delete data permanently;
+  - change the owner's machine or accounts (for example, LaunchAgents or OAuth
+    grants);
+  - send anything to a new external service.
 
 - **Roles.** For each milestone, one agent is the *driver* and the other is the
   *reviewer*. The driver writes the plan and implements it. The reviewer reviews
@@ -160,7 +171,9 @@ approves work; the repo, not chat history, carries shared context.
   - `codex exec -s read-only --ephemeral -o <file> "<prompt>"` for a question;
     the final answer is written to `<file>`
 
-  Pass review findings to the user to decide on; don't apply them automatically.
+  Always pass `</dev/null` to `codex exec`; otherwise it can block waiting on
+  stdin. The driver triages review findings: fix them, or record a ruling in the
+  plan file explaining why not.
 
 ## Product invariants (from PRD / technical design)
 
