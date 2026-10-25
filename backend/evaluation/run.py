@@ -100,13 +100,16 @@ class Fixtures:
     rules: list
     ai: list
     sha256: str
+    auto: list = field(default_factory=list)
 
 
 def load_fixtures(root: Path | None = None) -> Fixtures:
     folder = (root or ROOT) / "fixtures"
-    raw = [(folder / name).read_bytes() for name in ("rules.json", "ai.json")]
+    raw = [
+        (folder / name).read_bytes() for name in ("rules.json", "ai.json", "auto.json")
+    ]
     digest = hashlib.sha256(b"".join(raw)).hexdigest()
-    return Fixtures(json.loads(raw[0]), json.loads(raw[1]), digest)
+    return Fixtures(json.loads(raw[0]), json.loads(raw[1]), digest, json.loads(raw[2]))
 
 
 def load_thresholds(path: Path | None = None) -> dict:
@@ -137,6 +140,72 @@ class RecordedProvider:
 class _Cipher:
     def decrypt(self, owner_id, credential_type, encrypted):
         return "synthetic-evaluation-key"
+
+
+class AutoFixtureProvider:
+    """Replays the recorded output of the message whose body is in the prompt."""
+
+    def __init__(self, messages: list[dict]) -> None:
+        self._recorded = [(m["body"].strip(), m.get("ai_output")) for m in messages]
+
+    def extract(self, api_key, model, prompt_input):
+        for body, output in self._recorded:
+            if output is not None and body in prompt_input.user:
+                if "error" in output:
+                    raise ProviderError(output["error"])
+                return output
+        raise ProviderError("no recorded output")
+
+
+@dataclass(frozen=True)
+class AutoResult:
+    message_id: str
+    expected: str
+    actual: str
+
+
+@dataclass
+class AutoEvaluation:
+    report: object
+    results: list[AutoResult]
+
+
+def evaluate_auto(scenarios: list[dict]) -> AutoEvaluation:
+    """Replay each scenario from zero rows through the automatic pipeline.
+
+    Scoring goes through the answer-key ``score`` so CI and the real-inbox
+    check share one definition of precision and recall.
+    """
+    from app.domain.messages import MessageContent
+    from evaluation.answer_key.labels import Label
+    from evaluation.answer_key.score import AutoPipeline, apply_floors, score
+
+    labels, outcomes, expected = {}, [], {}
+    for scenario in scenarios:
+        items = []
+        for number, message in enumerate(scenario["messages"]):
+            label_id = f"{scenario['id']}/{number}"
+            want = message["expected"]
+            key = f"{scenario['id']}:{want['key']}" if want["key"] else None
+            labels[label_id] = Label(
+                id=label_id, kind=want["kind"], company=want["company"],
+                role=want["role"], role_type=None, season=want["season"],
+                year=want["year"], status=want["status"], requisition_id=None,
+                application_key=key,
+            )
+            expected[label_id] = want["action"]
+            items.append((label_id, MessageContent(
+                message_id=label_id, thread_id=message["thread_id"],
+                received_at=_timestamp(message["received_at"]),
+                subject=message["subject"], sender=message["sender"],
+                text=message["body"],
+            )))
+        provider = AutoFixtureProvider(scenario["messages"])
+        outcomes += AutoPipeline(provider, "synthetic-model").run(items)
+    report = apply_floors(score(labels, outcomes))
+    return AutoEvaluation(
+        report, [AutoResult(o.id, expected[o.id], o.action) for o in outcomes]
+    )
 
 
 # --- scenario execution ------------------------------------------------------
@@ -318,6 +387,7 @@ class Evaluation:
     ai_baseline: list[ScenarioResult]
     providers: dict[str, list[ScenarioResult]]
     network_attempts: int = 0
+    auto: AutoEvaluation | None = None
     provider_order: tuple = field(default=PROVIDERS)
 
     def to_dict(self, commit: str = "unknown") -> dict:
@@ -345,6 +415,17 @@ class Evaluation:
             "ai_baseline_rules_only": path(self.ai_baseline),
             "providers": {name: path(self.providers.get(name, []))
                           for name in self.provider_order},
+            "auto": {
+                "scenarios": self.scenario_counts["auto"],
+                "precision": getattr(self.auto.report, "precision", None),
+                "detection_recall": getattr(self.auto.report, "recall", None),
+                "automatic_changes": self.auto.report.automatic_changes,
+                "application_emails": self.auto.report.application_emails,
+                "disagreements": [
+                    {"id": r.message_id, "expected": r.expected, "actual": r.actual}
+                    for r in self.auto.results if r.expected != r.actual
+                ],
+            },
         }
 
 
@@ -370,11 +451,15 @@ def evaluate(
                 for s in fixtures.ai
                 if provider_factory is not None and name in s["ai_outputs"]
             ]
+        auto = evaluate_auto(fixtures.auto)
     return Evaluation(
         fixtures_sha256=fixtures.sha256,
-        scenario_counts={"rules": len(fixtures.rules), "ai": len(fixtures.ai)},
+        scenario_counts={
+            "rules": len(fixtures.rules), "ai": len(fixtures.ai),
+            "auto": len(fixtures.auto),
+        },
         rules=rules, ai_baseline=baseline, providers=by_provider,
-        network_attempts=block.attempts, provider_order=PROVIDERS,
+        network_attempts=block.attempts, auto=auto, provider_order=PROVIDERS,
     )
 
 
@@ -388,7 +473,7 @@ def _ids(results, predicate) -> str:
 def check(evaluation: Evaluation, thresholds: dict) -> list[str]:
     breaches = []
     counts = evaluation.scenario_counts
-    for key, label in (("rules", "rules"), ("ai", "AI")):
+    for key, label in (("rules", "rules"), ("ai", "AI"), ("auto", "auto")):
         minimum = thresholds[f"minimum_{key}_scenarios"]
         if counts[key] < minimum:
             breaches.append(
@@ -433,6 +518,24 @@ def check(evaluation: Evaluation, thresholds: dict) -> list[str]:
                 "wrong updates: "
                 + _ids(ai_origin(results), lambda r: not r.update_correct)
             )
+    breaches += _check_auto(evaluation.auto, thresholds)
+    return breaches
+
+
+def _check_auto(auto: AutoEvaluation, thresholds: dict) -> list[str]:
+    report = auto.report
+    missed = ", ".join(r.message_id for r in auto.results if r.expected != r.actual) or "none"
+    breaches = []
+    for name, value, floor in (
+        ("precision", report.precision, thresholds["auto_precision_min"]),
+        ("detection recall", report.recall, thresholds["auto_detection_recall_min"]),
+    ):
+        if value is None:
+            breaches.append(f"auto {name} is unmeasured (below the sample-size floor)")
+        elif value < floor:
+            breaches.append(
+                f"auto {name} {value:.3f} is below {floor}; disagreements: {missed}"
+            )
     return breaches
 
 
@@ -465,7 +568,8 @@ def render_markdown(evaluation: Evaluation, commit: str = "unknown") -> str:
         f"Fixture SHA-256: `{evaluation.fixtures_sha256}`  ",
         (
             f"Scenarios: {evaluation.scenario_counts['rules']} rules, "
-            f"{evaluation.scenario_counts['ai']} AI  "
+            f"{evaluation.scenario_counts['ai']} AI, "
+            f"{evaluation.scenario_counts['auto']} automatic  "
         ),
         f"Network attempts blocked: {evaluation.network_attempts}",
         "",
@@ -494,6 +598,18 @@ def render_markdown(evaluation: Evaluation, commit: str = "unknown") -> str:
             _row(name, results, ai_origin(results)) if results
             else f"| {name} | 0 | unmeasured | unmeasured | unmeasured | unmeasured |"
         )
+    auto = evaluation.auto
+    lines += [
+        "", f"## Automatic pipeline ({SYNTHETIC_LABEL})", "",
+        "Filters, rules, recorded model output, then the plan simulation, from zero rows.",
+        "",
+        (
+            f"precision={_show(auto.report.precision)} "
+            f"recall={_show(auto.report.recall)} "
+            f"automatic_changes={auto.report.automatic_changes} "
+            f"application_emails={auto.report.application_emails}"
+        ),
+    ]
     lines += ["", "## Scenarios whose outcome differs from the label", ""]
     sections = [("rules", evaluation.rules), ("rules baseline on AI fixtures", evaluation.ai_baseline)]
     sections += [(n, evaluation.providers.get(n, [])) for n in evaluation.provider_order]
@@ -508,6 +624,10 @@ def render_markdown(evaluation: Evaluation, commit: str = "unknown") -> str:
         ]
         lines.append("")
     return "\n".join(lines) + "\n"
+
+
+def _show(value) -> str:
+    return "unmeasured" if value is None else f"{value:.3f}"
 
 
 def _commit() -> str:

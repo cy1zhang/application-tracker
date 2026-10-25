@@ -1,5 +1,7 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from app.domain.applications import Application, ApplicationStatus, Season
 from app.services.ai_extraction import ValidatedExtraction
@@ -105,17 +107,39 @@ def _apply(
     return decision.application_id
 
 
+def simulate_items(
+    items: list,
+    candidates: list[ApplicationCandidate],
+    decide_item: Callable[[Any, list[ApplicationCandidate]], AutoDecision] | None = None,
+) -> list[tuple[Any, AutoDecision, str | None]]:
+    """Walk items in received order, applying each decision to a working copy.
+
+    ``decide_item`` sees the evolving candidate list, so a caller can run other
+    steps (filters, rules, a model call) against the same state ``decide`` sees.
+    Items need ``message_id``, ``thread_id`` and ``received_at``; the default
+    decider also needs ``extraction``. Returns (item, decision, target id).
+    """
+    working = list(candidates)
+
+    def default(item: PlannedItem, current: list[ApplicationCandidate]) -> AutoDecision:
+        ref = MessageRef(item.message_id, item.thread_id, item.received_at)
+        return decide(item.extraction, message_ref=ref, candidates=current)
+
+    decide_item = decide_item or default
+    results = []
+    for item in sorted(items, key=lambda i: i.received_at):
+        decision = decide_item(item, working)
+        results.append((item, decision, _apply(working, item, decision)))
+    return results
+
+
 def simulate(
     items: list[PlannedItem], candidates: list[ApplicationCandidate]
 ) -> PlanReport:
-    working = list(candidates)
     counts = {action: 0 for action in _ACTIONS}
     reasons: dict[str, int] = {}
     sample: list[PlanLine] = []
-    for item in sorted(items, key=lambda i: i.received_at):
-        ref = MessageRef(item.message_id, item.thread_id, item.received_at)
-        decision = decide(item.extraction, message_ref=ref, candidates=working)
-        target = _apply(working, item, decision)
+    for item, decision, target in simulate_items(items, candidates):
         counts[decision.action] += 1
         reasons[decision.reason] = reasons.get(decision.reason, 0) + 1
         if decision.action in {"create", "update"} and len(sample) < SAMPLE_LIMIT:

@@ -408,3 +408,121 @@ def test_main_check_prints_unmeasured_header_and_exits_1(tmp_path, monkeypatch, 
     assert lines[1] == "pipeline: current, model: gemma4:latest"
     assert "labeled=3/3" in printed and "ai_unavailable=0" in printed
     assert module.main(["score", "--dir", str(tmp_path), "--pipeline", "current"]) == 0
+
+
+# --- automatic pipeline -----------------------------------------------------
+
+
+def message(message_id, text, *, minutes=0, subject="Application update",
+            sender="Recruiting <jobs@acme.test>", thread=None):
+    return MessageContent(
+        message_id=message_id, thread_id=thread or f"t-{message_id}",
+        received_at=datetime(2026, 10, 1, tzinfo=UTC) + timedelta(minutes=minutes),
+        subject=subject, sender=sender, text=text,
+    )
+
+
+APPLIED_TEXT = "Thank you for applying to Software Engineer Intern at Acme."
+ACME = {"company": "Acme", "role": "Software Engineer Intern"}
+
+
+def test_auto_pipeline_creates_then_updates_same_job():
+    from evaluation.answer_key.score import AutoPipeline
+
+    provider = StubProvider(
+        extraction(
+            status="applied",
+            evidence={**ACME, "status": "Thank you for applying"}, **ACME,
+        ),
+        interview_extraction(),
+    )
+    outcomes = AutoPipeline(provider).run([
+        ("E1", message("m1", APPLIED_TEXT)),
+        ("E2", message("m2", AMBIGUOUS_TEXT, minutes=1)),
+    ])
+    assert [o.action for o in outcomes] == ["created", "updated"]
+    assert outcomes[0].row and outcomes[0].row == outcomes[1].row
+    assert (outcomes[0].company, outcomes[0].status) == ("Acme", "applied")
+    assert outcomes[1].status == "interviewing"
+
+
+def test_auto_pipeline_filters_alert():
+    from evaluation.answer_key.score import AutoPipeline
+
+    provider = StubProvider(extraction())
+    outcomes = AutoPipeline(provider).run([("E1", message(
+        "m1", "Here are 5 new jobs for you.", subject="5 new jobs for you",
+        sender="Job Alerts <jobalerts-noreply@linkedin.com>",
+    ))])
+    assert [o.action for o in outcomes] == ["ignored"]
+    assert provider.calls == []
+
+
+def test_auto_pipeline_portal_rejection_without_confirmation_creates_row():
+    from evaluation.answer_key.score import AutoPipeline
+
+    text = "Unfortunately Acme will not be moving forward with your application."
+    provider = StubProvider(extraction(
+        company="Acme", status="rejected",
+        evidence={"company": "Acme", "status": "will not be moving forward"},
+    ))
+    (outcome,) = AutoPipeline(provider).run([("E1", message("m1", text))])
+    assert outcome.action == "created" and outcome.row
+    assert (outcome.company, outcome.status) == ("Acme", "rejected")
+
+
+def test_auto_pipeline_provider_failure_and_invalid_output_need_a_look():
+    from app.services.ai_providers import ProviderError
+    from evaluation.answer_key.score import AutoPipeline
+
+    for response in (ProviderError("boom"), {"company": "Acme"}):
+        outcomes = AutoPipeline(StubProvider(response)).run(
+            [("E1", message("m1", AMBIGUOUS_TEXT))]
+        )
+        assert [o.action for o in outcomes] == ["needs_look"]
+    assert outcomes[0].ai_unavailable is False
+
+
+def test_auto_pipeline_rules_update_shares_candidates_with_ai_create():
+    from evaluation.answer_key.score import AutoPipeline
+
+    provider = StubProvider(
+        extraction(
+            status="applied", evidence={**ACME, "status": "Thank you for applying"},
+            **ACME,
+        ),
+    )
+    items = [
+        ("E1", message("m1", APPLIED_TEXT, thread="t-shared")),
+        ("E2", message(
+            "m2", "Acme invites you to complete an online assessment for "
+            "Software Engineer Intern.", minutes=1, thread="t-shared",
+        )),
+    ]
+    outcomes = AutoPipeline(provider).run(items)
+    assert [o.action for o in outcomes] == ["created", "updated"]
+    assert outcomes[1].row == outcomes[0].row
+    assert outcomes[1].status == "oa_received"
+    assert len(provider.calls) == 1
+
+
+def test_auto_cli_gates_through_run_cli(tmp_path, monkeypatch):
+    from evaluation.answer_key import score as module
+
+    seen = {}
+
+    def fake_run_cli(api, directory, pipeline):
+        seen["pipeline"] = pipeline
+        return SimpleNamespace(
+            precision=0.5, recall=1.0, labeled=1, indexed=1, emails=1, unavailable=0,
+            automatic_changes=1, ai_unavailable=0, fake_rows=0, duplicate_rows=0,
+            merged_rows=0, wrong_status=0, kind_confusion={}, pipeline="", model="",
+        )
+
+    monkeypatch.setattr(module, "load_config", lambda path: None)
+    monkeypatch.setattr(module, "TrackerApi", lambda config: None)
+    monkeypatch.setattr(module, "run_cli", fake_run_cli)
+    argv = ["score", "--dir", str(tmp_path), "--pipeline", "auto"]
+    assert module.main(argv + ["--check"]) == 1  # precision 0.5 fails the gate
+    assert isinstance(seen["pipeline"], module.AutoPipeline)
+    assert module.main(argv) == 0

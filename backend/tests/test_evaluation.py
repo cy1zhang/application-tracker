@@ -332,3 +332,74 @@ def test_a_provider_that_touches_the_network_fails_the_run(baseline) -> None:
     assert evaluation.network_attempts > 0
     breaches = runner.check(evaluation, runner.load_thresholds())
     assert any("network" in breach for breach in breaches)
+
+
+# --- automatic pipeline fixtures --------------------------------------------
+
+AUTO_CATEGORIES = {
+    "job_alert_filtered", "digest_filtered", "outreach",
+    "portal_rejection_no_confirmation", "swe_vs_software_engineering",
+    "two_cycles_one_company", "later_rejection_after_interview",
+    "reopening_a_rejection", "roleless_followup",
+}
+# Job-board sender domains the filters recognise; every other host is .test.
+AUTO_REAL_HOSTS = {"linkedin.com", "indeed.com"}
+
+
+def test_auto_fixtures_meet_minimum_and_cover_the_brief() -> None:
+    auto = load("auto.json")
+    thresholds = json.loads(THRESHOLDS.read_text())
+    assert len(auto) >= max(30, thresholds["minimum_auto_scenarios"])
+    assert AUTO_CATEGORIES <= {item["category"] for item in auto}
+    ids = [item["id"] for item in auto]
+    assert len(ids) == len(set(ids))
+    for item in auto:
+        bodies = [m["body"] for m in item["messages"]]
+        assert len(bodies) == len(set(bodies)), item["id"]  # recorded outputs key on body
+        for message in item["messages"]:
+            assert message["expected"]["action"] in {
+                "created", "updated", "ignored", "needs_look"}
+            output = message.get("ai_output")
+            if output and "error" not in output and "evidence" in output:
+                assert "kind" in output, item["id"]  # a full recorded extraction
+
+
+def test_auto_fixtures_use_only_synthetic_domains() -> None:
+    text = (FIXTURES / "auto.json").read_text()
+    hosts = set(re.findall(r"(?:https?://|@)([A-Za-z0-9.-]+\.[A-Za-z]{2,})", text))
+    assert hosts
+    assert all(h.endswith(".test") or h in AUTO_REAL_HOSTS for h in hosts), sorted(hosts)
+    assert "gmail.com" not in text.lower()
+
+
+def test_evaluation_gates_auto_fixtures(baseline) -> None:
+    fixtures, evaluation = baseline
+    assert evaluation.scenario_counts["auto"] == len(fixtures.auto) >= 30
+    auto = evaluation.auto
+    assert [r for r in auto.results if r.expected != r.actual] == []
+    assert auto.report.precision >= 0.98 and auto.report.recall >= 0.90
+    assert runner.check(evaluation, runner.load_thresholds()) == []
+    assert evaluation.network_attempts == 0
+    assert "auto" in evaluation.to_dict()
+
+
+def test_auto_gate_trips_when_decisions_degrade(baseline, monkeypatch) -> None:
+    fixtures, _ = baseline
+    from app.services import auto_apply
+
+    monkeypatch.setattr(
+        "evaluation.answer_key.score.decide",
+        lambda extraction, *, message_ref, candidates: auto_apply.AutoDecision(
+            "create", "always", None,
+            {"company": extraction.company, "status": extraction.status},
+        ),
+    )
+    breaches = runner.check(runner.evaluate(fixtures), runner.load_thresholds())
+    assert any("auto precision" in breach for breach in breaches)
+
+
+def test_auto_scenario_count_minimum_is_enforced(baseline) -> None:
+    fixtures, _ = baseline
+    evaluation = runner.evaluate(replace(fixtures, auto=fixtures.auto[:5]))
+    breaches = runner.check(evaluation, runner.load_thresholds())
+    assert any("auto scenario count" in breach for breach in breaches)

@@ -25,8 +25,18 @@ from app.repositories.dynamodb_gmail import DynamoGmailRepository
 from app.repositories.dynamodb_sync import DynamoSyncRepository
 from app.repositories.dynamodb_tables import create_tables
 from app.services.ai_escalation import AiEscalator
+from app.services.ai_extraction import (
+    InvalidExtraction,
+    build_prompt,
+    validate_extraction,
+)
+from app.services.ai_providers import ProviderError
+from app.services.auto_apply import AutoDecision, MessageRef, decide
+from app.services.email_filters import filter_reason
 from app.services.email_processing import process_message
-from app.services.email_rules import ApplicationCandidate
+from app.services.email_rules import ApplicationCandidate, classify_message
+from app.services.gmail_message import MessageParseError, parse_gmail_message
+from app.services.plan_report import simulate_items
 from evaluation.answer_key.labels import Label, load_labels
 from evaluation.answer_key.ollama import OllamaProvider
 from evaluation.run import gmail_message
@@ -226,6 +236,95 @@ class CurrentPipeline:
         return outcomes
 
 
+@dataclass(frozen=True)
+class _Step:
+    label_id: str
+    message_id: str
+    thread_id: str
+    received_at: datetime
+    content: MessageContent
+
+
+class AutoPipeline:
+    """Filters, then rules, then the local model, then ``decide``, from zero rows.
+
+    One in-memory candidate list is shared by every step. ``simulate_items``
+    owns the loop and its working copy; the rules check and the prompt both see
+    that list as earlier items change it, so a rules update can target a row an
+    earlier model call created.
+    """
+
+    def __init__(self, provider, model: str = "gemma4:latest") -> None:
+        self._provider = provider
+        self._model = model
+
+    def run(self, items):
+        steps = [
+            _Step(label_id, c.message_id, c.thread_id, c.received_at, c)
+            for label_id, c in items
+        ]
+        unavailable: set[str] = set()
+
+        def decide_step(step: _Step, working: list[ApplicationCandidate]) -> AutoDecision:
+            try:
+                parsed = parse_gmail_message(_payload(step.content))
+            except MessageParseError:
+                return AutoDecision("needs_look", "unparseable", None, {})
+            reason = filter_reason(parsed)
+            if reason is not None:
+                return AutoDecision("ignore", f"filtered:{reason}", None, {})
+            rules = classify_message(parsed, working)
+            if rules.outcome == "applied" and rules.application_id:
+                fields = {
+                    name: value for name, value in (
+                        ("status", rules.status), ("season", rules.season),
+                        ("year", rules.year),
+                    ) if value is not None
+                }
+                return AutoDecision(
+                    "update", "rules_update", rules.application_id, fields,
+                    rules.requisition_id,
+                )
+            prompt = build_prompt(parsed, working)
+            try:
+                extraction = validate_extraction(
+                    self._provider.extract("local-evaluation-key", self._model, prompt),
+                    prompt,
+                )
+            except ProviderError:
+                unavailable.add(step.label_id)
+                return AutoDecision("needs_look", "ai_unavailable", None, {})
+            except InvalidExtraction:
+                return AutoDecision("needs_look", "invalid_extraction", None, {})
+            ref = MessageRef(parsed.message_id, parsed.thread_id, parsed.received_at)
+            return decide(extraction, message_ref=ref, candidates=working)
+
+        outcomes = []
+        for step, decision, target in simulate_items(steps, [], decide_step):
+            empty = {"status": None, "company": None, "role": None, "season": None,
+                     "year": None}
+            if decision.action == "create":
+                outcome = EmailOutcome(
+                    step.label_id, "created", target,
+                    **{**empty, **{n: _value_of(decision.fields.get(n)) for n in FIELDS}},
+                )
+            elif decision.action == "update":
+                outcome = EmailOutcome(
+                    step.label_id, "updated", target,
+                    **{**empty, **{n: _value_of(decision.fields[n])
+                                   for n in FIELDS if n in decision.fields}},
+                )
+            else:
+                action = "needs_look" if decision.action == "needs_look" else "ignored"
+                outcome = EmailOutcome(step.label_id, action, None, **empty)
+            outcomes.append(replace(outcome, ai_unavailable=step.label_id in unavailable))
+        return outcomes
+
+
+def _value_of(value):
+    return getattr(value, "value", value)
+
+
 def _payload(content: MessageContent) -> dict:
     return gmail_message(content.message_id, {"message": {
         "received_at": content.received_at.isoformat(),
@@ -303,14 +402,15 @@ def _print(report: AnswerKeyReport) -> None:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m evaluation.answer_key.score")
     parser.add_argument("--dir", required=True, type=Path)
-    parser.add_argument("--pipeline", required=True, choices=["current"])
+    parser.add_argument("--pipeline", required=True, choices=["current", "auto"])
     parser.add_argument("--config", default="../.env.local-tools")
     parser.add_argument("--model", default="gemma4:latest")
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args(argv[1:])
     api = TrackerApi(load_config(args.config))
     provider = OllamaProvider(args.model, cache_dir=args.dir / "cache")
-    report = run_cli(api, args.dir, CurrentPipeline(provider, args.model))
+    pipeline_class = AutoPipeline if args.pipeline == "auto" else CurrentPipeline
+    report = run_cli(api, args.dir, pipeline_class(provider, args.model))
     report.pipeline, report.model = args.pipeline, args.model
     _print(report)
     return exit_code(report) if args.check else 0
