@@ -15,6 +15,7 @@ import type {
   LocalAiSuggestionResult,
   MergeRequest,
   PlanReportResponse,
+  PlanExpectedCounts,
   ReviewItem,
   ReviewPage,
   ReviewResolution,
@@ -247,8 +248,8 @@ export function getPlanReport(): Promise<PlanReportResponse> {
   return request<PlanReportResponse>("/ai-plan/report");
 }
 
-export function applyPlan(): Promise<{ queued: boolean }> {
-  return request<{ queued: boolean }>("/ai-plan/apply", { method: "POST" });
+export function applyPlan(expected: PlanExpectedCounts): Promise<{ queued: boolean }> {
+  return request<{ queued: boolean }>("/ai-plan/apply", { method: "POST", body: JSON.stringify({ expected }) });
 }
 
 export function setAutoApplyMode(mode: "off" | "plan"): Promise<{ auto_apply_mode: AutoApplyMode }> {

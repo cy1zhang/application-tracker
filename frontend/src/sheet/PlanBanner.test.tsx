@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { applyPlan, getGmailConnection, getPlanReport, getSettings, setAutoApplyMode } from "../api/client";
+import { ApiError, applyPlan, getGmailConnection, getPlanReport, getSettings, setAutoApplyMode } from "../api/client";
 import type { PlanReportResponse } from "../api/types";
 import { Sheet } from "./Sheet";
 
@@ -102,4 +102,99 @@ test("test_start_tracking_sets_mode_plan", async () => {
 
   await waitFor(() => expect(setAutoApplyMode).toHaveBeenCalledWith("plan"));
   expect(await screen.findByText("AI analyzed 4 of 4 emails")).toBeInTheDocument();
+});
+
+test("rechecks plan counts before applying and requires confirmation of changed counts", async () => {
+  vi.mocked(getPlanReport).mockResolvedValueOnce(report).mockResolvedValueOnce({
+    ...report, report: { ...report.report, counts: { ...report.report.counts, create: 3 } },
+  }).mockResolvedValueOnce({
+    ...report, report: { ...report.report, counts: { ...report.report.counts, create: 3 } },
+  });
+  renderSheet("plan");
+  fireEvent.click(await screen.findByRole("button", { name: "Review plan" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("The plan changed. Review the new counts.");
+  expect(screen.getByText("Create 3 and update 1 applications?")).toBeInTheDocument();
+  expect(applyPlan).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+  await waitFor(() => expect(applyPlan).toHaveBeenCalledWith({ analyzed: 4, create: 3, update: 1 }));
+});
+
+test("a plan_changed apply response refreshes counts for reconfirmation", async () => {
+  vi.mocked(getPlanReport).mockResolvedValueOnce(report).mockResolvedValueOnce(report).mockResolvedValueOnce({
+    ...report, report: { ...report.report, counts: { ...report.report.counts, update: 2 } },
+  });
+  vi.mocked(applyPlan).mockRejectedValueOnce(new ApiError(409, "plan_changed"));
+  renderSheet("plan");
+  fireEvent.click(await screen.findByRole("button", { name: "Review plan" }));
+  fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+  fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("The plan changed. Review the new counts.");
+  expect(screen.getByText("Create 2 and update 2 applications?")).toBeInTheDocument();
+  expect(getPlanReport).toHaveBeenCalledTimes(3);
+});
+
+test("reloads after apply when settings turns on and stops polling on unmount", async () => {
+  vi.useFakeTimers();
+  try {
+    const onReload = vi.fn();
+    const view = render(<Sheet applications={[]} reviews={[]} onReload={onReload} mode="plan" />);
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+    await act(async () => {});
+    vi.mocked(getSettings).mockResolvedValue({
+      available_providers: [], hugging_face_host: null, provider: null, key_hint: null, enabled: false,
+      key_status: null, requests_today: 0, daily_limit: 50, usage_day: "2026-10-20", auto_apply_mode: "on",
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(onReload).toHaveBeenCalledOnce();
+    view.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(getSettings).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("stops checking settings after two minutes when apply stays pending", async () => {
+  vi.useFakeTimers();
+  try {
+    const view = renderSheet("plan");
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(getSettings).toHaveBeenCalledTimes(24);
+    expect(screen.queryByText("Applying…")).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(getSettings).toHaveBeenCalledTimes(24);
+    view.unmount();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("stops applying after two minutes even if a settings request hangs", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.mocked(getSettings).mockImplementation(() => new Promise(() => {}));
+    const view = renderSheet("plan");
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Review plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(screen.queryByText("Applying…")).not.toBeInTheDocument();
+    view.unmount();
+  } finally {
+    vi.useRealTimers();
+  }
 });

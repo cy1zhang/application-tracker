@@ -41,6 +41,12 @@ export interface PlanReportResponse {
   };
 }
 
+export interface PlanExpectedCounts {
+  analyzed: number;
+  create: number;
+  update: number;
+}
+
 export interface Application {
   application_id: string;
   company: string | null;

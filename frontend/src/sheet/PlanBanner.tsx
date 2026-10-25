@@ -1,15 +1,20 @@
 import { useEffect, useState } from "react";
 
-import { applyPlan, getPlanReport, setAutoApplyMode } from "../api/client";
-import type { AutoApplyMode, PlanReportResponse } from "../api/types";
+import { ApiError, applyPlan, getPlanReport, getSettings, setAutoApplyMode } from "../api/client";
+import type { AutoApplyMode, PlanExpectedCounts, PlanReportResponse } from "../api/types";
 import { formatCycle, STATUS_LABELS, UNKNOWN } from "../applications/labels";
 
 type Props = {
   mode: AutoApplyMode;
   onModeChange?: (mode: AutoApplyMode) => void;
+  onReload?: () => Promise<void> | void;
 };
 
-export function PlanBanner({ mode, onModeChange }: Props) {
+function expectedCounts(report: PlanReportResponse): PlanExpectedCounts {
+  return { analyzed: report.analyzed, create: report.report.counts.create ?? 0, update: report.report.counts.update ?? 0 };
+}
+
+export function PlanBanner({ mode, onModeChange, onReload }: Props) {
   const [report, setReport] = useState<PlanReportResponse | null>(null);
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -27,6 +32,35 @@ export function PlanBanner({ mode, onModeChange }: Props) {
     return () => { cancelled = true; };
   }, [mode]);
 
+  useEffect(() => {
+    if (!applying || mode !== "plan") return;
+    let cancelled = false;
+    let checking = false;
+    const interval = window.setInterval(() => {
+      if (checking) return;
+      checking = true;
+      void getSettings().then(async (settings) => {
+        if (cancelled || settings.auto_apply_mode !== "on") return;
+        window.clearInterval(interval);
+        window.clearTimeout(timeout);
+        setApplying(false);
+        onModeChange?.("on");
+        await onReload?.();
+      }).catch(() => {
+        // A transient settings error can be retried at the next interval.
+      }).finally(() => {
+        checking = false;
+      });
+    }, 5_000);
+    const timeout = window.setTimeout(() => {
+      cancelled = true;
+      window.clearInterval(interval);
+      setApplying(false);
+      setError("Still applying. Reload to check the latest status.");
+    }, 120_000);
+    return () => { cancelled = true; window.clearInterval(interval); window.clearTimeout(timeout); };
+  }, [applying, mode, onModeChange, onReload]);
+
   async function startTracking() {
     setBusy(true);
     setError(null);
@@ -41,13 +75,24 @@ export function PlanBanner({ mode, onModeChange }: Props) {
   }
 
   async function confirmApply() {
+    if (!report) return;
     setBusy(true);
     setError(null);
     try {
-      await applyPlan();
+      const current = await getPlanReport();
+      if (current.waiting !== 0 || JSON.stringify(expectedCounts(current)) !== JSON.stringify(expectedCounts(report))) {
+        setReport(current);
+        setError("The plan changed. Review the new counts.");
+        return;
+      }
+      await applyPlan(expectedCounts(current));
       setApplying(true);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not apply plan.");
+      if (caught instanceof ApiError && caught.status === 409 && caught.message === "plan_changed") {
+        setError("The plan changed. Review the new counts.");
+        try { setReport(await getPlanReport()); }
+        catch { setError("The plan changed. Could not reload the new counts."); }
+      } else setError(caught instanceof Error ? caught.message : "Could not apply plan.");
     } finally {
       setBusy(false);
     }

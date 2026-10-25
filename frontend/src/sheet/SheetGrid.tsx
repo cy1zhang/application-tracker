@@ -28,6 +28,8 @@ type Props = {
   onReload: () => Promise<void> | void;
   markers?: Map<string, Map<string, AiChange>>;
   onAiChanged?: () => Promise<void> | void;
+  onSaveError?: (application: Application, field: EditableField, message: string) => void;
+  onEditStart?: (application: Application, field: EditableField) => void;
 };
 
 function markerFor(application: Application, field: EditableField, markers?: Map<string, Map<string, AiChange>>): AiChange | undefined {
@@ -40,12 +42,14 @@ function markerFor(application: Application, field: EditableField, markers?: Map
   return fields?.get(field);
 }
 
-function MarkedCell({ application, field, change, onReload, onAiChanged }: {
+function MarkedCell({ application, field, change, onReload, onAiChanged, onSaveError, onEditStart }: {
   application: Application;
   field: EditableField;
   change?: AiChange;
   onReload: () => Promise<void> | void;
   onAiChanged?: () => Promise<void> | void;
+  onSaveError?: Props["onSaveError"];
+  onEditStart?: Props["onEditStart"];
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,14 +63,14 @@ function MarkedCell({ application, field, change, onReload, onAiChanged }: {
       await undoAiChange(change.message_id);
       await onAiChanged?.();
     } catch (caught) {
-      setError(aiChangeError(caught));
+      setError(aiChangeError(caught, change));
     } finally {
       setBusy(false);
     }
   }
 
   return <span className={change ? "sheet-ai-cell" : undefined}>
-    <EditableCell application={application} field={field} onSaved={onReload} onConflict={onReload} />
+    <EditableCell application={application} field={field} onSaved={onReload} onConflict={onReload} onSaveError={onSaveError} onEditStart={onEditStart} />
     {change && <>
       <button type="button" className="sheet-ai-marker" aria-label={`AI change for ${label}`} aria-haspopup="true" />
       <span className="sheet-ai-popover">
@@ -79,7 +83,7 @@ function MarkedCell({ application, field, change, onReload, onAiChanged }: {
   </span>;
 }
 
-export function SheetGrid({ applications, allApplications = applications, sortKey, direction, onSort, onSelect, onReload, markers, onAiChanged }: Props) {
+export function SheetGrid({ applications, allApplications = applications, sortKey, direction, onSort, onSelect, onReload, markers, onAiChanged, onSaveError, onEditStart }: Props) {
   return (
     <div className="sheet-grid-scroll" role="region" aria-label="Applications grid" tabIndex={0}>
       <table className="sheet-grid">
@@ -91,11 +95,11 @@ export function SheetGrid({ applications, allApplications = applications, sortKe
         <tbody>{applications.map((application) => (
           <tr key={application.application_id}>
             <td>
-              <MarkedCell application={application} field="company" change={markerFor(application, "company", markers)} onReload={onReload} onAiChanged={onAiChanged} />
+              <MarkedCell application={application} field="company" change={markerFor(application, "company", markers)} onReload={onReload} onAiChanged={onAiChanged} onSaveError={onSaveError} onEditStart={onEditStart} />
               <button type="button" className="sheet-detail-button" aria-label={`Open details for ${application.company ?? UNKNOWN}`} title="Open details" onClick={() => onSelect(application.application_id)} />
             </td>
             {(["role", "role_type", "cycle", "status", "application_date"] as EditableField[]).map((field) => (
-              <td key={field}><MarkedCell application={application} field={field} change={markerFor(application, field, markers)} onReload={onReload} onAiChanged={onAiChanged} /></td>
+              <td key={field}><MarkedCell application={application} field={field} change={markerFor(application, field, markers)} onReload={onReload} onAiChanged={onAiChanged} onSaveError={onSaveError} onEditStart={onEditStart} /></td>
             ))}
             <td>{formatTimestamp(application.updated_at)}<RowMenu application={application} candidates={allApplications.filter((item) => item.application_id !== application.application_id)} onChanged={onReload} /></td>
           </tr>

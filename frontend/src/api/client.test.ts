@@ -215,7 +215,7 @@ test("plan API reads the report and sends the approved mode and apply requests",
   await expect(getSettings()).resolves.toMatchObject({ auto_apply_mode: "off" });
   await expect(setAutoApplyMode("plan")).resolves.toMatchObject({ auto_apply_mode: "plan" });
   await expect(getPlanReport()).resolves.toEqual(plan);
-  await expect(applyPlan()).resolves.toEqual({ queued: true });
+  await expect(applyPlan({ analyzed: 2, create: 1, update: 0 })).resolves.toEqual({ queued: true });
   expect(fetchMock.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
     ["/api/settings", undefined],
     ["/api/settings/auto-apply", "PUT"],
@@ -223,6 +223,7 @@ test("plan API reads the report and sends the approved mode and apply requests",
     ["/api/ai-plan/apply", "POST"],
   ]);
   expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ mode: "plan" });
+  expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({ expected: { analyzed: 2, create: 1, update: 0 } });
 });
 
 test("account API sends the DELETE confirmation body and reads status", async () => {

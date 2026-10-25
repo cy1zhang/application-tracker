@@ -1,14 +1,14 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { getGmailConnection, getSettings } from "../api/client";
+import { ApiError, getGmailConnection, getSettings, updateApplication } from "../api/client";
 import type { ReviewItem } from "../api/types";
 import { makeApplication } from "../test/fixtures";
 import { Sheet } from "./Sheet";
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
-  return { ...actual, getGmailConnection: vi.fn(), getSettings: vi.fn() };
+  return { ...actual, getGmailConnection: vi.fn(), getSettings: vi.fn(), updateApplication: vi.fn() };
 });
 
 const acme = makeApplication({ application_id: "a", company: "Acme" });
@@ -134,4 +134,44 @@ test("test_new_row_button_opens_existing_create_form", () => {
   expect(screen.getByRole("heading", { name: "New application" })).toBeInTheDocument();
   expect(screen.getByLabelText("Company")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Create application" })).toBeInTheDocument();
+});
+
+test("failed blur save stays visible through tab switches and New row until dismissed", async () => {
+  vi.mocked(updateApplication).mockRejectedValue(new ApiError(409, "Stale version"));
+  render(<Sheet applications={[acme]} reviews={[]} onReload={vi.fn()} mode="live" />);
+  fireEvent.click(screen.getByRole("button", { name: "Software Engineer Intern" }));
+  const editor = screen.getByRole("textbox", { name: "Role" });
+  fireEvent.change(editor, { target: { value: "Platform Engineer" } });
+  fireEvent.blur(editor, { relatedTarget: screen.getByRole("tab", { name: "Needs a look (0)" }) });
+  fireEvent.click(screen.getByRole("tab", { name: "Needs a look (0)" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't save Role for Acme: Changed elsewhere. Reload latest");
+  fireEvent.click(screen.getByRole("tab", { name: "Applications (1)" }));
+  fireEvent.click(screen.getByRole("button", { name: "New row" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("Couldn't save Role for Acme: Changed elsewhere. Reload latest");
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss save error for Role" }));
+  await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+});
+
+test("save error clears when its cell is edited again", async () => {
+  vi.mocked(updateApplication).mockRejectedValue(new ApiError(409, "Stale version"));
+  render(<Sheet applications={[acme]} reviews={[]} onReload={vi.fn()} mode="live" />);
+  fireEvent.click(screen.getByRole("button", { name: "Software Engineer Intern" }));
+  const editor = screen.getByRole("textbox", { name: "Role" });
+  fireEvent.change(editor, { target: { value: "Platform Engineer" } });
+  fireEvent.keyDown(editor, { key: "Enter" });
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't save Role for Acme");
+  fireEvent.click(screen.getByRole("button", { name: "Software Engineer Intern" }));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+test("ordinary save failure persists after leaving the grid", async () => {
+  vi.mocked(updateApplication).mockRejectedValue(new ApiError(503, "Save unavailable"));
+  render(<Sheet applications={[acme]} reviews={[]} onReload={vi.fn()} mode="live" />);
+  fireEvent.click(screen.getByRole("button", { name: "Software Engineer Intern" }));
+  const editor = screen.getByRole("textbox", { name: "Role" });
+  fireEvent.change(editor, { target: { value: "Platform Engineer" } });
+  fireEvent.blur(editor, { relatedTarget: screen.getByRole("button", { name: "New row" }) });
+  fireEvent.click(screen.getByRole("button", { name: "New row" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't save Role for Acme: Save unavailable");
 });

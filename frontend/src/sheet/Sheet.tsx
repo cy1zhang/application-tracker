@@ -8,6 +8,7 @@ import { ALL, DEFAULT_FILTERS, UNKNOWN_VALUE, filterApplications, yearOptions, t
 import { ROLE_TYPE_LABELS, SEASON_LABELS, STATUS_LABELS, UNKNOWN } from "../applications/labels";
 import { ReviewQueue } from "../reviews/ReviewQueue";
 import { AiChangesTab } from "./AiChangesTab";
+import { EDITABLE_FIELD_LABELS, type EditableField } from "./EditableCell";
 import { PlanBanner } from "./PlanBanner";
 import { SettingsPanel } from "./SettingsPanel";
 import { SheetGrid } from "./SheetGrid";
@@ -39,8 +40,26 @@ export function Sheet({ applications, reviews, onReload, mode, onAccountDeleted,
   const [aiLoading, setAiLoading] = useState(true);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiRevision, setAiRevision] = useState(0);
+  const [saveErrors, setSaveErrors] = useState<Record<string, { company: string; field: EditableField; message: string }>>({});
   const visible = sortApplications(filterApplications(applications, filters), sortKey, direction);
-  const markers = useMemo(() => latestAiFieldChanges(aiChanges), [aiChanges]);
+  const markers = useMemo(() => latestAiFieldChanges(aiChanges, applications), [aiChanges, applications]);
+
+  function errorKey(application: Application, field: EditableField) {
+    return JSON.stringify([application.application_id, field]);
+  }
+
+  function clearSaveError(application: Application, field: EditableField) {
+    const key = errorKey(application, field);
+    setSaveErrors((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function recordSaveError(application: Application, field: EditableField, message: string) {
+    setSaveErrors((current) => ({ ...current, [errorKey(application, field)]: { company: application.company ?? UNKNOWN, field, message } }));
+  }
 
   useEffect(() => { setAutoApplyMode(mode === "live" ? "on" : mode); }, [mode]);
 
@@ -109,6 +128,14 @@ export function Sheet({ applications, reviews, onReload, mode, onAccountDeleted,
 
   return (
     <section className="sheet-shell" aria-label="Application sheet">
+      {Object.entries(saveErrors).map(([key, error]) => <div key={key} role="alert" className="error sheet-save-error">
+        Couldn't save {EDITABLE_FIELD_LABELS[error.field]} for {error.company}: {error.message}
+        <button type="button" aria-label={`Dismiss save error for ${EDITABLE_FIELD_LABELS[error.field]}`} onClick={() => setSaveErrors((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        })}>Dismiss</button>
+      </div>)}
       {detailId !== null ? (
         <ApplicationDetail applicationId={detailId} otherApplications={applications.filter((item) => item.application_id !== detailId)} onMerged={async () => { await onReload(); }} onBack={() => void backToGrid()} />
       ) : creating ? (
@@ -126,7 +153,7 @@ export function Sheet({ applications, reviews, onReload, mode, onAccountDeleted,
             </div>
           </div>
           {settingsOpen && <SettingsPanel reviews={reviews} onReload={onReload} onAccountDeleted={onAccountDeleted} autoApplyMode={autoApplyMode} onModeChange={setAutoApplyMode} />}
-          {autoApplyMode === "plan" && <PlanBanner mode={autoApplyMode} />}
+          {autoApplyMode === "plan" && <PlanBanner mode={autoApplyMode} onModeChange={setAutoApplyMode} onReload={onReload} />}
           <div id="sheet-panel-applications" className="sheet-page" role="tabpanel" aria-labelledby="sheet-tab-applications" tabIndex={0} hidden={tab !== "applications"}>
             {tab === "applications" && <>
               <div className="filters sheet-filters">
@@ -136,7 +163,7 @@ export function Sheet({ applications, reviews, onReload, mode, onAccountDeleted,
                 <div className="field"><label htmlFor="sheet-year">Year</label><select id="sheet-year" value={filters.year} onChange={(event) => setFilter("year", event.target.value)}><option value={ALL}>All years</option>{yearOptions(applications).map((year) => <option key={year} value={String(year)}>{year}</option>)}<option value={UNKNOWN_VALUE}>{UNKNOWN}</option></select></div>
                 <div className="field"><label htmlFor="sheet-status">Status</label><select id="sheet-status" value={filters.status} onChange={(event) => setFilter("status", event.target.value as Filters["status"])}><option value={ALL}>All statuses</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value={UNKNOWN_VALUE}>{UNKNOWN}</option></select></div>
               </div>
-              {visible.length === 0 ? <p className="empty">{applications.length === 0 ? "No applications yet." : "No applications match these filters."}</p> : <SheetGrid applications={visible} allApplications={applications} markers={markers} onAiChanged={aiChanged} sortKey={sortKey} direction={direction} onSort={sortBy} onSelect={setDetailId} onReload={onReload} />}
+              {visible.length === 0 ? <p className="empty">{applications.length === 0 ? "No applications yet." : "No applications match these filters."}</p> : <SheetGrid applications={visible} allApplications={applications} markers={markers} onAiChanged={aiChanged} sortKey={sortKey} direction={direction} onSort={sortBy} onSelect={setDetailId} onReload={onReload} onSaveError={recordSaveError} onEditStart={clearSaveError} />}
             </>}
           </div>
           <div id="sheet-panel-reviews" role="tabpanel" aria-labelledby="sheet-tab-reviews" tabIndex={0} hidden={tab !== "reviews"}>{tab === "reviews" && (reviewError ? <div role="alert" className="error"><p>Could not load reviews: {reviewError}</p><button type="button" onClick={() => void onReload()}>Retry reviews</button></div> : <ReviewQueue reviews={reviews} applications={applications} onResolved={async () => { await onReload(); }} onBack={() => setTab("applications")} showOllama={false} />)}</div>

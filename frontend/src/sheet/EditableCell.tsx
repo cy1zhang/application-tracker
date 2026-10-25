@@ -12,9 +12,11 @@ type Props = {
   field: EditableField;
   onSaved: (saved: Application) => Promise<void> | void;
   onConflict: () => Promise<void> | void;
+  onSaveError?: (application: Application, field: EditableField, message: string) => void;
+  onEditStart?: (application: Application, field: EditableField) => void;
 };
 
-const LABELS: Record<EditableField, string> = {
+export const EDITABLE_FIELD_LABELS: Record<EditableField, string> = {
   company: "Company",
   role: "Role",
   role_type: "Type",
@@ -32,7 +34,7 @@ function displayValue(application: Application, field: EditableField): string {
   }
 }
 
-export function EditableCell({ application, field, onSaved, onConflict }: Props) {
+export function EditableCell({ application, field, onSaved, onConflict, onSaveError, onEditStart }: Props) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const [season, setSeason] = useState<Season | "">("");
@@ -43,6 +45,8 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
   const original = useRef<Application | null>(null);
   const restoreFocus = useRef(false);
   const editButton = useRef<HTMLButtonElement>(null);
+  const seasonEditor = useRef<HTMLSelectElement>(null);
+  const yearEditor = useRef<HTMLInputElement>(null);
 
   useLayoutEffect(() => {
     if (!editing && restoreFocus.current) {
@@ -52,6 +56,7 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
   }, [editing]);
 
   function startEditing() {
+    onEditStart?.(application, field);
     original.current = { ...application };
     cancelled.current = false;
     setValue(field === "cycle" ? "" : field === "role_type" ? application.role_type ?? "unknown" : String(application[field] ?? ""));
@@ -101,10 +106,15 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         setEditing(false);
-        setError("Changed elsewhere. Reload latest");
+        if (onSaveError) onSaveError(snapshot, field, "Changed elsewhere. Reload latest");
+        else setError("Changed elsewhere. Reload latest");
         await onConflict();
       } else {
-        setError(caught instanceof ApiError ? caught.message : "Could not save the application.");
+        const message = caught instanceof ApiError ? caught.message : "Could not save the application.";
+        if (onSaveError) {
+          setEditing(false);
+          onSaveError(snapshot, field, message);
+        } else setError(message);
       }
     } finally {
       saving.current = false;
@@ -140,9 +150,17 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
     } else if (event.key === "Enter") {
       event.preventDefault();
       void save(true);
-    } else if (event.key === "Tab" && focusAdjacent(event.shiftKey)) {
-      event.preventDefault();
-      void save(false);
+    } else if (event.key === "Tab") {
+      if (field === "cycle" && event.target === seasonEditor.current && !event.shiftKey) {
+        event.preventDefault();
+        yearEditor.current?.focus();
+      } else if (field === "cycle" && event.target === yearEditor.current && event.shiftKey) {
+        event.preventDefault();
+        seasonEditor.current?.focus();
+      } else if (focusAdjacent(event.shiftKey)) {
+        event.preventDefault();
+        void save(false);
+      }
     }
   }
 
@@ -152,23 +170,23 @@ export function EditableCell({ application, field, onSaved, onConflict }: Props)
     }}>
       {editing ? field === "cycle" ? (
         <span className="sheet-cycle-editor">
-          <select aria-label="Season" value={season} onChange={(event) => setSeason(event.target.value as Season | "")} autoFocus>
+          <select ref={seasonEditor} aria-label="Season" value={season} onChange={(event) => setSeason(event.target.value as Season | "")} autoFocus>
             <option value="">{UNKNOWN}</option>
             {(Object.keys(SEASON_LABELS) as Season[]).map((option) => <option key={option} value={option}>{SEASON_LABELS[option]}</option>)}
           </select>
-          <input aria-label="Year" type="number" step={1} value={year} onChange={(event) => setYear(event.target.value)} />
+          <input ref={yearEditor} aria-label="Year" type="number" step={1} value={year} onChange={(event) => setYear(event.target.value)} />
         </span>
       ) : field === "role_type" || field === "status" ? (
-        <select aria-label={LABELS[field]} value={value} onChange={(event) => setValue(event.target.value)} autoFocus>
+        <select aria-label={EDITABLE_FIELD_LABELS[field]} value={value} onChange={(event) => setValue(event.target.value)} autoFocus>
           {field === "status" && <option value="">{UNKNOWN}</option>}
           {field === "role_type"
             ? (Object.keys(ROLE_TYPE_LABELS) as RoleType[]).map((option) => <option key={option} value={option}>{ROLE_TYPE_LABELS[option]}</option>)
             : (Object.keys(STATUS_LABELS) as ApplicationStatus[]).map((option) => <option key={option} value={option}>{STATUS_LABELS[option]}</option>)}
         </select>
       ) : (
-        <input aria-label={LABELS[field]} type={field === "application_date" ? "date" : "text"} value={value} onChange={(event) => setValue(event.target.value)} autoFocus />
+        <input aria-label={EDITABLE_FIELD_LABELS[field]} type={field === "application_date" ? "date" : "text"} value={value} onChange={(event) => setValue(event.target.value)} autoFocus />
       ) : (
-        <button ref={editButton} type="button" className="sheet-cell-button" aria-label={field === "company" ? "Edit Company" : undefined} title={`Edit ${LABELS[field]}`} onClick={startEditing}>{displayValue(application, field)}</button>
+        <button ref={editButton} type="button" className="sheet-cell-button" aria-label={field === "company" ? "Edit Company" : undefined} title={`Edit ${EDITABLE_FIELD_LABELS[field]}`} onClick={startEditing}>{displayValue(application, field)}</button>
       )}
       {error && <span role="alert" className="sheet-cell-error">{error}</span>}
     </span>

@@ -42,6 +42,14 @@ test("test_undone_change_has_no_marker", async () => {
   expect(screen.queryByRole("button", { name: /AI change for/ })).not.toBeInTheDocument();
 });
 
+test("a later hand edit hides the AI marker when the field value differs", async () => {
+  vi.mocked(listAiChanges).mockResolvedValue({ items: [latest], next_cursor: null });
+  render(<Sheet applications={[makeApplication({ ...application, status: "offer", updated_at: "2026-10-22T12:00:00Z" })]} reviews={[]} onReload={vi.fn()} mode="live" />);
+
+  await waitFor(() => expect(listAiChanges).toHaveBeenCalled());
+  expect(screen.queryByRole("button", { name: "AI change for Status" })).not.toBeInTheDocument();
+});
+
 test("test_hover_shows_open_email_and_undo", async () => {
   vi.mocked(listAiChanges).mockResolvedValue({ items: [latest], next_cursor: null });
   render(<Sheet applications={[application]} reviews={[]} onReload={vi.fn()} mode="live" />);
@@ -56,10 +64,19 @@ test("test_hover_shows_open_email_and_undo", async () => {
 test("marker undo reports a hand edit conflict", async () => {
   vi.mocked(listAiChanges).mockResolvedValue({ items: [latest], next_cursor: null });
   vi.mocked(undoAiChange).mockRejectedValue(new ApiError(409, "changed_since"));
-  render(<Sheet applications={[makeApplication({ ...application, status: "offer" })]} reviews={[]} onReload={vi.fn()} mode="live" />);
+  render(<Sheet applications={[application]} reviews={[]} onReload={vi.fn()} mode="live" />);
 
   const marker = await screen.findByRole("button", { name: "AI change for Status" });
   marker.focus();
   fireEvent.click(screen.getByRole("button", { name: "Undo" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("This cell changed after the AI set it.");
+});
+
+test("created-row undo conflict names the row", async () => {
+  vi.mocked(listAiChanges).mockResolvedValue({ items: [{ ...latest, action: "created" }], next_cursor: null });
+  vi.mocked(undoAiChange).mockRejectedValue(new ApiError(409, "changed_since"));
+  render(<Sheet applications={[application]} reviews={[]} onReload={vi.fn()} mode="live" />);
+  fireEvent.click(screen.getByRole("tab", { name: "AI changes (0)" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("This row changed after the AI added it.");
 });

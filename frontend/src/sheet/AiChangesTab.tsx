@@ -45,7 +45,7 @@ export function AiChangesTab({ changes, applications, loading, error, onChanged 
       if (action === "reconsider") setReconsidered((current) => [...current, change.message_id]);
       await onChanged();
     } catch (caught) {
-      setActionError(aiChangeError(caught));
+      setActionError(aiChangeError(caught, change));
     } finally {
       setBusy(null);
     }

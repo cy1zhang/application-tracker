@@ -199,6 +199,26 @@ test("test_cycle_edit_sends_season_and_year", async () => {
   }));
 });
 
+test("cycle keyboard tab reaches year before leaving the cell and saving", async () => {
+  vi.mocked(updateApplication).mockResolvedValue(makeApplication({ season: "fall", year: 2028, version: 8 }));
+  const { cells } = renderGrid();
+  fireEvent.click(within(cells[3]).getByRole("button"));
+  const season = within(cells[3]).getByRole("combobox", { name: "Season" });
+  fireEvent.change(season, { target: { value: "fall" } });
+  fireEvent.keyDown(season, { key: "Tab" });
+  expect(within(cells[3]).getByRole("spinbutton", { name: "Year" })).toHaveFocus();
+  const year = within(cells[3]).getByRole("spinbutton", { name: "Year" });
+  fireEvent.change(year, { target: { value: "2028" } });
+  fireEvent.keyDown(year, { key: "Tab", shiftKey: true });
+  expect(season).toHaveFocus();
+  fireEvent.keyDown(season, { key: "Tab" });
+  fireEvent.keyDown(year, { key: "Tab" });
+  expect(within(cells[4]).getByRole("button")).toHaveFocus();
+  await waitFor(() => expect(updateApplication).toHaveBeenCalledWith("app-1", {
+    expected_version: 7, season: "fall", year: 2028,
+  }));
+});
+
 test("test_conflict_message_clears_on_next_edit", async () => {
   vi.mocked(updateApplication).mockRejectedValue(new ApiError(409, "Stale version"));
   const { cells } = renderGrid();
