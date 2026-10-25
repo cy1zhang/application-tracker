@@ -1,31 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-import { ApiError, createApplication, listAllApplications, listAllReviews } from "./api/client";
-import type {
-  Application,
-  ApplicationCreate,
-  ApplicationValues,
-  ReviewItem,
-} from "./api/types";
-import { ApplicationDetail } from "./applications/ApplicationDetail";
-import { ApplicationForm } from "./applications/ApplicationForm";
-import { ApplicationList } from "./applications/ApplicationList";
-import {
-  DEFAULT_FILTERS,
-  type Filters,
-  type SortKey,
-} from "./applications/filtering";
-import { GmailConnection } from "./gmail/GmailConnection";
-import { AiSettings } from "./settings/AiSettings";
+import { ApiError, listAllApplications, listAllReviews } from "./api/client";
+import type { Application, ReviewItem } from "./api/types";
 import { DeleteAccount } from "./settings/DeleteAccount";
-import { ReviewQueue } from "./reviews/ReviewQueue";
+import { SettingsPanel } from "./sheet/SettingsPanel";
+import { Sheet } from "./sheet/Sheet";
 import "./styles.css";
-
-type View =
-  | { kind: "list" }
-  | { kind: "create" }
-  | { kind: "reviews" }
-  | { kind: "detail"; applicationId: string };
 
 type AppProps = {
   email?: string | null;
@@ -35,14 +15,12 @@ type AppProps = {
 
 function App({ email, onSignOut, onAccountDeleted }: AppProps) {
   const [deleting, setDeleting] = useState(false);
-  const [view, setView] = useState<View>({ kind: "list" });
+  const [errorSettingsOpen, setErrorSettingsOpen] = useState(false);
   const [applications, setApplications] = useState<Application[] | null>(null);
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
-  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const [sortKey, setSortKey] = useState<SortKey>("updated");
   // Loads can overlap; only the most recently started one may update state.
   const latestLoad = useRef(0);
   const latestReviewLoad = useRef(0);
@@ -104,23 +82,6 @@ function App({ email, onSignOut, onAccountDeleted }: AppProps) {
     void loadReviews();
   }, []);
 
-  function showReviews() {
-    setView({ kind: "reviews" });
-    void loadReviews();
-  }
-
-  function showList() {
-    setView({ kind: "list" });
-    void loadApplications();
-    void loadReviews();
-  }
-
-  async function handleCreate(values: ApplicationValues) {
-    // In create mode the form requires company, role, and status.
-    const created = await createApplication(values as ApplicationCreate);
-    setView({ kind: "detail", applicationId: created.application_id });
-  }
-
   return (
     <div className="app-shell">
       <header className="site-header">
@@ -140,64 +101,34 @@ function App({ email, onSignOut, onAccountDeleted }: AppProps) {
         {deleting && (
           <DeleteAccount resumed onAccountDeleted={() => onAccountDeleted?.()} />
         )}
-        {!deleting && !accessDenied && (applications !== null || loadError !== null) && email && onSignOut && (
-          <>
-            <GmailConnection />
-            <AiSettings />
-            <DeleteAccount onAccountDeleted={() => onAccountDeleted?.()} />
-          </>
-        )}
-        {!deleting && !accessDenied && applications !== null && (
-          <nav className="tracker-nav" aria-label="Tracker views">
-            <button type="button" onClick={showList}>Applications</button>
-            <button type="button" onClick={showReviews}>Needs review ({reviews.length})</button>
-          </nav>
-        )}
         {!deleting && accessDenied && (
           <section className="page" aria-labelledby="access-denied-title">
             <h1 id="access-denied-title">Access denied</h1>
             <p>Ask the app administrator to approve your account.</p>
           </section>
         )}
-        {!deleting && !accessDenied && view.kind === "create" && (
-          <section className="page" aria-labelledby="create-title">
-            <h1 id="create-title">New application</h1>
-            <ApplicationForm
-              submitLabel="Create application"
-              onSubmit={handleCreate}
-              onCancel={showList}
-            />
-          </section>
-        )}
-        {!deleting && !accessDenied && view.kind === "detail" && (
-          <ApplicationDetail applicationId={view.applicationId} otherApplications={(applications ?? []).filter((item) => item.application_id !== view.applicationId)} onMerged={loadApplications} onBack={showList} />
-        )}
-        {!deleting && !accessDenied && view.kind === "reviews" && applications !== null && (
-          reviewError ? (
-            <div role="alert" className="error"><p>Could not load reviews: {reviewError}</p><button type="button" onClick={() => void loadReviews()}>Retry reviews</button></div>
-          ) : <ReviewQueue reviews={reviews} applications={applications} onResolved={refreshAfterReview} onBack={showList} />
-        )}
-        {!deleting && !accessDenied && view.kind === "list" &&
+        {!deleting && !accessDenied &&
           (loadError !== null ? (
-            <div role="alert" className="error">
-              <p>Could not load applications: {loadError}</p>
-              <button type="button" onClick={() => void loadApplications()}>
-                Retry
-              </button>
-            </div>
+            <>
+              <div role="alert" className="error">
+                <p>Could not load applications: {loadError}</p>
+                <button type="button" onClick={() => void loadApplications()}>Retry</button>
+              </div>
+              {email && onSignOut && (
+                <><button type="button" onClick={() => setErrorSettingsOpen((open) => !open)}>Settings</button>
+                {errorSettingsOpen && <SettingsPanel reviews={reviews} onReload={refreshAfterReview} onAccountDeleted={() => onAccountDeleted?.()} />}</>
+              )}
+            </>
           ) : applications === null ? (
             <p className="muted">Loading applications…</p>
           ) : (
-            <ApplicationList
+            <Sheet
               applications={applications}
-              filters={filters}
-              onFiltersChange={setFilters}
-              sortKey={sortKey}
-              onSortChange={setSortKey}
-              onSelect={(applicationId) =>
-                setView({ kind: "detail", applicationId })
-              }
-              onCreate={() => setView({ kind: "create" })}
+              reviews={reviews}
+              onReload={refreshAfterReview}
+              mode="live"
+              reviewError={reviewError}
+              onAccountDeleted={email && onSignOut ? () => onAccountDeleted?.() : undefined}
             />
           ))}
       </main>

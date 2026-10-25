@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import App from "./App";
@@ -54,31 +54,26 @@ beforeEach(() => {
   });
 });
 
-test("shows internships by default with a status summary", async () => {
+test("shows all applications in the sheet by default", async () => {
   vi.mocked(listAllApplications).mockResolvedValue([internship, coop]);
   render(<App />);
 
-  expect(await screen.findByRole("button", { name: "Acme" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Globex" })).not.toBeInTheDocument();
-  const summary = screen.getByLabelText("Status summary");
-  expect(within(summary).getByText("1 of 2")).toBeInTheDocument();
+  expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "Globex" })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Applications (2)" })).toBeInTheDocument();
 });
 
 test("filters, searches, and explains empty results", async () => {
   vi.mocked(listAllApplications).mockResolvedValue([internship, coop]);
   render(<App />);
-  await screen.findByRole("button", { name: "Acme" });
-
-  fireEvent.change(screen.getByLabelText("Role type"), {
-    target: { value: "all" },
-  });
-  expect(screen.getByRole("button", { name: "Globex" })).toBeInTheDocument();
+  await screen.findByRole("cell", { name: "Acme" });
+  expect(screen.getByRole("cell", { name: "Globex" })).toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText("Search"), {
     target: { value: "platform" },
   });
-  expect(screen.queryByRole("button", { name: "Acme" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Globex" })).toBeInTheDocument();
+  expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "Globex" })).toBeInTheDocument();
 
   fireEvent.change(screen.getByLabelText("Search"), {
     target: { value: "no such company" },
@@ -113,7 +108,7 @@ test("shows a pending review count and opens the review queue", async () => {
   }]);
   render(<App />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "Needs review (1)" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Needs a look (1)" }));
   expect(screen.getByRole("heading", { name: "Needs review" })).toBeInTheDocument();
   expect(screen.getByText("Interview invitation")).toBeInTheDocument();
 });
@@ -121,7 +116,7 @@ test("shows a pending review count and opens the review queue", async () => {
 test("reloads reviews when the review queue is opened", async () => {
   vi.mocked(listAllApplications).mockResolvedValue([internship]);
   render(<App />);
-  await screen.findByRole("button", { name: "Needs review (0)" });
+  await screen.findByRole("tab", { name: "Needs a look (0)" });
   expect(listAllReviews).toHaveBeenCalledOnce();
 
   vi.mocked(listAllReviews).mockResolvedValue([{
@@ -138,10 +133,25 @@ test("reloads reviews when the review queue is opened", async () => {
     proposed_season: null,
     proposed_year: null,
   }]);
-  fireEvent.click(screen.getByRole("button", { name: "Needs review (0)" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Needs a look (0)" }));
 
   expect(await screen.findByText("Offer discussion")).toBeInTheDocument();
   expect(listAllReviews).toHaveBeenCalledTimes(2);
+});
+
+test("retries a failed review load from the sheet", async () => {
+  vi.mocked(listAllApplications).mockResolvedValue([internship]);
+  vi.mocked(listAllReviews)
+    .mockRejectedValueOnce(new ApiError(500, "Review service unavailable"))
+    .mockRejectedValueOnce(new ApiError(500, "Review service unavailable"))
+    .mockResolvedValueOnce([]);
+  render(<App />);
+
+  fireEvent.click(await screen.findByRole("tab", { name: "Needs a look (0)" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Could not load reviews: Review service unavailable");
+  fireEvent.click(screen.getByRole("button", { name: "Retry reviews" }));
+  expect(await screen.findByText("No emails need review.")).toBeInTheDocument();
+  expect(listAllReviews).toHaveBeenCalledTimes(3);
 });
 
 test("shows a load error and retries", async () => {
@@ -157,7 +167,7 @@ test("shows a load error and retries", async () => {
   );
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 
-  expect(await screen.findByRole("button", { name: "Acme" })).toBeInTheDocument();
+  expect(await screen.findByRole("cell", { name: "Acme" })).toBeInTheDocument();
 });
 
 test("shows access denied without tracker controls for an unapproved account", async () => {
@@ -167,7 +177,7 @@ test("shows access denied without tracker controls for an unapproved account", a
   expect(await screen.findByRole("heading", { name: "Access denied" })).toBeInTheDocument();
   expect(screen.getByText(/ask the app administrator to approve your account/i)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "New application" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "New row" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
 });
 
@@ -178,7 +188,7 @@ test("creates an application and opens its detail", async () => {
   vi.mocked(listApplicationEvents).mockResolvedValue([]);
   render(<App />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "New application" }));
+  fireEvent.click(await screen.findByRole("button", { name: "New row" }));
   fireEvent.change(screen.getByLabelText("Company"), { target: { value: "Acme" } });
   fireEvent.change(screen.getByLabelText("Role"), {
     target: { value: "Software Engineer Intern" },
@@ -256,12 +266,13 @@ test("an older list response does not overwrite a newer one", async () => {
 test("shows the danger zone only when signed in", async () => {
   vi.mocked(listAllApplications).mockResolvedValue([internship]);
   const { unmount } = render(<App />);
-  await screen.findByRole("button", { name: "Acme" });
+  await screen.findByRole("cell", { name: "Acme" });
   expect(screen.queryByRole("heading", { name: "Danger zone" })).not.toBeInTheDocument();
   unmount();
 
   render(<App email="a@example.test" onSignOut={vi.fn()} onAccountDeleted={vi.fn()} />);
-  expect(await screen.findByRole("heading", { name: "Danger zone" })).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+  expect(screen.getByRole("heading", { name: "Danger zone" })).toBeInTheDocument();
 });
 
 test("hides the danger zone when access is denied", async () => {
@@ -275,6 +286,7 @@ test("keeps account deletion available when applications fail to load", async ()
   vi.mocked(listAllApplications).mockRejectedValue(new ApiError(500, "Server error"));
   render(<App email="a@example.test" onSignOut={vi.fn()} onAccountDeleted={vi.fn()} />);
   await screen.findByText("Could not load applications: Server error");
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
   expect(screen.getByRole("heading", { name: "Danger zone" })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Delete account" })).toBeInTheDocument();
 });
@@ -283,7 +295,7 @@ test("a 423 from any call shows the deleting state, not access denied", async ()
   vi.mocked(listAllApplications).mockResolvedValue([internship]);
   vi.mocked(getAccountStatus).mockResolvedValue({ state: "deleting" });
   render(<App email="a@example.test" onSignOut={vi.fn()} onAccountDeleted={vi.fn()} />);
-  await screen.findByRole("button", { name: "Acme" });
+  await screen.findByRole("cell", { name: "Acme" });
 
   act(() => {
     window.dispatchEvent(new Event("account-deleting"));
@@ -291,14 +303,14 @@ test("a 423 from any call shows the deleting state, not access denied", async ()
 
   expect(screen.getByText("Account deletion in progress")).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Access denied" })).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Acme" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("cell", { name: "Acme" })).not.toBeInTheDocument();
 });
 
 test("a 410 from any call finishes sign-out", async () => {
   const done = vi.fn();
   vi.mocked(listAllApplications).mockResolvedValue([internship]);
   render(<App email="a@example.test" onSignOut={vi.fn()} onAccountDeleted={done} />);
-  await screen.findByRole("button", { name: "Acme" });
+  await screen.findByRole("cell", { name: "Acme" });
 
   act(() => {
     window.dispatchEvent(new Event("account-deleted"));

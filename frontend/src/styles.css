@@ -488,6 +488,101 @@ tbody tr:last-child td {
   border-radius: 4px;
 }
 
+.sheet-shell {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.sheet-toolbar,
+.sheet-actions,
+.sheet-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sheet-toolbar {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.sheet-filters {
+  margin-bottom: 20px;
+}
+
+.sheet-grid-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid #d4ddd7;
+}
+
+.sheet-grid {
+  min-width: 860px;
+}
+
+.sheet-grid th button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.sheet-grid th[aria-sort="ascending"] button::after {
+  content: " ↑";
+}
+
+.sheet-grid th[aria-sort="descending"] button::after {
+  content: " ↓";
+}
+
+.sheet-tabs {
+  overflow-x: auto;
+  padding-top: 12px;
+  border-top: 1px solid #d4ddd7;
+}
+
+.sheet-tabs button {
+  flex: none;
+  border-bottom: 2px solid transparent;
+}
+
+.sheet-tabs button[aria-selected="true"] {
+  color: #276146;
+  border-bottom-color: #276146;
+  font-weight: 600;
+}
+
+.sheet-settings {
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+  background: #f3f6f3;
+  border: 1px solid #d4ddd7;
+}
+
+.sheet-settings .gmail-connection,
+.sheet-settings .ai-settings,
+.sheet-settings .danger-zone {
+  margin: 0;
+}
+
+.sheet-ollama {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .site-header { padding: 0 16px; }
+  .content { padding: 20px 12px 40px; }
+  .sheet-toolbar h1 { font-size: 1.5rem; }
+  .sheet-settings { padding: 12px; }
+}
+
 .danger-zone h2 {
   color: #7a1f1f;
 }

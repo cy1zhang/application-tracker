@@ -74,9 +74,10 @@ interface ReviewQueueProps {
   applications: Application[];
   onResolved: () => Promise<void>;
   onBack: () => void;
+  showOllama?: boolean;
 }
 
-export function ReviewQueue({ reviews, applications, onResolved, onBack }: ReviewQueueProps) {
+export function ReviewQueue({ reviews, applications, onResolved, onBack, showOllama = true }: ReviewQueueProps) {
   const [visibleCount, setVisibleCount] = useState(20);
   const [active, setActive] = useState<ActiveAction | null>(null);
   const [attachId, setAttachId] = useState("");
@@ -165,8 +166,8 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack }: Revie
         <h1 id="reviews-title">Needs review</h1>
         <span className="review-count">{reviews.length} pending</span>
       </div>
-      {reviews.length > 0 && <button type="button" onClick={() => setShowLocalAi((shown) => !shown)}>Analyze with Ollama</button>}
-      {showLocalAi && <LocalOllamaPanel reviews={displayedReviews} failedIds={localFailedIds.current} onSuggested={(review) => setLocalSuggestions((current) => ({ ...current, [review.message_id]: review }))} onFinished={onResolved} />}
+      {showOllama && reviews.length > 0 && <button type="button" onClick={() => setShowLocalAi((shown) => !shown)}>Analyze with Ollama</button>}
+      {showOllama && showLocalAi && <LocalOllamaPanel reviews={displayedReviews} failedIds={localFailedIds.current} onSuggested={(review) => setLocalSuggestions((current) => ({ ...current, [review.message_id]: review }))} onFinished={onResolved} />}
       {error && <p role="alert" className="review-error">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       {suggested.length > 0 && <p className="muted">{suggested.length} {suggested.length === 1 ? "review has" : "reviews have"} AI suggestions (shown first)</p>}
