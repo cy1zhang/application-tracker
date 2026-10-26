@@ -12,7 +12,8 @@
 - **No exact duplicate rows**, comparing normalized company, role and cycle.
 - **Needs a look: 110.** 65 are AI cases the system routed for review (ambiguous match, status regression, invalid output after 3 tries). 45 are unparseable messages carried over from the old import.
 - **3 queue items** fail on every attempt and stay queued.
-- **Mode is `on`.** New mail synced by AWS is queued, and the next worker run applies it. No LaunchAgent is installed yet, so run the worker by hand (`cd backend && uv run --group local python -m local_tools worker --until-empty`) or approve the LaunchAgent.
+- **Mode is `on`.** The worker LaunchAgent `com.applicationtracker.worker` was installed with the owner's OK on 2026-10-25. It runs at login and every 30 minutes, and logs counts to `~/Library/Logs/application-tracker/worker.log`. Remove it with `cd backend && uv run --group local python -m local_tools.launchagent uninstall`.
+- **Gmail needs reconnecting.** Since about 21:30 UTC every message read returns 503 `gmail_connection_unavailable`, while `/gmail/connection` still reports connected. This is most likely the 7-day refresh-token expiry for Google OAuth apps in Testing mode. Reconnect in Settings → Gmail. Until then, worker runs stop immediately with no effect.
 - **Final answer-key score:** started 21:20 UTC; results go in the plan files.
 
 ## What the owner approved
@@ -44,7 +45,7 @@
 
 ## Not done or needs the owner
 
-1. Install the background worker LaunchAgent (`uv run --group local python -m local_tools launchagent install`). It changes macOS login config, so it waits for the owner's OK.
+1. Reconnect Gmail (see above). Then re-run the answer-key score with normalized company and role comparison. The scorer's exact-string comparison made the raw score read precision 0.284 and recall 0.220, but the errors themselves were 0 fake rows, 0 duplicates, 1 merged row and 4 wrong statuses across 81 automatic changes.
 2. Plans 2, 3 and 4 are complete. Each task was reviewed, and each plan had a final whole-branch review with a fix wave that was re-reviewed. The parked items are in the ledgers.
 3. Known follow-ups:
    - The AI-queue and plan routes scan every processed email on each call. That is fine at about 1,400 items after the timeout bump, but the scans should become indexed queries.
