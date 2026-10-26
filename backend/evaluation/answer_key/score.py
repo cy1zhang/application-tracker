@@ -31,6 +31,7 @@ from app.services.ai_extraction import (
     validate_extraction,
 )
 from app.services.ai_providers import ProviderError
+from app.services.application_matching import normalize_company, normalize_role
 from app.services.auto_apply import AutoDecision, MessageRef, decide
 from app.services.email_filters import filter_reason
 from app.services.email_processing import process_message
@@ -108,13 +109,23 @@ def _value(item, name):
     return getattr(value, "value", value)
 
 
+def _same_field(name: str, got, want) -> bool:
+    if name == "company":
+        got = normalize_company(got) if got is not None else None
+        want = normalize_company(want) if want is not None else None
+    elif name == "role":
+        got = (normalize_role(got) or None) if got is not None else None
+        want = (normalize_role(want) or None) if want is not None else None
+    return got in (None, want)
+
+
 def _correct(label: Label, outcome: EmailOutcome, row_keys: dict) -> bool:
     if label.kind != "application_update" or label.application_key is None:
         return False
     if row_keys[outcome.row] != {label.application_key}:
         return False
     if not all(
-        getattr(outcome, name) in (None, _value(label, name))
+        _same_field(name, getattr(outcome, name), _value(label, name))
         for name in (*FIELDS, "role_type")
     ):
         return False

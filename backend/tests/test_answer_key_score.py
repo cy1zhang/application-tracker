@@ -620,3 +620,30 @@ def test_precision_checks_requisition_id_only_when_one_was_written():
         out("E4", "created", "r4", company="Delta", requisition_id="R-4"),
     ]
     assert score(labels, outcomes).precision == pytest.approx(2 / 4)
+
+
+def _one_row_correct(label_fields, outcome_fields):
+    labels = {"E1": label("E1", key="a", **label_fields)}
+    report = score(labels, [out("E1", "created", "r1", **outcome_fields)])
+    return report.precision == 1.0
+
+
+def test_company_compared_after_normalization():
+    assert _one_row_correct({"company": "Acme Robotics"}, {"company": "Acme Robotics, Inc."})
+
+
+def test_role_compared_after_normalization():
+    assert _one_row_correct(
+        {"role": "Software Engineering Intern"}, {"role": "SWE Intern"}
+    )
+
+
+def test_different_company_still_wrong():
+    assert not _one_row_correct({"company": "Acme Robotics"}, {"company": "Beta Labs"})
+
+
+def test_wrong_status_still_wrong_with_normalized_names():
+    assert not _one_row_correct(
+        {"company": "Acme Robotics", "status": "applied"},
+        {"company": "Acme Robotics, Inc.", "status": "rejected"},
+    )
