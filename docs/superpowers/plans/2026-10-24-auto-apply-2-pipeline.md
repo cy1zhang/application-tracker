@@ -43,13 +43,15 @@ Goal: keep parse failures that plausibly concern an application visible in a sep
 - [x] Filter clearly unrelated headers before recording a parse failure as a review; preserve uncertain messages as `unparseable_message`.
 - [x] Split unparsed messages into their own sheet tab with a separate count and the existing review actions.
 - [x] Verify backend, frontend, evaluation, lint, and build; preview each existing development item against the filter before any guarded reclassification.
-- [ ] Reclassify only unchanged, unresolved, clearly unrelated development reviews; verify counts and deploy the code to development.
+- [x] Reclassify only unchanged, unresolved, clearly unrelated development reviews; verify counts and deploy the code to development.
 
 Decision: treat news, shopping, promotional, account-scam, and welcome/resume-tip subjects from matching service senders as unrelated only when the subject contains no application-stage wording. Cost if wrong: a job update hidden behind one of those templates will be retained in Gmail but omitted from the tracker review queue. Unknown senders and any plausible application message remain visible.
 
 Decision: use the existing review record for parse failures and split it only in the sheet UI. Cost if wrong: other API consumers still see both categories in one paginated review endpoint.
 
 The final read-only development preview found 89 pending reviews, including 45 parse failures: 37 headers match the narrow unrelated-mail filter, and 8 remain. The retained items are five Tradeweb recruiting messages delivered through Oracle Cloud, one Lab37 receipt, and two LinkedIn/Crcle notifications. The owner was in automatic mode with no active sync. The full backend suite passed (1,281 tests); 70 focused tests passed after narrowing the Substack filter. Frontend lint, 233 tests, typecheck, build, audit, synthetic evaluation, SAM lint, and 14 offline deploy tests passed.
+
+The guarded development reclassification changed only 37 unchanged, unresolved `unparseable_message` event records to `ignored / filtered:non_application_headers`, preserving their previous outcome and reason. It did not write applications or Gmail messages. After deployment of `30ba94b`, a fresh owner-scoped read found 297 active applications and 52 pending reviews: 43 subject-only, 8 unparsed, and 1 IBM ambiguous match. The hosted app and its new bundle returned HTTP 200 and contained the Unparsed mail tab; the API health endpoint returned HTTP 200. The first deploy attempt stopped at a macOS frontend build because Docker's Linux `npm ci` had overwritten the shared `node_modules`; a macOS `npm ci` restored it and the second deploy succeeded.
 
 ## Global Constraints
 
