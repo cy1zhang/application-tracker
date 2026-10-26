@@ -10,8 +10,9 @@
 
 - Gmail connected and content fetch worked; the import completed at 09:28 UTC with 1,144 messages. Mode was `on`. The October 25 counts and reconnect warning below are historical.
 - A guarded development recheck of the 13 `ambiguous_match` and 9 `status_regression` reviews created 7 separate applications and cleared 12 reviews without changing a rejected status. Two more interview-link logistics were resolved with no application change. A fresh read found **297 applications and 89 pending reviews**; one IBM interview email remains ambiguous because it names no role among several applications. The other 88 reviews belong to the subject-only and unparseable categories.
-- Local code on this branch handles the same decisions for future messages, recognizes a recruiting-team company suffix, and supports conditional rechecks of unchanged AI reviews. It has not yet been deployed. See the October 26 follow-up in `docs/superpowers/plans/2026-10-24-auto-apply-2-pipeline.md`.
+- Commits `5f5e481` and `a207746` are deployed to development. The backend handles the same decisions for future messages, recognizes a recruiting-team company suffix, and supports conditional rechecks of unchanged AI reviews. The hosted app and API health endpoint both returned HTTP 200 after deployment. See the October 26 follow-up in `docs/superpowers/plans/2026-10-24-auto-apply-2-pipeline.md`.
 - AWS login and Docker Desktop are available again. The pinned Node 22.23.3 frontend checks passed in a Docker container; the Mac's default Node 23 cannot run the updated `undici` test dependency.
+- Separate data-quality lead: one IBM row may have been advanced to Interviewing by an email about another IBM role. Its status and requisition linkage need an audited correction. No IBM application row was changed in this follow-up.
 
 ## October 25 snapshot (historical)
 
