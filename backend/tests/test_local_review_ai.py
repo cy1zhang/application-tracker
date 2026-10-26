@@ -126,7 +126,10 @@ def _service(generation=1):
             return SimpleNamespace(items=[_candidate().application], next_cursor=None)
 
         def list_events(self, **kwargs):
-            return [SimpleNamespace(thread_id="thread-1", requisition_id=None)]
+            return [SimpleNamespace(
+                thread_id="thread-1", requisition_id=None,
+                occurred_at=NOW, changes={"status": object()},
+            )]
 
     reviews = Reviews()
     service = LocalReviewAiService(

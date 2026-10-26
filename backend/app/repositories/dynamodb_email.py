@@ -37,7 +37,8 @@ _EXECUTE_CONDITION = (
 )
 # reconsider may overwrite an ignored plan that nobody resolved or undid.
 _RECONSIDER_CONDITION = (
-    "outcome = :ignored AND attribute_exists(ai_plan) "
+    "(outcome = :ignored OR (outcome = :review AND reason = :needs_look "
+    "AND rule_reason IN (:ambiguous, :regression))) AND attribute_exists(ai_plan) "
     "AND attribute_not_exists(resolution) AND attribute_not_exists(undone_at)"
 )
 _PROPOSAL_FIELDS = (
@@ -85,6 +86,18 @@ def is_reconsiderable(item: dict[str, Any]) -> bool:
     return (
         item.get("outcome") == "ignored" and is_ai_change(item)
         and "resolution" not in item and "undone_at" not in item
+    )
+
+
+def is_recheckable_review(item: dict[str, Any]) -> bool:
+    return (
+        item.get("outcome") == "review_required"
+        and item.get("reason") == "needs_look"
+        and item.get("rule_reason") in {"ambiguous_match", "status_regression"}
+        and "ai_plan" in item
+        and item.get("review_version", 0) == 0
+        and "resolution" not in item
+        and "undone_at" not in item
     )
 
 
@@ -621,8 +634,8 @@ class DynamoEmailRepository:
         require_mode_on=True adds a Users check so nothing is written unless the
         owner's auto_apply_mode is still "on"; otherwise AutoApplyOff is raised.
 
-        reconsider=True also lets an executed, ignored, unresolved, not-undone plan
-        be overwritten (still bound to the same planned_at).
+        reconsider=True also lets an executed ignored plan or a targeted,
+        unchanged review be rechecked (bound to the same saved plan).
         """
         if decision.action == "create" and (
             decision.fields.get("company") is None
@@ -797,7 +810,9 @@ class DynamoEmailRepository:
         """Python mirror of _EXECUTE_CONDITION for an existing event item."""
         plan = item.get("ai_plan")
         if reconsider:
-            return plan is not None and is_reconsiderable(item)
+            return plan is not None and (
+                is_reconsiderable(item) or is_recheckable_review(item)
+            )
         return item["outcome"] in {"pending_ai", "retryable"} or (
             plan is not None
             and "executed_at" not in plan
@@ -1001,7 +1016,19 @@ class DynamoEmailRepository:
             if reconsider:
                 condition = _RECONSIDER_CONDITION
                 del values[":retryable"], values[":pending_ai"]
-                values[":ignored"] = "ignored"
+                values.update({
+                    ":ignored": "ignored", ":review": "review_required",
+                    ":needs_look": "needs_look", ":ambiguous": "ambiguous_match",
+                    ":regression": "status_regression",
+                })
+                condition += " AND ai_plan = :expected_plan"
+                values[":expected_plan"] = existing["ai_plan"]
+                if existing["outcome"] == "review_required":
+                    if "review_version" in existing:
+                        condition += " AND review_version = :review_version"
+                        values[":review_version"] = existing["review_version"]
+                    else:
+                        condition += " AND attribute_not_exists(review_version)"
             # Bind the write to the item (and plan) that was read, so a different
             # plan stored since then is never marked executed.
             if existing is None:

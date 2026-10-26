@@ -1,8 +1,9 @@
 from datetime import UTC, datetime, timedelta
 
 from app.domain.ai import ApplicationKind
-from app.domain.applications import ApplicationStatus, RoleType, Season
+from app.domain.applications import Application, ApplicationStatus, RoleType, Season
 from app.services.ai_extraction import ValidatedExtraction
+from app.services.email_rules import ApplicationCandidate
 from app.services.plan_report import PlannedItem, simulate
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
@@ -97,3 +98,40 @@ def test_simulate_conflicting_cycle_on_same_thread_creates_separate_row():
     first = PlannedItem(**{**first.__dict__, "thread_id": "t"})
     report = simulate([first, second], [])
     assert report.counts["create"] == 2
+
+
+def test_simulate_distinct_requisition_after_rejection_then_updates_new_row():
+    rejected = ApplicationCandidate(
+        application=Application(
+            application_id="rejected", company="Acme", role="Software Engineering Intern",
+            role_type=RoleType.INTERNSHIP, season=Season.SUMMER, year=2027,
+            status=ApplicationStatus.REJECTED, application_date=None,
+            created_at=T0, updated_at=T0, version=1,
+        ),
+        requisition_ids=frozenset({"R-OLD"}),
+        last_status_event_at=T0,
+    )
+    report = simulate(
+        [
+            item("new", 1, requisition_id="R-NEW"),
+            item("interview", 2, status=ApplicationStatus.INTERVIEWING,
+                 requisition_id="R-NEW"),
+        ],
+        [rejected],
+    )
+    assert report.counts["create"] == 1
+    assert report.counts["update"] == 1
+    assert [line.target for line in report.sample] == ["planned:new", "planned:new"]
+
+
+def test_simulate_distinct_requisitions_with_same_role_and_thread_create_rows():
+    first = item("one", 0, requisition_id="R-1")
+    second = item("two", 1, requisition_id="R-2")
+    third = item("three", 2, requisition_id="R-3")
+    messages = [
+        PlannedItem(**{**entry.__dict__, "thread_id": "shared"})
+        for entry in (first, second, third)
+    ]
+    report = simulate(messages, [])
+    assert report.counts["create"] == 3
+    assert report.counts["needs_look"] == 0

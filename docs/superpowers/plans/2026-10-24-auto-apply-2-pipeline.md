@@ -14,6 +14,25 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-24-auto-apply-sheet-design.md` (sections 1-6 and 8; "Calls made"; "What counts as an application").
 
+## October 26 review backlog follow-up
+
+Goal: reduce the 13 ambiguous-match and 9 Rejected-to-Applied reviews seen in development without changing a rejected application to Applied or guessing an application identity.
+
+- [x] Add failing tests for status-free ambiguous mail, older Applied evidence, and a clearly distinct requisition after rejection, including cases that must stay in review.
+- [x] Extend owner-scoped candidates with the latest status-event timestamp and adjust only the auto-apply decision rules and in-memory simulation.
+- [x] Run focused tests and repository checks, then commit the verified change. Preview existing reviews separately before any account data change.
+- [ ] Deploy the checked commit to development and verify the hosted app and review counts.
+
+Decision: ignore an ambiguous match when the extraction has no status. Cost if wrong: optional role, cycle, or requisition enrichment from that message is missed, but no status or application identity is invented.
+
+Decision: keep Rejected intact. Ignore an Applied email received before the latest recorded Rejected status event when it has no distinct requisition. Email-written status events use the source email's received timestamp; manual status events use the edit timestamp. A later Applied confirmation with a distinct, globally unused requisition may create a separate application when company and role are explicit and every existing same-company/same-role row has a different recorded requisition. A conflicting requisition outranks a Gmail thread link; identical-subject confirmations can share a thread. Otherwise retain review. Cost if wrong: a manual correction may occur after a newer email, so that email remains ignored as a stale update; an applicant-tracking system could assign two IDs to one application, creating a duplicate. The seven pending confirmations were checked against their source messages, each of which explicitly names a different position number.
+
+Before applying, the read-only development preview in received order showed: 9 status-free ambiguous items to ignore, 4 to retain in review, 7 distinct-requisition confirmations to create as rows, and 2 older Applied messages to ignore. All 22 were unresolved AI-plan reviews with no later review edit.
+
+Development recheck result: the 18 projected automatic outcomes were stored. One of the four remaining messages matched an existing Applied row after removing a `Talent Acquisition Team` suffix from company matching, and it was ignored as unchanged. Two interview-link logistics were resolved as no action after reading the related interview confirmation; neither application changed. The last IBM second-round message names no role and remains in review. The latest read is 297 applications and 89 pending reviews, down from 290 and 110. Do not infer that the other 88 reviews are resolved by this change.
+
+The frontend lockfile advances the transitive test-only `undici` dependency from 8.11.2 to 8.12.3 so the repository's `npm audit` CI gate passes. The pinned Node 22.23.3 lint, 232 tests, typecheck, build, and audit passed in Docker; local Node 23.7 lacks an API used by `undici` 8.12.3.
+
 ## Global Constraints
 
 - The mode is a per-owner Users attribute, `auto_apply_mode`, with values `off` | `plan` | `on`. It defaults to `off`.

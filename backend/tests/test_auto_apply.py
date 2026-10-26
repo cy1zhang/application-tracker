@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.domain.ai import ApplicationKind
 from app.domain.applications import (
@@ -41,6 +41,8 @@ def candidate(
     year=2027,
     role_type=RoleType.INTERNSHIP,
     thread_ids=(),
+    requisition_ids=(),
+    last_status_event_at=None,
 ):
     return ApplicationCandidate(
         application=Application(
@@ -57,6 +59,8 @@ def candidate(
             version=1,
         ),
         thread_ids=frozenset(thread_ids),
+        requisition_ids=frozenset(requisition_ids),
+        last_status_event_at=last_status_event_at,
     )
 
 
@@ -86,6 +90,17 @@ def test_ambiguous_match_needs_look():
         candidates=[candidate("a", season=None), candidate("b", season=None)],
     )
     assert (d.action, d.reason) == ("needs_look", "ambiguous_match")
+
+
+def test_ambiguous_match_without_status_is_ignored():
+    d = decide(
+        extraction(status=None),
+        message_ref=REF,
+        candidates=[candidate("a", season=None), candidate("b", season=None)],
+    )
+    assert (d.action, d.reason, d.application_id) == (
+        "ignore", "ambiguous_no_status", None
+    )
 
 
 def test_regression_needs_look():
@@ -195,6 +210,128 @@ def test_reopen_rejected_needs_look():
         extraction(status=ApplicationStatus.INTERVIEWING),
         message_ref=REF,
         candidates=[candidate(status=ApplicationStatus.REJECTED)],
+    )
+    assert (d.action, d.reason) == ("needs_look", "status_regression")
+
+
+def test_applied_email_older_than_rejection_event_is_ignored():
+    d = decide(
+        extraction(status=ApplicationStatus.APPLIED),
+        message_ref=REF,
+        candidates=[candidate(
+            status=ApplicationStatus.REJECTED,
+            last_status_event_at=NOW + timedelta(hours=1),
+        )],
+    )
+    assert (d.action, d.reason, d.application_id) == (
+        "ignore", "stale_status_regression", "app-1"
+    )
+
+
+def test_distinct_requisition_after_rejection_creates_separate_application():
+    d = decide(
+        extraction(status=ApplicationStatus.APPLIED, requisition_id="R-NEW"),
+        message_ref=REF,
+        candidates=[candidate(
+            status=ApplicationStatus.REJECTED,
+            requisition_ids=["R-OLD"],
+            last_status_event_at=NOW - timedelta(hours=1),
+        )],
+    )
+    assert (d.action, d.reason, d.application_id, d.requisition_id) == (
+        "create", "ai_create", None, "R-NEW"
+    )
+
+
+def test_new_requisition_stays_in_review_if_it_is_used_elsewhere():
+    d = decide(
+        extraction(status=ApplicationStatus.APPLIED, requisition_id="R-NEW"),
+        message_ref=REF,
+        candidates=[
+            candidate(status=ApplicationStatus.REJECTED,
+                      requisition_ids=["R-OLD"],
+                      last_status_event_at=NOW - timedelta(hours=1)),
+            candidate("other", status=ApplicationStatus.REJECTED,
+                      requisition_ids=["r-new"],
+                      last_status_event_at=NOW - timedelta(hours=1)),
+        ],
+    )
+    assert (d.action, d.reason) == ("needs_look", "status_regression")
+
+
+def test_new_requisition_on_known_thread_creates_separate_application():
+    d = decide(
+        extraction(status=ApplicationStatus.APPLIED, requisition_id="R-NEW"),
+        message_ref=REF,
+        candidates=[candidate(
+            status=ApplicationStatus.REJECTED,
+            thread_ids=["t1"],
+            requisition_ids=["R-OLD"],
+            last_status_event_at=NOW - timedelta(hours=1),
+        )],
+    )
+    assert (d.action, d.reason, d.requisition_id) == (
+        "create", "ai_create", "R-NEW"
+    )
+
+
+def test_ambiguous_distinct_requisition_creates_separate_application():
+    d = decide(
+        extraction(status=ApplicationStatus.APPLIED, requisition_id="R-NEW"),
+        message_ref=REF,
+        candidates=[
+            candidate("a", status=ApplicationStatus.REJECTED,
+                      requisition_ids=["R-OLD-1"],
+                      last_status_event_at=NOW - timedelta(hours=1)),
+            candidate("b", status=ApplicationStatus.APPLIED,
+                      requisition_ids=["R-OLD-2"]),
+        ],
+    )
+    assert (d.action, d.reason, d.requisition_id) == (
+        "create", "ai_create", "R-NEW"
+    )
+
+
+def test_ambiguous_new_requisition_with_unidentified_row_stays_in_review():
+    d = decide(
+        extraction(status=ApplicationStatus.APPLIED, requisition_id="R-NEW"),
+        message_ref=REF,
+        candidates=[
+            candidate("a", requisition_ids=["R-OLD"]),
+            candidate("b"),
+        ],
+    )
+    assert (d.action, d.reason) == ("needs_look", "ambiguous_match")
+
+
+def test_new_requisition_without_known_rejection_time_stays_in_review():
+    d = decide(
+        extraction(status=ApplicationStatus.APPLIED, requisition_id="R-NEW"),
+        message_ref=REF,
+        candidates=[candidate(status=ApplicationStatus.REJECTED,
+                              requisition_ids=["R-OLD"])],
+    )
+    assert (d.action, d.reason) == ("needs_look", "status_regression")
+
+
+def test_new_requisition_without_role_stays_in_review():
+    d = decide(
+        extraction(status=ApplicationStatus.APPLIED, requisition_id="R-NEW", role=None),
+        message_ref=REF,
+        candidates=[candidate(status=ApplicationStatus.REJECTED,
+                              requisition_ids=["R-OLD"],
+                              last_status_event_at=NOW - timedelta(hours=1))],
+    )
+    assert (d.action, d.reason) == ("needs_look", "status_regression")
+
+
+def test_older_distinct_requisition_stays_in_review():
+    d = decide(
+        extraction(status=ApplicationStatus.APPLIED, requisition_id="R-NEW"),
+        message_ref=REF,
+        candidates=[candidate(status=ApplicationStatus.REJECTED,
+                              requisition_ids=["R-OLD"],
+                              last_status_event_at=NOW + timedelta(hours=1))],
     )
     assert (d.action, d.reason) == ("needs_look", "status_regression")
 

@@ -36,6 +36,8 @@ MatchResult = Matched | NoMatch | Ambiguous
 def normalize_company(name: str) -> str:
     text = re.sub(r"[.']", "", name.lower())
     tokens = re.sub(r"[^a-z0-9]+", " ", text).split()
+    if len(tokens) > 3 and tokens[-3:] == ["talent", "acquisition", "team"]:
+        tokens = tokens[:-3]
     while len(tokens) > 1 and tokens[-1] in _COMPANY_SUFFIXES:
         tokens.pop()
     return " ".join(tokens)
@@ -108,7 +110,14 @@ def match_application(
             return _outcome(compatible) or Ambiguous(1)
 
     if thread_id:
-        result = _outcome([c for c in candidates if thread_id in c.thread_ids])
+        by_thread = [c for c in candidates if thread_id in c.thread_ids]
+        if requisition and any(
+            c.requisition_ids
+            and requisition not in {r.strip().lower() for r in c.requisition_ids}
+            for c in by_thread
+        ):
+            return Ambiguous(len(by_thread))
+        result = _outcome(by_thread)
         if result:
             return result
 

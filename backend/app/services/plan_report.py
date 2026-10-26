@@ -50,6 +50,7 @@ def _with_thread(
         thread_ids=candidate.thread_ids | ({thread_id} if thread_id else set()),
         requisition_ids=candidate.requisition_ids
         | ({requisition_id} if requisition_id else set()),
+        last_status_event_at=candidate.last_status_event_at,
     )
 
 
@@ -77,7 +78,8 @@ def _apply(
                         created_at=item.received_at,
                         updated_at=item.received_at,
                         version=1,
-                    )
+                    ),
+                    last_status_event_at=item.received_at,
                 ),
                 item.thread_id,
                 decision.requisition_id,
@@ -99,6 +101,10 @@ def _apply(
                         application=merged,
                         thread_ids=candidate.thread_ids,
                         requisition_ids=candidate.requisition_ids,
+                        last_status_event_at=(
+                            item.received_at if "status" in decision.fields
+                            else candidate.last_status_event_at
+                        ),
                     ),
                     item.thread_id,
                     decision.requisition_id,

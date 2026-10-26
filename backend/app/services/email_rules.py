@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
 from app.domain.applications import Application, ApplicationStatus, Season
@@ -89,6 +90,7 @@ class ApplicationCandidate:
     application: Application
     thread_ids: frozenset[str] = frozenset()
     requisition_ids: frozenset[str] = frozenset()
+    last_status_event_at: datetime | None = None
 
 
 @dataclass(frozen=True)

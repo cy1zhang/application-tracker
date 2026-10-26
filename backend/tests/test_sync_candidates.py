@@ -55,4 +55,5 @@ def test_candidate_loader_preserves_owner_scoped_thread_and_requisition_links() 
         linked = next(item for item in candidates if item.application.application_id == "app-1")
         assert linked.thread_ids == frozenset({"thread-1"})
         assert linked.requisition_ids == frozenset({"req-123"})
+        assert linked.last_status_event_at == NOW
         assert all(item.application.application_id != "app-3" for item in candidates)

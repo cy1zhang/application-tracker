@@ -178,6 +178,83 @@ def test_ignore_and_needs_look_leave_application_untouched(env):
     assert env.applications.get(owner_id=OWNER, application_id="app-1").version == 1
 
 
+def test_recheck_targeted_review_can_be_ignored_without_application_change(env):
+    env.app()
+    set_mode(env, "on")
+    run(env, AutoDecision("needs_look", "ambiguous_match", None, {}))
+    result = run(
+        env, AutoDecision("ignore", "ambiguous_no_status", None, {}),
+        reconsider=True, require_mode_on=True,
+    )
+    assert (result.outcome, result.reason) == ("ignored", "ambiguous_no_status")
+    assert env.applications.get(owner_id=OWNER, application_id="app-1").version == 1
+    assert env.event("m1")["ai_plan"]["executed_at"] == NOW.isoformat()
+
+
+def test_recheck_targeted_review_can_create_distinct_application(env):
+    env.app()
+    set_mode(env, "on")
+    extracted = make_extraction(requisition_id="R-NEW")
+    run(env, AutoDecision("needs_look", "status_regression", "app-1", {}),
+        extraction=extracted)
+    result = run(
+        env, create_decision(requisition_id="R-NEW"), new_id="new-1",
+        extraction=extracted, reconsider=True, require_mode_on=True,
+    )
+    assert (result.outcome, result.application_id) == ("applied", "new-1")
+    assert env.event("m1")["origin"] == "ai"
+    assert env.event("m1")["requisition_id"] == "R-NEW"
+    assert env.applications.get(owner_id=OWNER, application_id="app-1").version == 1
+    assert env.applications.get(owner_id=OWNER, application_id="new-1").status == (
+        ApplicationStatus.APPLIED
+    )
+    replay = run(
+        env, create_decision(requisition_id="R-NEW"), new_id="new-2",
+        extraction=extracted, reconsider=True, require_mode_on=True,
+    )
+    assert replay == result
+    assert raw_app(env, "new-2") is None
+
+
+@pytest.mark.parametrize("extra", [
+    {"resolution": "reject"}, {"review_version": 1},
+])
+def test_recheck_does_not_overwrite_changed_review(env, extra):
+    set_mode(env, "on")
+    run(env, AutoDecision("needs_look", "status_regression", None, {}))
+    for key, value in extra.items():
+        env.client.update_item(
+            TableName="Events",
+            Key={"owner_id": {"S": OWNER}, "event_id": {"S": "gmail#m1"}},
+            UpdateExpression=f"SET {key} = :value",
+            ExpressionAttributeValues={":value": {"S": value} if isinstance(value, str)
+                                       else {"N": str(value)}},
+        )
+    result = run(env, create_decision(), new_id="new-1", reconsider=True,
+                 require_mode_on=True)
+    assert result.outcome == "review_required"
+    assert raw_app(env, "new-1") is None
+
+
+def test_recheck_does_not_overwrite_other_review_reason(env):
+    set_mode(env, "on")
+    run(env, AutoDecision("needs_look", "status_in_subject_only", None, {}))
+    result = run(env, AutoDecision("ignore", "no_change", None, {}),
+                 reconsider=True, require_mode_on=True)
+    assert result.outcome == "review_required"
+    assert env.event("m1")["rule_reason"] == "status_in_subject_only"
+
+
+def test_recheck_requires_auto_apply_mode_on(env):
+    from app.repositories.dynamodb_email import AutoApplyOff
+
+    run(env, AutoDecision("needs_look", "ambiguous_match", None, {}))
+    with pytest.raises(AutoApplyOff):
+        run(env, AutoDecision("ignore", "ambiguous_no_status", None, {}),
+            reconsider=True, require_mode_on=True)
+    assert env.event("m1")["outcome"] == "review_required"
+
+
 def test_plan_changed_since_read_is_not_executed_on_create(env, monkeypatch):
     seed_plan(env)
     env.client.update_item(

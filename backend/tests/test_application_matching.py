@@ -95,6 +95,17 @@ def test_company_suffix_ignored():
     assert isinstance(result, Matched)
 
 
+def test_recruiting_team_suffix_does_not_change_employer_identity():
+    assert normalize_company("DTCC Talent Acquisition Team") == "dtcc"
+    row = _candidate(company="DTCC Talent Acquisition Team",
+                     requisition_ids={"214459"})
+    result = _match(
+        [row], requisition_id="214459", company="DTCC",
+        role="Software Engineering Intern",
+    )
+    assert result == Matched(row)
+
+
 def test_requisition_beats_name():
     target = _candidate("app-1", role="Data Intern",
                         requisition_ids={"R-123"})
@@ -112,6 +123,15 @@ def test_thread_match():
     target = _candidate("app-1", company="Other", thread_ids={"t-1"})
     result = _match([_candidate("app-2"), target], thread_id="t-1")
     assert result == Matched(target)
+
+
+def test_thread_does_not_override_conflicting_requisition():
+    target = _candidate(thread_ids={"t-1"}, requisition_ids={"R-1"})
+    result = _match(
+        [target], thread_id="t-1", requisition_id="R-2",
+        company="Acme", role="Software Engineering Intern",
+    )
+    assert result == Ambiguous(1)
 
 
 def test_different_roles_same_company_no_match():

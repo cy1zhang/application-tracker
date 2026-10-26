@@ -3,12 +3,15 @@ from datetime import datetime
 from typing import Literal
 
 from app.domain.ai import ApplicationKind
+from app.domain.applications import ApplicationStatus
 from app.services.ai_extraction import ValidatedExtraction
 from app.services.application_matching import (
     Ambiguous,
     Matched,
     NoMatch,
     match_application,
+    normalize_company,
+    normalize_role,
 )
 from app.services.email_rules import ApplicationCandidate, would_regress
 
@@ -56,6 +59,42 @@ def _cycle_conflicts(
     )
 
 
+def _new_requisition_for_same_role(
+    extraction: ValidatedExtraction,
+    message_ref: MessageRef,
+    candidates: list[ApplicationCandidate],
+) -> bool:
+    if (
+        extraction.status != ApplicationStatus.APPLIED
+        or not extraction.company or not extraction.role or not extraction.requisition_id
+    ):
+        return False
+    company = normalize_company(extraction.company)
+    role = normalize_role(extraction.role)
+    if not company or not role:
+        return False
+    requisition = extraction.requisition_id.strip().casefold()
+    same_role = [
+        candidate for candidate in candidates
+        if candidate.application.company and candidate.application.role
+        and normalize_company(candidate.application.company) == company
+        and normalize_role(candidate.application.role) == role
+    ]
+    if not same_role or any(not candidate.requisition_ids for candidate in same_role):
+        return False
+    same_ids = {candidate.application.application_id for candidate in same_role}
+    if message_ref.thread_id and any(
+        message_ref.thread_id in candidate.thread_ids
+        and candidate.application.application_id not in same_ids
+        for candidate in candidates
+    ):
+        return False
+    return not any(
+        requisition in {value.strip().casefold() for value in candidate.requisition_ids}
+        for candidate in candidates
+    )
+
+
 def decide(
     extraction: ValidatedExtraction,
     *,
@@ -78,10 +117,16 @@ def decide(
         year=extraction.year,
         role_type=extraction.employment_type,
     )
+    proposed = _supported_fields(extraction)
     if isinstance(match, Ambiguous):
+        if extraction.status is None:
+            return AutoDecision("ignore", "ambiguous_no_status", None, {})
+        if _new_requisition_for_same_role(extraction, message_ref, candidates):
+            return AutoDecision(
+                "create", "ai_create", None, proposed, extraction.requisition_id
+            )
         return AutoDecision("needs_look", "ambiguous_match", None, {})
 
-    proposed = _supported_fields(extraction)
     if isinstance(match, Matched) and _cycle_conflicts(
         match.candidate, extraction
     ):
@@ -96,6 +141,38 @@ def decide(
             and current.status is not None
             and would_regress(current.status, status)
         ):
+            if (
+                current.status == ApplicationStatus.REJECTED
+                and status == ApplicationStatus.APPLIED
+                and match.candidate.last_status_event_at is not None
+            ):
+                known_requisitions = {
+                    value.strip().casefold()
+                    for value in match.candidate.requisition_ids
+                }
+                requisition = (extraction.requisition_id or "").strip().casefold()
+                distinct_requisition = bool(
+                    requisition and known_requisitions
+                    and requisition not in known_requisitions
+                )
+                if (
+                    message_ref.received_at <= match.candidate.last_status_event_at
+                    and not distinct_requisition
+                ):
+                    return AutoDecision(
+                        "ignore", "stale_status_regression", target, {}
+                    )
+                if (
+                    message_ref.received_at > match.candidate.last_status_event_at
+                    and distinct_requisition
+                    and _new_requisition_for_same_role(
+                        extraction, message_ref, candidates
+                    )
+                ):
+                    return AutoDecision(
+                        "create", "ai_create", None, proposed,
+                        extraction.requisition_id,
+                    )
             return AutoDecision("needs_look", "status_regression", target, {})
         changes = {
             name: value

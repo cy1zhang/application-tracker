@@ -19,6 +19,10 @@ def load_candidates(
                 requisition_ids=frozenset(
                     event.requisition_id for event in events if event.requisition_id
                 ),
+                last_status_event_at=max(
+                    (event.occurred_at for event in events if "status" in event.changes),
+                    default=None,
+                ),
             ))
         if page.next_cursor is None:
             return candidates
