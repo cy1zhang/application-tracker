@@ -18,6 +18,11 @@ const review: ReviewItem = {
   received_at: null, thread_id: null, source_url: null, subject: null, sender: null,
   application_id: "a", proposed_status: null, proposed_season: null, proposed_year: null,
 };
+const unparsedReview: ReviewItem = {
+  ...review, message_id: "unparsed-message", reason: "unparseable_message",
+  subject: "Application received", application_id: null, evidence: "",
+  source_url: "https://mail.google.com/mail/u/0/#all/synthetic-message",
+};
 
 beforeEach(() => {
   vi.mocked(getGmailConnection).mockResolvedValue({ connected: false, email: null });
@@ -33,13 +38,27 @@ test("test_tabs_render_with_counts", () => {
   render(<Sheet applications={[acme, globex]} reviews={[review]} onReload={vi.fn()} mode="live" />);
 
   const tabs = screen.getAllByRole("tab");
-  expect(tabs.map((tab) => tab.textContent)).toEqual(["Applications (2)", "Needs a look (1)", "AI changes (0)"]);
+  expect(tabs.map((tab) => tab.textContent)).toEqual(["Applications (2)", "Needs a look (1)", "Unparsed mail (0)", "AI changes (0)"]);
   expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   fireEvent.click(tabs[1]);
   expect(screen.getByText("Synthetic evidence")).toBeInTheDocument();
   fireEvent.click(tabs[0]);
   expect(screen.getByRole("table")).toBeInTheDocument();
   expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+});
+
+test("unparsed mail has its own tab and does not inflate Needs a look", () => {
+  render(<Sheet applications={[acme]} reviews={[review, unparsedReview]} onReload={vi.fn()} mode="live" />);
+
+  fireEvent.click(screen.getByRole("tab", { name: "Needs a look (1)" }));
+  expect(screen.getByText("Synthetic evidence")).toBeInTheDocument();
+  expect(screen.queryByText("Application received")).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("tab", { name: "Unparsed mail (1)" }));
+  expect(screen.getByText("Application received")).toBeInTheDocument();
+  expect(screen.queryByText("Synthetic evidence")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Open email" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Dismiss email" })).toBeInTheDocument();
 });
 
 test("test_header_click_toggles_sort", () => {
@@ -74,7 +93,7 @@ test("tabs use arrow keys to select and focus their labelled panels", () => {
   const tabs = screen.getAllByRole("tab");
   expect(screen.getByRole("tablist", { name: "Sheet tabs" })).toBeInTheDocument();
   for (const tab of tabs) expect(document.getElementById(tab.getAttribute("aria-controls") ?? "missing")).toBeInTheDocument();
-  expect(tabs.map((tab) => tab.getAttribute("tabindex"))).toEqual(["0", "-1", "-1"]);
+  expect(tabs.map((tab) => tab.getAttribute("tabindex"))).toEqual(["0", "-1", "-1", "-1"]);
   expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", tabs[0].id);
   expect(tabs[0]).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
 
@@ -90,10 +109,14 @@ test("tabs use arrow keys to select and focus their labelled panels", () => {
   expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", tabs[2].id);
 
   fireEvent.keyDown(tabs[2], { key: "ArrowRight" });
+  expect(tabs[3]).toHaveFocus();
+  expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", tabs[3].id);
+
+  fireEvent.keyDown(tabs[3], { key: "ArrowRight" });
   expect(tabs[0]).toHaveFocus();
   fireEvent.keyDown(tabs[0], { key: "ArrowLeft" });
-  expect(tabs[2]).toHaveFocus();
-  expect(tabs.map((tab) => tab.getAttribute("tabindex"))).toEqual(["-1", "-1", "0"]);
+  expect(tabs[3]).toHaveFocus();
+  expect(tabs.map((tab) => tab.getAttribute("tabindex"))).toEqual(["-1", "-1", "-1", "0"]);
 });
 
 test("test_search_and_filters_reduce_rows", () => {

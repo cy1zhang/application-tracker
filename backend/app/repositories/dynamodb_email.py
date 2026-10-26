@@ -889,6 +889,7 @@ class DynamoEmailRepository:
         self, *, owner_id: str, message_id: str,
         thread_id: str | None = None, received_at: datetime | None = None,
         subject: str | None = None, sender: str | None = None,
+        filtered: bool = False,
     ) -> StoredOutcome:
         prior = self._get_outcome(owner_id, message_id)
         if prior is not None and prior.outcome in _TERMINAL:
@@ -897,8 +898,8 @@ class DynamoEmailRepository:
             "owner_id": owner_id,
             "event_id": f"gmail#{message_id}",
             "source_message_id": message_id,
-            "outcome": "review_required",
-            "reason": "unparseable_message",
+            "outcome": "ignored" if filtered else "review_required",
+            "reason": "filtered:non_application_headers" if filtered else "unparseable_message",
         }
         if thread_id is not None:
             item["thread_id"] = thread_id

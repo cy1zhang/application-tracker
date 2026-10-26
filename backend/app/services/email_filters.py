@@ -107,3 +107,45 @@ def filter_reason(message: ParsedGmailMessage) -> FilterReason | None:
 def _is_service_local(local: str, domain: str) -> bool:
     return any(pattern.fullmatch(local) and suffix and _domain_matches(domain, suffix)
                for pattern, suffix, _ in _SENDER_RULES)
+
+
+# Parse failures have no trustworthy body. Use only narrow subject/sender pairs
+# for obviously unrelated mail; unfamiliar messages stay visible for inspection.
+_UNPARSEABLE_NOISE: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (domain, re.compile(subject, re.IGNORECASE))
+    for domain, subject in (
+        ("nytimes.com", r"^The Morning:"),
+        ("nvidia.com", r"^(?:Your Personalized Developer News|Learn for Free|Six new AI courses)"),
+        ("amazon.com", r"^(?:Delivered \d+ items?|Ordered \d+ items?|Shipped \d+ items?|Psst, your Prime Big Deal Days)"),
+        ("business.amazon.com", r"^(?:Prime Big Deal Days|.{0,80}Amazon Business offers business-only pricing)"),
+        ("news.paypal.com", r"^Shop sales"),
+        ("e.zoom.us", r"^Enhance your experience with Zoom"),
+        ("substack.com", r'^[“"]'),
+        ("email.viz.com", r"\bBlu-ray\b"),
+        ("searchdoc.live", r"\bYou Are Our Winner\b"),
+        ("jobright.ai", r"^Welcome to Jobright!"),
+        ("fidelity.com", r"^Upgrade your resume with these tips"),
+    )
+)
+_UNPARSEABLE_SPAM = re.compile(
+    r"^we(?: have|'ve) blocked your account!? .{0,80}photos and videos will be deleted",
+    re.IGNORECASE,
+)
+
+
+def filter_unparseable_headers(subject: str | None, sender: str | None) -> bool:
+    if not subject or not sender:
+        return False
+    domain = _split_address(sender)[1]
+    if _domain_matches(domain, "business.amazon.com") and re.match(
+        r"^.{0,80}Amazon Business offers business-only pricing", subject, re.IGNORECASE
+    ):
+        return True
+    if VETO_PATTERNS.search(subject) or re.search(r"\bapplication\b", subject, re.IGNORECASE):
+        return False
+    if _UNPARSEABLE_SPAM.search(subject):
+        return True
+    return bool(domain) and any(
+        _domain_matches(domain, suffix) and pattern.search(subject)
+        for suffix, pattern in _UNPARSEABLE_NOISE
+    )

@@ -24,7 +24,7 @@ type Props = {
   reviewError?: string | null;
 };
 
-const TAB_ORDER = ["applications", "reviews", "ai"] as const;
+const TAB_ORDER = ["applications", "reviews", "unparsed", "ai"] as const;
 type SheetTab = typeof TAB_ORDER[number];
 
 export function Sheet({ applications, reviews, onReload, mode, onAccountDeleted, reviewError }: Props) {
@@ -42,6 +42,8 @@ export function Sheet({ applications, reviews, onReload, mode, onAccountDeleted,
   const [aiRevision, setAiRevision] = useState(0);
   const [saveErrors, setSaveErrors] = useState<Record<string, { company: string; field: EditableField; message: string }>>({});
   const visible = sortApplications(filterApplications(applications, filters), sortKey, direction);
+  const unparsedReviews = reviews.filter((review) => review.reason === "unparseable_message");
+  const decisionReviews = reviews.filter((review) => review.reason !== "unparseable_message");
   const markers = useMemo(() => latestAiFieldChanges(aiChanges, applications), [aiChanges, applications]);
 
   function errorKey(application: Application, field: EditableField) {
@@ -103,7 +105,7 @@ export function Sheet({ applications, reviews, onReload, mode, onAccountDeleted,
 
   function selectTab(next: SheetTab) {
     setTab(next);
-    if (next === "reviews") void onReload();
+    if (next === "reviews" || next === "unparsed") void onReload();
   }
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, current: SheetTab) {
@@ -166,11 +168,13 @@ export function Sheet({ applications, reviews, onReload, mode, onAccountDeleted,
               {visible.length === 0 ? <p className="empty">{applications.length === 0 ? "No applications yet." : "No applications match these filters."}</p> : <SheetGrid applications={visible} allApplications={applications} markers={markers} onAiChanged={aiChanged} sortKey={sortKey} direction={direction} onSort={sortBy} onSelect={setDetailId} onReload={onReload} onSaveError={recordSaveError} onEditStart={clearSaveError} />}
             </>}
           </div>
-          <div id="sheet-panel-reviews" role="tabpanel" aria-labelledby="sheet-tab-reviews" tabIndex={0} hidden={tab !== "reviews"}>{tab === "reviews" && (reviewError ? <div role="alert" className="error"><p>Could not load reviews: {reviewError}</p><button type="button" onClick={() => void onReload()}>Retry reviews</button></div> : <ReviewQueue reviews={reviews} applications={applications} onResolved={async () => { await onReload(); }} onBack={() => setTab("applications")} showOllama={false} />)}</div>
+          <div id="sheet-panel-reviews" role="tabpanel" aria-labelledby="sheet-tab-reviews" tabIndex={0} hidden={tab !== "reviews"}>{tab === "reviews" && (reviewError ? <div role="alert" className="error"><p>Could not load reviews: {reviewError}</p><button type="button" onClick={() => void onReload()}>Retry reviews</button></div> : <ReviewQueue reviews={decisionReviews} applications={applications} onResolved={async () => { await onReload(); }} onBack={() => setTab("applications")} showOllama={false} />)}</div>
+          <div id="sheet-panel-unparsed" role="tabpanel" aria-labelledby="sheet-tab-unparsed" tabIndex={0} hidden={tab !== "unparsed"}>{tab === "unparsed" && (reviewError ? <div role="alert" className="error"><p>Could not load unparsed mail: {reviewError}</p><button type="button" onClick={() => void onReload()}>Retry reviews</button></div> : <ReviewQueue reviews={unparsedReviews} applications={applications} onResolved={async () => { await onReload(); }} onBack={() => setTab("applications")} showOllama={false} title="Unparsed mail" emptyMessage="No unparsed emails to inspect." dismissLabel="Dismiss email" />)}</div>
           <div id="sheet-panel-ai" role="tabpanel" aria-labelledby="sheet-tab-ai" tabIndex={0} hidden={tab !== "ai"}>{tab === "ai" && <AiChangesTab changes={aiChanges} applications={applications} loading={aiLoading} error={aiError} onChanged={aiChanged} />}</div>
           <nav className="sheet-tabs" role="tablist" aria-label="Sheet tabs">
             <button id="sheet-tab-applications" type="button" role="tab" aria-selected={tab === "applications"} aria-controls="sheet-panel-applications" tabIndex={tab === "applications" ? 0 : -1} onClick={() => selectTab("applications")} onKeyDown={(event) => handleTabKeyDown(event, "applications")}>Applications ({applications.length})</button>
-            <button id="sheet-tab-reviews" type="button" role="tab" aria-selected={tab === "reviews"} aria-controls="sheet-panel-reviews" tabIndex={tab === "reviews" ? 0 : -1} onClick={() => selectTab("reviews")} onKeyDown={(event) => handleTabKeyDown(event, "reviews")}>Needs a look ({reviews.length})</button>
+            <button id="sheet-tab-reviews" type="button" role="tab" aria-selected={tab === "reviews"} aria-controls="sheet-panel-reviews" tabIndex={tab === "reviews" ? 0 : -1} onClick={() => selectTab("reviews")} onKeyDown={(event) => handleTabKeyDown(event, "reviews")}>Needs a look ({decisionReviews.length})</button>
+            <button id="sheet-tab-unparsed" type="button" role="tab" aria-selected={tab === "unparsed"} aria-controls="sheet-panel-unparsed" tabIndex={tab === "unparsed" ? 0 : -1} onClick={() => selectTab("unparsed")} onKeyDown={(event) => handleTabKeyDown(event, "unparsed")}>Unparsed mail ({unparsedReviews.length})</button>
             <button id="sheet-tab-ai" type="button" role="tab" aria-selected={tab === "ai"} aria-controls="sheet-panel-ai" tabIndex={tab === "ai" ? 0 : -1} onClick={() => selectTab("ai")} onKeyDown={(event) => handleTabKeyDown(event, "ai")}>AI changes ({aiChanges.length})</button>
           </nav>
         </>

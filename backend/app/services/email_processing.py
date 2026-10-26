@@ -7,7 +7,7 @@ from app.repositories.dynamodb_auto_apply import AutoApplyMode
 from app.repositories.dynamodb_email import DynamoEmailRepository, StoredOutcome
 from app.repositories.dynamodb_sync import StaleSyncRun
 from app.services.ai_reconcile import ESCALATION_REASONS
-from app.services.email_filters import filter_reason
+from app.services.email_filters import filter_reason, filter_unparseable_headers
 from app.services.email_rules import ApplicationCandidate, classify_message
 from app.services.gmail_message import MessageParseError, parse_gmail_message
 
@@ -60,6 +60,7 @@ def process_message(
             owner_id=owner_id, message_id=message_id,
             thread_id=thread_id, received_at=received_at,
             subject=subject, sender=sender,
+            filtered=mode != "off" and filter_unparseable_headers(subject, sender),
         )
 
     if mode != "off":

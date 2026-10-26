@@ -35,6 +35,22 @@ Deployment verification: SAM build and development deploy succeeded for `5f5e481
 
 The frontend lockfile advances the transitive test-only `undici` dependency from 8.11.2 to 8.12.3 so the repository's `npm audit` CI gate passes. The pinned Node 22.23.3 lint, 232 tests, typecheck, build, and audit passed in Docker; local Node 23.7 lacks an API used by `undici` 8.12.3.
 
+## October 26 unparsed-mail follow-up
+
+Goal: keep parse failures that plausibly concern an application visible in a separate tab, while removing obvious unrelated mail from the owner's manual queue. The five Oracle Cloud recruiting messages in the current queue are Tradeweb messages; the Oracle Cloud sender domain alone is not a Tradeweb identity rule.
+
+- [x] Add synthetic failing tests for conservative subject/sender filtering, including application-mail vetoes, unknown senders, and malformed Gmail messages.
+- [x] Filter clearly unrelated headers before recording a parse failure as a review; preserve uncertain messages as `unparseable_message`.
+- [x] Split unparsed messages into their own sheet tab with a separate count and the existing review actions.
+- [x] Verify backend, frontend, evaluation, lint, and build; preview each existing development item against the filter before any guarded reclassification.
+- [ ] Reclassify only unchanged, unresolved, clearly unrelated development reviews; verify counts and deploy the code to development.
+
+Decision: treat news, shopping, promotional, account-scam, and welcome/resume-tip subjects from matching service senders as unrelated only when the subject contains no application-stage wording. Cost if wrong: a job update hidden behind one of those templates will be retained in Gmail but omitted from the tracker review queue. Unknown senders and any plausible application message remain visible.
+
+Decision: use the existing review record for parse failures and split it only in the sheet UI. Cost if wrong: other API consumers still see both categories in one paginated review endpoint.
+
+The final read-only development preview found 89 pending reviews, including 45 parse failures: 37 headers match the narrow unrelated-mail filter, and 8 remain. The retained items are five Tradeweb recruiting messages delivered through Oracle Cloud, one Lab37 receipt, and two LinkedIn/Crcle notifications. The owner was in automatic mode with no active sync. The full backend suite passed (1,281 tests); 70 focused tests passed after narrowing the Substack filter. Frontend lint, 233 tests, typecheck, build, audit, synthetic evaluation, SAM lint, and 14 offline deploy tests passed.
+
 ## Global Constraints
 
 - The mode is a per-owner Users attribute, `auto_apply_mode`, with values `off` | `plan` | `on`. It defaults to `off`.

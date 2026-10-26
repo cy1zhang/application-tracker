@@ -75,9 +75,12 @@ interface ReviewQueueProps {
   onResolved: () => Promise<void>;
   onBack: () => void;
   showOllama?: boolean;
+  title?: string;
+  emptyMessage?: string;
+  dismissLabel?: string;
 }
 
-export function ReviewQueue({ reviews, applications, onResolved, onBack, showOllama = true }: ReviewQueueProps) {
+export function ReviewQueue({ reviews, applications, onResolved, onBack, showOllama = true, title = "Needs review", emptyMessage = "No emails need review.", dismissLabel = "Reject proposal" }: ReviewQueueProps) {
   const [visibleCount, setVisibleCount] = useState(20);
   const [active, setActive] = useState<ActiveAction | null>(null);
   const [attachId, setAttachId] = useState("");
@@ -163,7 +166,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack, showOll
     <section className="page" aria-labelledby="reviews-title">
       <button type="button" className="link" onClick={onBack}>← Back to applications</button>
       <div className="page-header">
-        <h1 id="reviews-title">Needs review</h1>
+        <h1 id="reviews-title">{title}</h1>
         <span className="review-count">{reviews.length} pending</span>
       </div>
       {showOllama && reviews.length > 0 && <button type="button" onClick={() => setShowLocalAi((shown) => !shown)}>Analyze with Ollama</button>}
@@ -171,7 +174,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack, showOll
       {error && <p role="alert" className="review-error">{error}</p>}
       {notice && <p role="status">{notice}</p>}
       {suggested.length > 0 && <p className="muted">{suggested.length} {suggested.length === 1 ? "review has" : "reviews have"} AI suggestions (shown first)</p>}
-      {reviews.length === 0 && <p className="empty">No emails need review.</p>}
+      {reviews.length === 0 && <p className="empty">{emptyMessage}</p>}
       <div className="review-list">
         {orderedReviews.slice(0, visibleCount).map((review) => {
           const application = applications.find(
@@ -220,7 +223,7 @@ export function ReviewQueue({ reviews, applications, onResolved, onBack, showOll
                 {application && <button type="button" disabled={busy} onClick={() => start(review.message_id, "edit")}>Edit and apply</button>}
                 <button type="button" disabled={busy} onClick={() => start(review.message_id, "attach")}>Attach to application</button>
                 <button type="button" disabled={busy} onClick={() => start(review.message_id, "create")}>Create application</button>
-                <button type="button" disabled={busy} onClick={() => void resolve(review.message_id, { action: "reject" })}>Reject proposal</button>
+                <button type="button" disabled={busy} onClick={() => void resolve(review.message_id, { action: "reject" })}>{dismissLabel}</button>
               </div>
               {action === "edit" && application && (
                 <ApplicationForm initial={application} submitLabel="Save review changes" onSubmit={(values) => edit(review, application, values)} onCancel={() => setActive(null)} />

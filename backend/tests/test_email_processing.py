@@ -2,6 +2,7 @@ from base64 import urlsafe_b64encode
 from datetime import UTC, datetime, timedelta
 
 import boto3
+import pytest
 from moto import mock_aws
 
 from app.domain.applications import ApplicationCreate
@@ -126,3 +127,75 @@ def test_unparseable_review_keeps_bounded_subject_and_sender_headers() -> None:
         assert with_item.sender == "Recruiting <jobs@acme.test>"
         assert without_item.subject is None
         assert without_item.sender is None
+
+
+@pytest.mark.parametrize("sender,subject", [
+    ("News <newsletter@nytimes.com>", "The Morning: a quiet weekend"),
+    ("NVIDIA <news@nvidia.com>", "Your Personalized Developer News from NVIDIA"),
+    ("Shop <orders@amazon.com>", "Delivered 1 item: Notebook"),
+    ("Amazon Business <offers@business.amazon.com>", "Pat, Amazon Business offers business-only pricing"),
+    ("Updates <mailer@substack.com>", "“A thought on weekends”"),
+    ("VIZ <news@email.viz.com>", "A new anime arrives on Blu-ray"),
+    ("Winner <news@searchdoc.live>", "You Are Our Winner! Free E-Bike Gift"),
+    ("Notice <alerts@unknown.test>", "We've blocked your account! Your photos and videos will be deleted"),
+    ("Jobright <hello@jobright.ai>", "Welcome to Jobright!"),
+    ("Fidelity <news@fidelity.com>", "Upgrade your resume with these tips"),
+])
+def test_unparseable_non_application_mail_is_ignored_in_auto_mode(sender, subject) -> None:
+    with mock_aws():
+        client = boto3.client(
+            "dynamodb", region_name="us-east-1",
+            aws_access_key_id="testing", aws_secret_access_key="testing",
+        )
+        create_tables(client, applications_table="Applications", events_table="Events")
+        emails = DynamoEmailRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        )
+        malformed = {**_gmail("noise", "text"), "payload": {"headers": [
+            {"name": "Subject", "value": subject},
+            {"name": "From", "value": sender},
+        ]}}
+
+        outcome = process_message("user-a", malformed, [], emails, mode="on")
+        repeated = process_message("user-a", malformed, [], emails, mode="on")
+        reviews = DynamoReviewRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        ).list_pending(owner_id="user-a", limit=100, cursor=None)
+
+        assert outcome.outcome == "ignored"
+        assert outcome.reason == "filtered:non_application_headers"
+        assert repeated == outcome
+        assert reviews.items == []
+
+
+@pytest.mark.parametrize("sender,subject", [
+    ("Recruiting <jobs@acme.test>", "Your recent job application for Summer 2027 Internship"),
+    ("Recruiting <jobs@oraclecloud.com>", "Your recent job application for Summer 2027 Internship"),
+    ("Shop <orders@amazon.com>", "Your application was received"),
+    ("News <newsletter@nytimes.com>", "Interview invitation for Software Intern"),
+    ("Updates <mailer@substack.com>", "Update on your candidacy"),
+    ("Jane <jane@acme.test>", "A quick update"),
+])
+def test_unparseable_possible_application_stays_reviewable(sender, subject) -> None:
+    with mock_aws():
+        client = boto3.client(
+            "dynamodb", region_name="us-east-1",
+            aws_access_key_id="testing", aws_secret_access_key="testing",
+        )
+        create_tables(client, applications_table="Applications", events_table="Events")
+        emails = DynamoEmailRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        )
+        malformed = {**_gmail("candidate", "text"), "payload": {"headers": [
+            {"name": "Subject", "value": subject},
+            {"name": "From", "value": sender},
+        ]}}
+
+        outcome = process_message("user-a", malformed, [], emails, mode="on")
+        reviews = DynamoReviewRepository(
+            client=client, applications_table="Applications", events_table="Events"
+        ).list_pending(owner_id="user-a", limit=100, cursor=None)
+
+        assert outcome.outcome == "review_required"
+        assert outcome.reason == "unparseable_message"
+        assert len(reviews.items) == 1
