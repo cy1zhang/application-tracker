@@ -21,14 +21,21 @@ IDs configured); live provider checks are pending the owner's own key. Milestone
 (sanitized logging, account deletion, alarms, synthetic evaluation in CI) is
 implemented on `milestone-10-harden-evaluate` and deployed in development;
 owner-run deletion and revocation checks, live AI, and real-inbox quality are
-pending (`docs/VERIFICATION.md`). The three milestone branches are stacked and
-unmerged, awaiting the owner. A Hugging Face provider integration is implemented
+pending (`docs/VERIFICATION.md`). The milestone branches were consolidated onto
+`main` on 2026-11-03 with the owner's authorization. A Hugging Face provider integration is implemented
 on `codex/huggingface-provider` and deployed in development; live model
 verification is blocked by a Hugging Face credit-related HTTP 402 on the first
 synthetic request. A local Ollama review integration is on `codex/local-ollama-review`, and the
 automatic tracking milestone (local AI, spreadsheet) is on `claude/auto-apply-sheet`;
-both are stacked and unmerged. The dashboard offers review,
+both are included in `main`. The dashboard offers review,
 merge, sync, AI settings, and account deletion controls.
+
+All local branch tips through `claude/auto-apply-sheet` at `eee7951` are included
+in `main`. The old branch names remain as historical markers. See
+`docs/superpowers/plans/2026-11-03-branch-consolidation.md` for the branch map,
+verification results, and the outstanding npm audit finding. Older handoffs
+describe historical branch and deployment states; consolidation does not
+change the deployed stack or establish new live verification evidence.
 
 Key docs: `docs/PRD.md` (product behavior), `docs/TECHNICAL_DESIGN.md` (target AWS
 architecture, tables, API surface, sync/classification rules),
