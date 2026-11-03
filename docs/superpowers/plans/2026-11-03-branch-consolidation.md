@@ -53,7 +53,9 @@ There are 213 commits between GitHub `main` and `eee7951`.
   named `pre-consolidation: preserve pending HANDOFF.md deletion` and is local
   to this computer. It contains only that deletion, not application code.
 - [x] Fast-forward local `main` to `eee7951` without changing application code.
-- [ ] Push without force and verify GitHub SHA.
+- [x] Push without force and verify GitHub SHA: `7c77378` was confirmed on
+  GitHub `main`, containing every local branch tip. This completion note is a
+  subsequent documentation commit; final remote verification follows its push.
 
 Environment: backend console scripts retain the pre-migration path, so tests
 use `uv run python -m pytest`. The installed executable under `node@22` reports

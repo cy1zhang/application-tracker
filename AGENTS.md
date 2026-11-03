@@ -22,7 +22,8 @@ IDs configured); live provider checks are pending the owner's own key. Milestone
 implemented on `milestone-10-harden-evaluate` and deployed in development;
 owner-run deletion and revocation checks, live AI, and real-inbox quality are
 pending (`docs/VERIFICATION.md`). The milestone branches were consolidated onto
-`main` on 2026-11-03 with the owner's authorization. A Hugging Face provider integration is implemented
+`main` on 2026-11-03 with the owner's authorization. A Hugging Face provider
+integration is implemented
 on `codex/huggingface-provider` and deployed in development; live model
 verification is blocked by a Hugging Face credit-related HTTP 402 on the first
 synthetic request. A local Ollama review integration is on `codex/local-ollama-review`, and the
